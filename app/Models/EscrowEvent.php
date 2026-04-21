@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Domain\Enums\EscrowEventType;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $id
  * @property string|null $uuid
  * @property int $escrow_account_id
- * @property string $event_type
+ * @property EscrowEventType $event_type
  * @property string $amount
  * @property string|null $currency
  * @property string|null $from_state
@@ -50,7 +51,7 @@ class EscrowEvent extends Model
 
     protected $casts = [
         'escrow_account_id' => 'integer',
-        'event_type' => 'string',
+        'event_type' => EscrowEventType::class,
         'amount' => 'decimal:4',
         'actor_user_id' => 'integer',
         'reference_id' => 'integer',

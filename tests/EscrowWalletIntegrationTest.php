@@ -12,6 +12,7 @@ use App\Domain\Commands\Escrow\ReleaseEscrowCommand;
 use App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand;
 use App\Domain\Commands\WalletLedger\CreateWalletIfMissingCommand;
 use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
+use App\Domain\Enums\EscrowEventType;
 use App\Domain\Enums\EscrowState;
 use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\OrderStatus;
@@ -89,6 +90,9 @@ final class EscrowWalletIntegrationTest extends TestCase
 
         self::assertSame(3, IdempotencyKey::query()->count()); // create + hold + ledger hold
         self::assertSame(2, EscrowEvent::query()->where('escrow_account_id', $escrowId)->count()); // initiated + hold
+        $events = EscrowEvent::query()->where('escrow_account_id', $escrowId)->orderBy('id')->get();
+        self::assertSame(EscrowEventType::Initiated, $events[0]->event_type);
+        self::assertSame(EscrowEventType::Hold, $events[1]->event_type);
         $this->assertEscrowConservation(EscrowAccount::query()->findOrFail($escrowId));
     }
 
@@ -127,6 +131,8 @@ final class EscrowWalletIntegrationTest extends TestCase
                 ->where('entry_type', WalletLedgerEntryType::EscrowReleaseCredit)
                 ->first()
         );
+        $releaseEvent = EscrowEvent::query()->where('escrow_account_id', $escrowId)->orderByDesc('id')->firstOrFail();
+        self::assertSame(EscrowEventType::Release, $releaseEvent->event_type);
         $this->assertEscrowConservation($escrow, EscrowState::Released);
     }
 
@@ -151,6 +157,8 @@ final class EscrowWalletIntegrationTest extends TestCase
         $buyerBalance = $this->wallet->computeWalletBalances(new ComputeWalletBalancesCommand($buyerWalletId));
         self::assertSame('100.0000', (string) $buyerBalance['available_balance']); // round-trip back to original
         self::assertSame('0.0000', (string) $buyerBalance['held_balance']);
+        $refundEvent = EscrowEvent::query()->where('escrow_account_id', $escrowId)->orderByDesc('id')->firstOrFail();
+        self::assertSame(EscrowEventType::Refund, $refundEvent->event_type);
         $this->assertEscrowConservation($escrow, EscrowState::Refunded);
     }
 
@@ -187,6 +195,9 @@ final class EscrowWalletIntegrationTest extends TestCase
             escrowAccountId: $escrowId,
             disputeCaseId: 777,
         ));
+
+        $disputeEvent = EscrowEvent::query()->where('escrow_account_id', $escrowId)->orderByDesc('id')->firstOrFail();
+        self::assertSame(EscrowEventType::DisputeOpened, $disputeEvent->event_type);
 
         $beforeEntries = WalletLedgerEntry::query()->count();
         $beforeEvents = EscrowEvent::query()->where('escrow_account_id', $escrowId)->count();

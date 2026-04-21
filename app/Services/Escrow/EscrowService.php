@@ -9,6 +9,7 @@ use App\Domain\Commands\Escrow\RefundEscrowCommand;
 use App\Domain\Commands\Escrow\ReleaseEscrowCommand;
 use App\Domain\Commands\WalletLedger\PlaceWalletHoldCommand;
 use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
+use App\Domain\Enums\EscrowEventType;
 use App\Domain\Enums\EscrowState;
 use App\Domain\Enums\IdempotencyKeyStatus;
 use App\Domain\Enums\LedgerPostingEventName;
@@ -107,7 +108,7 @@ class EscrowService
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
-                'event_type' => 'initiated',
+                'event_type' => EscrowEventType::Initiated,
                 'amount' => $escrow->held_amount,
                 'currency' => $escrow->currency,
                 'from_state' => null,
@@ -196,7 +197,7 @@ class EscrowService
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
-                'event_type' => 'hold',
+                'event_type' => EscrowEventType::Hold,
                 'amount' => $escrow->held_amount,
                 'currency' => $escrow->currency,
                 'from_state' => $from->value,
@@ -280,7 +281,7 @@ class EscrowService
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
-                'event_type' => 'release',
+                'event_type' => EscrowEventType::Release,
                 'amount' => $amount,
                 'currency' => $escrow->currency,
                 'from_state' => $from->value,
@@ -369,7 +370,7 @@ class EscrowService
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
-                'event_type' => 'refund',
+                'event_type' => EscrowEventType::Refund,
                 'amount' => $amount,
                 'currency' => $escrow->currency,
                 'from_state' => $from->value,
@@ -410,7 +411,7 @@ class EscrowService
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
-                'event_type' => 'dispute_opened',
+                'event_type' => EscrowEventType::DisputeOpened,
                 'amount' => '0.0000',
                 'currency' => $escrow->currency,
                 'from_state' => $from->value,
