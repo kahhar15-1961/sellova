@@ -225,6 +225,63 @@ final class WalletLedgerServiceTest extends TestCase
         self::assertSame(0, IdempotencyKey::query()->where('scope', 'wallet_ledger_posting')->count());
     }
 
+    public function test_negative_available_forbidden_for_non_adjustment_debits(): void
+    {
+        $walletId = $this->createWallet(userId: 1, type: WalletType::Buyer, currency: 'USD');
+
+        $cmd = PostLedgerBatchCommand::fromLines(
+            LedgerPostingEventName::Withdrawal,
+            'test',
+            405,
+            'idem-negative-forbidden-1',
+            new LedgerPostingLine(
+                $walletId,
+                WalletLedgerEntrySide::Debit,
+                WalletLedgerEntryType::WithdrawalSettlementDebit,
+                '0.5000',
+                'USD',
+                'test',
+                405,
+                null,
+                'should fail without funds'
+            ),
+        );
+
+        $this->expectException(InsufficientWalletBalanceException::class);
+        $this->svc->postLedgerBatch($cmd);
+    }
+
+    public function test_negative_available_allowed_for_adjustment_debit_and_snapshot_persists(): void
+    {
+        $walletId = $this->createWallet(userId: 1, type: WalletType::Buyer, currency: 'USD');
+
+        $res = $this->svc->postLedgerBatch(PostLedgerBatchCommand::fromLines(
+            LedgerPostingEventName::Adjustment,
+            'admin_adjustment',
+            406,
+            'idem-adjustment-overdraw-1',
+            new LedgerPostingLine(
+                $walletId,
+                WalletLedgerEntrySide::Debit,
+                WalletLedgerEntryType::AdjustmentDebit,
+                '2.0000',
+                'USD',
+                'admin_adjustment',
+                406,
+                null,
+                'manual correction'
+            ),
+        ));
+
+        self::assertSame('posted', $res['status']);
+        $entry = WalletLedgerEntry::query()->latest('id')->firstOrFail();
+        self::assertSame('-2.0000', (string) $entry->running_balance_after);
+
+        $balance = $this->svc->computeWalletBalances(new \App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand($walletId));
+        self::assertSame('-2.0000', (string) $balance['available_balance']);
+        self::assertSame('0.0000', (string) $balance['held_balance']);
+    }
+
     public function test_invariant_invalid_ledger_operation_event_entry_mismatch_rolls_back(): void
     {
         $walletId = $this->createWallet(userId: 1, type: WalletType::Buyer, currency: 'USD');

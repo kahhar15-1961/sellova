@@ -20,6 +20,7 @@ use App\Domain\Exceptions\InsufficientWalletBalanceException;
 use App\Domain\Exceptions\InvalidLedgerOperationException;
 use App\Domain\Exceptions\WalletCurrencyMismatchException;
 use App\Domain\Exceptions\WalletNotFoundException;
+use App\Domain\Policy\WalletNegativeBalancePolicy;
 use App\Domain\Value\LedgerPostingLine;
 use App\Models\IdempotencyKey;
 use App\Models\Wallet;
@@ -537,10 +538,6 @@ class WalletLedgerService
             $held = $this->readActiveHoldsScale($wallet->id);
             $available = $ledger - $held;
 
-            if ($available < 0) {
-                throw new InvalidLedgerOperationException('computed_available_negative');
-            }
-
             $snapshot = WalletBalanceSnapshot::query()->create([
                 'wallet_id' => $wallet->id,
                 'as_of' => now(),
@@ -617,7 +614,7 @@ class WalletLedgerService
 
     private function allowsNegativeAvailable(WalletLedgerEntryType $entryType): bool
     {
-        return $entryType === WalletLedgerEntryType::AdjustmentDebit;
+        return WalletNegativeBalancePolicy::allowsOverdrawForEntryType($entryType);
     }
 
     private function readWalletLedgerBalanceScale(int $walletId): int

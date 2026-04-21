@@ -10,6 +10,7 @@ final readonly class RefundEscrowCommand
     public function __construct(
         public int $escrowAccountId,
         public string $idempotencyKey,
+        public ?string $refundAmount = null,
     ) {
     }
 }

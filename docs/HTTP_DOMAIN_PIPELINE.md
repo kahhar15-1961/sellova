@@ -105,6 +105,11 @@ Controllers are **not** generated yet. This document defines how each future end
 
 **Typed commands (examples):** `AdvanceOrderFulfillmentCommand::$toState` is `OrderStatus`; `ResolveDisputeCommand::$outcome` is `DisputeResolutionOutcome`; `ReviewWithdrawalCommand::$decision` is `WithdrawalReviewDecision`; wallet ledger commands use `WalletType`, `WalletHoldType`, `LedgerPostingEventName`, and `LedgerPostingLine` carries `WalletLedgerEntrySide` / `WalletLedgerEntryType`.
 
+**Negative balance rule (explicit):**
+- Default: available balance MUST NOT go below zero.
+- Exception: `WalletLedgerEntryType::AdjustmentDebit` may intentionally overdraw available balance for corrective/manual operations.
+- Policy source: `App\Domain\Policy\WalletNegativeBalancePolicy`.
+
 ---
 
 ## Withdrawal (financial-critical)
