@@ -95,6 +95,7 @@ final class WalletLedgerServiceTest extends TestCase
         ));
 
         $scenarios = [
+            [LedgerPostingEventName::PaymentCapture, WalletLedgerEntrySide::Credit, WalletLedgerEntryType::DepositCredit, '4.0000', 'idem-payment-capture-1'],
             [LedgerPostingEventName::EscrowHold, WalletLedgerEntrySide::Debit, WalletLedgerEntryType::EscrowHoldDebit, '10.0000', 'idem-escrow-hold-1'],
             [LedgerPostingEventName::Release, WalletLedgerEntrySide::Credit, WalletLedgerEntryType::EscrowReleaseCredit, '10.0000', 'idem-release-1'],
             [LedgerPostingEventName::Refund, WalletLedgerEntrySide::Credit, WalletLedgerEntryType::RefundCredit, '5.0000', 'idem-refund-1'],

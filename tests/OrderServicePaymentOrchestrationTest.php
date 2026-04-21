@@ -7,16 +7,12 @@ namespace Tests;
 use App\Domain\Commands\Order\MarkOrderPaidCommand;
 use App\Domain\Commands\Order\MarkOrderPendingPaymentCommand;
 use App\Domain\Commands\WalletLedger\CreateWalletIfMissingCommand;
-use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
 use App\Domain\Enums\EscrowState;
 use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\OrderStatus;
-use App\Domain\Enums\WalletLedgerEntrySide;
-use App\Domain\Enums\WalletLedgerEntryType;
 use App\Domain\Enums\WalletType;
 use App\Domain\Exceptions\InvalidOrderStateTransitionException;
 use App\Domain\Exceptions\OrderValidationFailedException;
-use App\Domain\Value\LedgerPostingLine;
 use App\Models\EscrowAccount;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -24,6 +20,7 @@ use App\Models\PaymentIntent;
 use App\Models\PaymentTransaction;
 use App\Models\SellerProfile;
 use App\Models\User;
+use App\Models\WalletLedgerBatch;
 use App\Services\Order\OrderService;
 use App\Services\WalletLedger\WalletLedgerService;
 use Illuminate\Support\Str;
@@ -49,29 +46,35 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         self::assertSame(OrderStatus::PendingPayment, $order->status);
     }
 
-    public function test_mark_paid_creates_escrow_hold_and_sets_order_paid(): void
+    public function test_mark_paid_posts_capture_funding_escrow_hold_and_sets_paid_in_escrow(): void
     {
-        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '42.0000');
-        $this->fundBuyerWallet($buyerWalletId, $order->id, '200.0000');
-        [$intent, $txn] = $this->seedCapturedPayment($order, '42.0000');
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '42.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '42.0000');
 
         $result = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
-        self::assertSame('paid', $result['status']);
+        self::assertSame('paid_in_escrow', $result['status']);
         self::assertSame('held', $result['escrow_state']);
 
         $order->refresh();
-        self::assertSame(OrderStatus::Paid, $order->status);
+        self::assertSame(OrderStatus::PaidInEscrow, $order->status);
         self::assertNotNull($order->placed_at);
 
         $escrow = EscrowAccount::query()->where('order_id', $order->id)->firstOrFail();
         self::assertSame(EscrowState::Held, $escrow->state);
         self::assertSame('42.0000', (string) $escrow->held_amount);
+
+        self::assertTrue(
+            WalletLedgerBatch::query()
+                ->where('reference_type', 'payment_transaction')
+                ->where('reference_id', $txn->id)
+                ->where('event_name', LedgerPostingEventName::PaymentCapture)
+                ->exists()
+        );
     }
 
     public function test_mark_paid_idempotent_replay(): void
     {
-        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '15.0000');
-        $this->fundBuyerWallet($buyerWalletId, $order->id, '100.0000');
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '15.0000');
         [, $txn] = $this->seedCapturedPayment($order, '15.0000');
 
         $first = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
@@ -82,9 +85,26 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         self::assertSame((int) $first['escrow_account_id'], (int) $second['escrow_account_id']);
     }
 
+    public function test_mark_paid_rejects_second_payment_after_paid_in_escrow(): void
+    {
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '18.0000');
+        [, $txn1] = $this->seedCapturedPayment($order, '18.0000');
+        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn1->id));
+
+        [, $txn2] = $this->seedCapturedPayment($order, '18.0000');
+
+        $this->expectException(OrderValidationFailedException::class);
+        try {
+            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn2->id));
+        } catch (OrderValidationFailedException $e) {
+            self::assertSame('order_already_paid_in_escrow', $e->reasonCode);
+            throw $e;
+        }
+    }
+
     public function test_mark_paid_rejects_multi_seller(): void
     {
-        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '30.0000');
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '30.0000');
         $sellerBUser = User::query()->create([
             'uuid' => (string) Str::uuid(),
             'email' => 'seller-b-'.Str::random(8).'@example.test',
@@ -117,7 +137,6 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
             'delivery_state' => 'not_started',
         ]);
 
-        $this->fundBuyerWallet($buyerWalletId, $order->id, '200.0000');
         [, $txn] = $this->seedCapturedPayment($order, '30.0000');
 
         $this->expectException(OrderValidationFailedException::class);
@@ -131,27 +150,21 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
 
     public function test_mark_paid_from_draft_throws_invalid_transition(): void
     {
-        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::Draft, '20.0000');
-        $this->fundBuyerWallet($buyerWalletId, $order->id, '100.0000');
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::Draft, '20.0000');
         [, $txn] = $this->seedCapturedPayment($order, '20.0000');
 
         $this->expectException(InvalidOrderStateTransitionException::class);
         $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
     }
 
-    public function test_mark_paid_insufficient_buyer_balance_maps_to_order_validation(): void
+    public function test_resolve_buyer_and_seller_wallet_ids(): void
     {
-        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '99.0000');
-        $this->fundBuyerWallet($buyerWalletId, $order->id, '10.0000');
-        [, $txn] = $this->seedCapturedPayment($order, '99.0000');
-
-        $this->expectException(OrderValidationFailedException::class);
-        try {
-            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
-        } catch (OrderValidationFailedException $e) {
-            self::assertSame('buyer_wallet_insufficient_for_escrow_hold', $e->reasonCode);
-            throw $e;
-        }
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::Draft, '5.0000');
+        $buyerId = $this->orders->resolveBuyerWalletId($order);
+        $sellerId = $this->orders->resolveSellerWalletId($order);
+        self::assertGreaterThan(0, $buyerId);
+        self::assertGreaterThan(0, $sellerId);
+        self::assertNotSame($buyerId, $sellerId);
     }
 
     /**
@@ -218,29 +231,6 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         ));
 
         return [$order, $buyerWalletId, $seller];
-    }
-
-    private function fundBuyerWallet(int $buyerWalletId, int $orderId, string $amount): void
-    {
-        $this->wallet->postLedgerBatch(new PostLedgerBatchCommand(
-            eventName: LedgerPostingEventName::Deposit,
-            referenceType: 'seed',
-            referenceId: $orderId,
-            idempotencyKey: 'seed-buyer-'.$orderId.'-'.Str::random(6),
-            entries: [
-                new LedgerPostingLine(
-                    walletId: $buyerWalletId,
-                    entrySide: WalletLedgerEntrySide::Credit,
-                    entryType: WalletLedgerEntryType::DepositCredit,
-                    amount: $amount,
-                    currency: 'USD',
-                    referenceType: 'seed',
-                    referenceId: $orderId,
-                    counterpartyWalletId: null,
-                    description: 'seed_buyer',
-                ),
-            ],
-        ));
     }
 
     /**

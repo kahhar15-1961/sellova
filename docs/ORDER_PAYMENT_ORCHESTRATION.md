@@ -5,14 +5,17 @@ This document describes how `OrderService` couples PSP-settled payment data to e
 ## Flow (single-seller)
 
 1. **Draft → pending payment** — `OrderService::markPendingPayment` locks the order, requires `orders.status = draft`, transitions to `pending_payment`, and appends `order_state_transitions`.
-2. **Pending payment → paid + escrow** — `OrderService::markPaid` runs inside `DB::transaction()`:
+2. **Pending payment → paid_in_escrow** — `OrderService::markPaid` runs inside `DB::transaction()`:
    - Claims idempotency scope `order_mark_paid` (see `OrderService::claimOrderMarkPaidIdempotency`).
-   - Locks `payment_transactions` → `payment_intents` → `orders` (FK order avoids deadlocks when composed with other writers).
+   - Locks `payment_transactions` → `payment_intents` → `orders` (child-to-parent order reduces deadlock risk).
    - Validates the capture transaction (`txn_type = capture`, `status = success`) belongs to the order and that the intent is `captured`, with strict amount/currency alignment to `orders.net_amount` / `orders.currency`.
+   - Rejects **already settled** orders (`paid_in_escrow` or legacy `paid`) with `OrderValidationFailedException` (`order_already_paid_in_escrow`) before any wallet or escrow mutation (duplicate capture / double `markPaid` protection).
+   - Requires `pending_payment` for the happy path; any other non-terminal state uses `InvalidOrderStateTransitionException` toward `paid_in_escrow`.
    - **Multi-seller guard** — `OrderService::assertSingleSellerOrderForEscrow` requires exactly one distinct `order_items.seller_profile_id`. If there are zero items or more than one seller, it throws `OrderValidationFailedException` with `reasonCode = multi_seller_escrow_not_supported`. This is the approved orchestration choke point until marketplace split-settlement exists.
-   - Ensures buyer and seller wallets exist via `WalletLedgerService::createWalletIfMissing` (no ledger bypass; no funds invented).
-   - Calls `EscrowService::createEscrowForOrder` then `EscrowService::holdEscrow` with deterministic idempotency keys derived from `orderId` + `paymentTransactionId` (see `OrderService::escrowCreateIdempotencyKey` / `escrowHoldIdempotencyKey`).
-   - Sets `orders.status = paid`, optionally sets `placed_at` if still null, records `order_state_transitions`, and marks the orchestration idempotency row succeeded.
+   - Resolves buyer/seller wallets via `resolveBuyerWalletId` / `resolveSellerWalletId` (each uses `WalletLedgerService::createWalletIfMissing` when needed).
+   - **Buyer funding** — `postFundingForOrderFromCapturedPayment` posts a `WalletLedgerService::postLedgerBatch` with `LedgerPostingEventName::PaymentCapture` (ledger line: `deposit_credit` credit) keyed by `order:{id}:payment_capture_funding:txn:{txnId}` so capture credits are idempotent and auditable.
+   - **Escrow** — `EscrowService::createEscrowForOrder` then `holdEscrow` with deterministic idempotency keys derived from `orderId` + `paymentTransactionId`.
+   - Sets `orders.status = paid_in_escrow`, sets `placed_at` when still null, records `order_state_transitions` (`payment_capture_funded_and_escrow_held`), and marks the orchestration idempotency row succeeded.
 
 ## Multi-seller blocking (explicit)
 
@@ -21,9 +24,9 @@ This document describes how `OrderService` couples PSP-settled payment data to e
 | `OrderService::assertSingleSellerOrderForEscrow` | **Canonical block** for checkout payment → escrow orchestration. Rejects `>1` distinct seller on line items. |
 | `EscrowService` (release path) | Still enforces `multi_seller_release_not_supported_yet` when resolving wallets for settlement; that is separate from payment capture orchestration. |
 
-## Preconditions (not implemented here)
+## Ledger coupling
 
-- Funds must already be available in the buyer wallet for the escrow hold debit (typically a deposit/capture posting from a payment adapter using `WalletLedgerService` in its own transaction, **before** or **within** the same unit of work as `markPaid`, depending on product wiring). `OrderService` does not post PSP settlement credits itself.
+- Capture settlement is modeled **inside** `markPaid` as a `payment_capture` ledger batch (buyer wallet credit) immediately before escrow create/hold, all in one DB transaction so failures roll back together.
 
 ## Controllers
 

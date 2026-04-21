@@ -291,7 +291,7 @@ CREATE TABLE orders (
   uuid CHAR(36) NOT NULL,
   order_number VARCHAR(64) NOT NULL,
   buyer_user_id BIGINT UNSIGNED NOT NULL,
-  status ENUM('draft','pending_payment','paid','processing','shipped_or_delivered','completed','cancelled','refunded','disputed') NOT NULL,
+  status ENUM('draft','pending_payment','paid','paid_in_escrow','processing','shipped_or_delivered','completed','cancelled','refunded','disputed') NOT NULL,
   currency CHAR(3) NOT NULL,
   gross_amount DECIMAL(18,4) NOT NULL,
   discount_amount DECIMAL(18,4) NOT NULL DEFAULT 0,
@@ -565,6 +565,7 @@ CREATE TABLE wallet_balance_snapshots (
 CREATE TABLE withdrawal_requests (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   uuid CHAR(36) NOT NULL,
+  idempotency_key VARCHAR(191) NOT NULL,
   seller_profile_id BIGINT UNSIGNED NOT NULL,
   wallet_id BIGINT UNSIGNED NOT NULL,
   status ENUM('requested','under_review','approved','processing_payout','paid_out','rejected','failed','cancelled') NOT NULL,
@@ -580,6 +581,7 @@ CREATE TABLE withdrawal_requests (
   updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_withdrawal_requests_uuid (uuid),
+  UNIQUE KEY uq_withdrawal_requests_idempotency_key (idempotency_key),
   CONSTRAINT chk_withdrawal_requests_amounts CHECK (
     requested_amount >= 0 AND fee_amount >= 0 AND net_payout_amount = requested_amount - fee_amount
   )

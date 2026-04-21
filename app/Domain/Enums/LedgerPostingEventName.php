@@ -9,6 +9,8 @@ namespace App\Domain\Enums;
 enum LedgerPostingEventName: string
 {
     case Deposit = 'deposit';
+    /** PSP capture (or equivalent) credited to buyer wallet before escrow hold placement. */
+    case PaymentCapture = 'payment_capture';
     case EscrowHold = 'escrow_hold';
     case Release = 'release';
     case Refund = 'refund';

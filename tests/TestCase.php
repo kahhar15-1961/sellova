@@ -21,6 +21,8 @@ abstract class TestCase extends BaseTestCase
 
         $this->ensureSchemaApplied();
         $this->truncateAllTables();
+        $this->ensureOrdersStatusEnumIncludesPaidInEscrow();
+        $this->ensureWithdrawalRequestsIdempotencyKeyColumn();
     }
 
     private function ensureSchemaApplied(): void
@@ -54,6 +56,44 @@ abstract class TestCase extends BaseTestCase
             }
         }
         Capsule::connection()->statement('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    /**
+     * Keeps integration tests working against databases bootstrapped from an older CANONICAL_SCHEMA snapshot.
+     */
+    private function ensureOrdersStatusEnumIncludesPaidInEscrow(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('orders')) {
+            return;
+        }
+
+        try {
+            Capsule::connection()->statement("ALTER TABLE orders MODIFY COLUMN status ENUM(
+                'draft','pending_payment','paid','paid_in_escrow',
+                'processing','shipped_or_delivered','completed','cancelled','refunded','disputed'
+            ) NOT NULL");
+        } catch (\Throwable) {
+            // Definition may already match; ignore.
+        }
+    }
+
+    private function ensureWithdrawalRequestsIdempotencyKeyColumn(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('withdrawal_requests') || $schema->hasColumn('withdrawal_requests', 'idempotency_key')) {
+            return;
+        }
+
+        $conn = Capsule::connection();
+        $conn->statement('ALTER TABLE withdrawal_requests ADD COLUMN idempotency_key VARCHAR(191) NULL AFTER uuid');
+        $conn->statement('UPDATE withdrawal_requests SET idempotency_key = CONCAT(\'legacy-withdrawal-\', id) WHERE idempotency_key IS NULL');
+        $conn->statement('ALTER TABLE withdrawal_requests MODIFY COLUMN idempotency_key VARCHAR(191) NOT NULL');
+        try {
+            $conn->statement('ALTER TABLE withdrawal_requests ADD UNIQUE KEY uq_withdrawal_requests_idempotency_key (idempotency_key)');
+        } catch (\Throwable) {
+            // Index may already exist.
+        }
     }
 }
 

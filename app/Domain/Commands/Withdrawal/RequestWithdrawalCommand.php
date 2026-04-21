@@ -13,6 +13,7 @@ final readonly class RequestWithdrawalCommand
         public string $amount,
         public string $currency,
         public string $idempotencyKey,
+        public ?string $feeAmount = null,
     ) {
     }
 }

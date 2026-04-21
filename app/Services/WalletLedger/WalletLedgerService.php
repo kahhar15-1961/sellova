@@ -568,7 +568,8 @@ class WalletLedgerService
     private function assertLineAllowedForEvent(LedgerPostingEventName $eventName, LedgerPostingLine $line): void
     {
         $allowed = match ($eventName) {
-            LedgerPostingEventName::Deposit => [
+            LedgerPostingEventName::Deposit,
+            LedgerPostingEventName::PaymentCapture => [
                 [WalletLedgerEntryType::DepositCredit, WalletLedgerEntrySide::Credit],
             ],
             LedgerPostingEventName::EscrowHold => [

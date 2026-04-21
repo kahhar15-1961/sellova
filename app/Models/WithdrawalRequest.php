@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 /**
  * @property int $id
  * @property string|null $uuid
+ * @property string $idempotency_key
  * @property int $seller_profile_id
  * @property int $wallet_id
  * @property string $status
@@ -40,6 +41,7 @@ class WithdrawalRequest extends Model
 
     protected $fillable = [
         'uuid',
+        'idempotency_key',
         'seller_profile_id',
         'wallet_id',
         'status',
@@ -54,6 +56,7 @@ class WithdrawalRequest extends Model
     ];
 
     protected $casts = [
+        'idempotency_key' => 'string',
         'seller_profile_id' => 'integer',
         'wallet_id' => 'integer',
         'status' => WithdrawalRequestStatus::class,

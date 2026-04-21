@@ -14,6 +14,7 @@ final readonly class ReviewWithdrawalCommand
         public int $reviewerId,
         public WithdrawalReviewDecision $decision,
         public ?string $reason,
+        public string $idempotencyKey,
     ) {
     }
 }

@@ -10,8 +10,12 @@ use App\Domain\Commands\Order\CreateOrderCommand;
 use App\Domain\Commands\Order\MarkOrderPaidCommand;
 use App\Domain\Commands\Order\MarkOrderPendingPaymentCommand;
 use App\Domain\Commands\WalletLedger\CreateWalletIfMissingCommand;
+use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
 use App\Domain\Enums\IdempotencyKeyStatus;
+use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\OrderStatus;
+use App\Domain\Enums\WalletLedgerEntrySide;
+use App\Domain\Enums\WalletLedgerEntryType;
 use App\Domain\Enums\WalletType;
 use App\Domain\Exceptions\IdempotencyConflictException;
 use App\Domain\Exceptions\InsufficientWalletBalanceException;
@@ -24,6 +28,8 @@ use App\Models\OrderStateTransition;
 use App\Models\PaymentIntent;
 use App\Models\PaymentTransaction;
 use App\Models\SellerProfile;
+use App\Models\Wallet;
+use App\Domain\Value\LedgerPostingLine;
 use App\Services\Escrow\EscrowService;
 use App\Services\Support\FinancialCritical;
 use App\Services\WalletLedger\WalletLedgerService;
@@ -92,9 +98,65 @@ class OrderService
     }
 
     /**
-     * Pending payment → paid, after a successful capture transaction, by creating escrow and placing the hold.
+     * Resolves the buyer wallet for the order currency (creates wallet if missing).
+     */
+    public function resolveBuyerWalletId(Order $order): int
+    {
+        $currency = (string) $order->currency;
+        $this->walletLedgerService->createWalletIfMissing(new CreateWalletIfMissingCommand(
+            userId: (int) $order->buyer_user_id,
+            walletType: WalletType::Buyer,
+            currency: $currency,
+        ));
+
+        $wallet = Wallet::query()
+            ->where('user_id', $order->buyer_user_id)
+            ->where('wallet_type', WalletType::Buyer->value)
+            ->where('currency', $currency)
+            ->firstOrFail();
+
+        return (int) $wallet->id;
+    }
+
+    /**
+     * Resolves the single seller wallet for the order (creates wallet if missing).
      *
-     * Multi-seller orders are rejected in {@see self::assertSingleSellerOrderForEscrow} (documented in `docs/ORDER_PAYMENT_ORCHESTRATION.md`).
+     * @throws OrderValidationFailedException when the order is not single-seller
+     */
+    public function resolveSellerWalletId(Order $order): int
+    {
+        $order->loadMissing('orderItems');
+        $this->assertSingleSellerOrderForEscrow($order);
+
+        $currency = (string) $order->currency;
+        $sellerProfileId = (int) $order->orderItems->first()->seller_profile_id;
+        $seller = SellerProfile::query()->whereKey($sellerProfileId)->first();
+        if ($seller === null) {
+            throw new OrderValidationFailedException($order->id, 'seller_profile_not_found', [
+                'seller_profile_id' => $sellerProfileId,
+            ]);
+        }
+
+        $this->walletLedgerService->createWalletIfMissing(new CreateWalletIfMissingCommand(
+            userId: (int) $seller->user_id,
+            walletType: WalletType::Seller,
+            currency: $currency,
+        ));
+
+        $wallet = Wallet::query()
+            ->where('user_id', $seller->user_id)
+            ->where('wallet_type', WalletType::Seller->value)
+            ->where('currency', $currency)
+            ->firstOrFail();
+
+        return (int) $wallet->id;
+    }
+
+    /**
+     * Pending payment → paid_in_escrow: posts capture funding to the buyer wallet via {@see WalletLedgerService},
+     * then {@see EscrowService} creates escrow and places the hold — single transaction, no partial commits.
+     *
+     * Multi-seller orders are rejected in {@see self::assertSingleSellerOrderForEscrow} (see `docs/ORDER_PAYMENT_ORCHESTRATION.md`).
      */
     public function markPaid(MarkOrderPaidCommand $command): array
     {
@@ -130,17 +192,28 @@ class OrderService
 
             $this->assertPaymentCaptureAppliesToOrder($order, $intent, $txn);
 
+            if ($order->status === OrderStatus::PaidInEscrow || $order->status === OrderStatus::Paid) {
+                throw new OrderValidationFailedException($order->id, 'order_already_paid_in_escrow', [
+                    'current_status' => $order->status->value,
+                    'payment_transaction_id' => $command->paymentTransactionId,
+                ]);
+            }
+
             if ($order->status !== OrderStatus::PendingPayment) {
                 throw new InvalidOrderStateTransitionException(
                     orderId: $order->id,
                     fromStatus: $order->status->value,
-                    toStatus: OrderStatus::Paid->value,
+                    toStatus: OrderStatus::PaidInEscrow->value,
                 );
             }
 
             $order->load(['orderItems']);
             $this->assertSingleSellerOrderForEscrow($order);
-            $this->ensureBuyerAndSellerWalletsForOrder($order);
+
+            $buyerWalletId = $this->resolveBuyerWalletId($order);
+            $this->resolveSellerWalletId($order);
+
+            $this->postFundingForOrderFromCapturedPayment($order, $txn, $buyerWalletId);
 
             $escrowCreateKey = $this->escrowCreateIdempotencyKey($command->orderId, $command->paymentTransactionId);
             $escrowHoldKey = $this->escrowHoldIdempotencyKey($command->orderId, $command->paymentTransactionId);
@@ -172,7 +245,7 @@ class OrderService
             }
 
             $from = $order->status;
-            $order->status = OrderStatus::Paid;
+            $order->status = OrderStatus::PaidInEscrow;
             if ($order->placed_at === null) {
                 $order->placed_at = now();
             }
@@ -181,8 +254,8 @@ class OrderService
             $this->recordOrderStateTransition(
                 order: $order,
                 from: $from,
-                to: OrderStatus::Paid,
-                reasonCode: 'payment_capture_settled',
+                to: OrderStatus::PaidInEscrow,
+                reasonCode: 'payment_capture_funded_and_escrow_held',
                 actorUserId: $command->actorUserId,
                 correlationId: $command->correlationId ?? (string) Str::uuid(),
             );
@@ -293,30 +366,39 @@ class OrderService
         }
     }
 
-    private function ensureBuyerAndSellerWalletsForOrder(Order $order): void
+    /**
+     * Credits the buyer wallet for the PSP capture amount using {@see WalletLedgerService::postLedgerBatch}.
+     * Idempotent per order + payment transaction.
+     */
+    private function postFundingForOrderFromCapturedPayment(Order $order, PaymentTransaction $txn, int $buyerWalletId): void
     {
+        $amount = (string) $txn->amount;
         $currency = (string) $order->currency;
-        $buyerUserId = (int) $order->buyer_user_id;
 
-        $this->walletLedgerService->createWalletIfMissing(new CreateWalletIfMissingCommand(
-            userId: $buyerUserId,
-            walletType: WalletType::Buyer,
-            currency: $currency,
+        $this->walletLedgerService->postLedgerBatch(new PostLedgerBatchCommand(
+            eventName: LedgerPostingEventName::PaymentCapture,
+            referenceType: 'payment_transaction',
+            referenceId: $txn->id,
+            idempotencyKey: $this->paymentCaptureFundingIdempotencyKey($order->id, $txn->id),
+            entries: [
+                new LedgerPostingLine(
+                    walletId: $buyerWalletId,
+                    entrySide: WalletLedgerEntrySide::Credit,
+                    entryType: WalletLedgerEntryType::DepositCredit,
+                    amount: $amount,
+                    currency: $currency,
+                    referenceType: 'payment_transaction',
+                    referenceId: $txn->id,
+                    counterpartyWalletId: null,
+                    description: 'order_payment_capture',
+                ),
+            ],
         ));
+    }
 
-        $sellerProfileId = (int) $order->orderItems->first()->seller_profile_id;
-        $seller = SellerProfile::query()->whereKey($sellerProfileId)->lockForUpdate()->first();
-        if ($seller === null) {
-            throw new OrderValidationFailedException($order->id, 'seller_profile_not_found', [
-                'seller_profile_id' => $sellerProfileId,
-            ]);
-        }
-
-        $this->walletLedgerService->createWalletIfMissing(new CreateWalletIfMissingCommand(
-            userId: (int) $seller->user_id,
-            walletType: WalletType::Seller,
-            currency: $currency,
-        ));
+    private function paymentCaptureFundingIdempotencyKey(int $orderId, int $paymentTransactionId): string
+    {
+        return 'order:'.$orderId.':payment_capture_funding:txn:'.$paymentTransactionId;
     }
 
     private function recordOrderStateTransition(
@@ -419,6 +501,13 @@ class OrderService
     private function buildMarkPaidReplayPayload(int $orderId, int $paymentTransactionId): array
     {
         $order = Order::query()->whereKey($orderId)->firstOrFail();
+        if ($order->status !== OrderStatus::PaidInEscrow && $order->status !== OrderStatus::Paid) {
+            throw new OrderValidationFailedException($orderId, 'order_payment_orchestration_replay_state_mismatch', [
+                'current_status' => $order->status->value,
+                'payment_transaction_id' => $paymentTransactionId,
+            ]);
+        }
+
         $escrow = EscrowAccount::query()->where('order_id', $orderId)->firstOrFail();
 
         return [
