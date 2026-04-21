@@ -12,6 +12,8 @@ final readonly class OpenDisputeCommand
         public ?int $orderItemId,
         public int $openedByUserId,
         public string $reasonCode,
+        public ?string $idempotencyKey = null,
+        public ?string $correlationId = null,
     ) {
     }
 }

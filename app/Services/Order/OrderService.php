@@ -5,8 +5,10 @@ namespace App\Services\Order;
 use App\Domain\Commands\Escrow\CreateEscrowForOrderCommand;
 use App\Domain\Commands\Escrow\HoldEscrowCommand;
 use App\Domain\Commands\Order\AdvanceOrderFulfillmentCommand;
+use App\Domain\Commands\Order\ApplyOrderStatusAfterDisputeResolutionCommand;
 use App\Domain\Commands\Order\CompleteOrderCommand;
 use App\Domain\Commands\Order\CreateOrderCommand;
+use App\Domain\Commands\Order\MarkOrderDisputedCommand;
 use App\Domain\Commands\Order\MarkOrderPaidCommand;
 use App\Domain\Commands\Order\MarkOrderPendingPaymentCommand;
 use App\Domain\Commands\WalletLedger\CreateWalletIfMissingCommand;
@@ -287,6 +289,100 @@ class OrderService
     public function completeOrder(CompleteOrderCommand $command): array
     {
         throw new \LogicException('Not implemented.');
+    }
+
+    /**
+     * paid_in_escrow → disputed (opens dispute workflow; caller should hold row locks in the same transaction).
+     */
+    public function markOrderDisputed(MarkOrderDisputedCommand $command): array
+    {
+        return DB::transaction(function () use ($command): array {
+            $order = Order::query()->whereKey($command->orderId)->lockForUpdate()->first();
+            if ($order === null) {
+                throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
+            }
+
+            if ($order->status !== OrderStatus::PaidInEscrow) {
+                throw new InvalidOrderStateTransitionException(
+                    orderId: $order->id,
+                    fromStatus: $order->status->value,
+                    toStatus: OrderStatus::Disputed->value,
+                );
+            }
+
+            $from = $order->status;
+            $order->status = OrderStatus::Disputed;
+            $order->save();
+
+            $this->recordOrderStateTransition(
+                order: $order,
+                from: $from,
+                to: OrderStatus::Disputed,
+                reasonCode: 'dispute_opened',
+                actorUserId: $command->actorUserId,
+                correlationId: $command->correlationId ?? (string) Str::uuid(),
+            );
+
+            return [
+                'order_id' => $order->id,
+                'status' => $order->status->value,
+            ];
+        });
+    }
+
+    /**
+     * disputed → refunded | paid_in_escrow after dispute resolution (idempotent if order already at target).
+     */
+    public function applyOrderStatusAfterDisputeResolution(ApplyOrderStatusAfterDisputeResolutionCommand $command): array
+    {
+        return DB::transaction(function () use ($command): array {
+            $order = Order::query()->whereKey($command->orderId)->lockForUpdate()->first();
+            if ($order === null) {
+                throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
+            }
+
+            if ($order->status === $command->targetStatus) {
+                return [
+                    'order_id' => $order->id,
+                    'status' => $order->status->value,
+                    'idempotent_replay' => true,
+                ];
+            }
+
+            if ($order->status !== OrderStatus::Disputed) {
+                throw new InvalidOrderStateTransitionException(
+                    orderId: $order->id,
+                    fromStatus: $order->status->value,
+                    toStatus: $command->targetStatus->value,
+                );
+            }
+
+            $allowed = [OrderStatus::Refunded, OrderStatus::PaidInEscrow];
+            if (! in_array($command->targetStatus, $allowed, true)) {
+                throw new OrderValidationFailedException($order->id, 'invalid_post_dispute_order_status', [
+                    'target_status' => $command->targetStatus->value,
+                ]);
+            }
+
+            $from = $order->status;
+            $order->status = $command->targetStatus;
+            $order->save();
+
+            $this->recordOrderStateTransition(
+                order: $order,
+                from: $from,
+                to: $command->targetStatus,
+                reasonCode: $command->reasonCode,
+                actorUserId: $command->actorUserId,
+                correlationId: $command->correlationId ?? (string) Str::uuid(),
+            );
+
+            return [
+                'order_id' => $order->id,
+                'status' => $order->status->value,
+                'idempotent_replay' => false,
+            ];
+        });
     }
 
     /**

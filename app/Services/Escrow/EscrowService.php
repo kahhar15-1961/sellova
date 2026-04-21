@@ -7,6 +7,7 @@ use App\Domain\Commands\Escrow\HoldEscrowCommand;
 use App\Domain\Commands\Escrow\MarkEscrowUnderDisputeCommand;
 use App\Domain\Commands\Escrow\RefundEscrowCommand;
 use App\Domain\Commands\Escrow\ReleaseEscrowCommand;
+use App\Domain\Commands\Escrow\SettleEscrowFromDisputeCommand;
 use App\Domain\Commands\WalletLedger\PlaceWalletHoldCommand;
 use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
 use App\Domain\Enums\EscrowEventType;
@@ -423,6 +424,159 @@ class EscrowService
             return [
                 'escrow_account_id' => $escrow->id,
                 'state' => $escrow->state->value,
+                'idempotent_replay' => false,
+            ];
+        });
+    }
+
+    /**
+     * Settles all remaining escrow in one step while under dispute (buyer refund and/or seller release),
+     * avoiding the sequential refund→release restriction on split outcomes.
+     */
+    public function settleEscrowFromDispute(SettleEscrowFromDisputeCommand $command): array
+    {
+        return DB::transaction(function () use ($command): array {
+            $escrow = $this->lockEscrowOrFail($command->escrowAccountId);
+            if ($escrow->state !== EscrowState::UnderDispute) {
+                throw new InvalidEscrowStateTransitionException(
+                    escrowAccountId: $escrow->id,
+                    fromState: $escrow->state->value,
+                    toState: EscrowState::Released->value,
+                );
+            }
+
+            $requestHash = $this->hashPayload([
+                'escrow_account_id' => $escrow->id,
+                'dispute_case_id' => $command->disputeCaseId,
+                'buyer_refund' => $command->buyerRefundAmount,
+                'seller_release' => $command->sellerReleaseAmount,
+            ]);
+            $idem = $this->claimEscrowIdempotency('escrow_dispute_settlement', $command->idempotencyKey, $requestHash);
+            if ($idem['replay']) {
+                $escrow->refresh();
+                $event = EscrowEvent::query()
+                    ->where('escrow_account_id', $escrow->id)
+                    ->where('event_type', EscrowEventType::DisputeResolved)
+                    ->where('reference_type', 'dispute_case')
+                    ->where('reference_id', $command->disputeCaseId)
+                    ->orderByDesc('id')
+                    ->first();
+
+                return [
+                    'escrow_account_id' => $escrow->id,
+                    'state' => $escrow->state->value,
+                    'released_amount' => (string) $escrow->released_amount,
+                    'refunded_amount' => (string) $escrow->refunded_amount,
+                    'escrow_event_id' => $event?->id,
+                    'ledger_batch_id' => null,
+                    'idempotent_replay' => true,
+                ];
+            }
+
+            $remaining = $this->remainingEscrowScale($escrow);
+            if ($remaining <= 0) {
+                throw new EscrowReleaseConflictException($escrow->id, 'no_settlable_amount_remaining');
+            }
+
+            $bScale = $this->toScale($command->buyerRefundAmount);
+            $sScale = $this->toScale($command->sellerReleaseAmount);
+            if ($bScale < 0 || $sScale < 0) {
+                throw new EscrowReleaseConflictException($escrow->id, 'invalid_dispute_settlement_amounts');
+            }
+            if ($bScale + $sScale !== $remaining) {
+                throw new EscrowReleaseConflictException($escrow->id, 'dispute_settlement_amounts_must_match_remaining');
+            }
+            if ($bScale === 0 && $sScale === 0) {
+                throw new EscrowReleaseConflictException($escrow->id, 'dispute_settlement_zero');
+            }
+
+            [$buyerWalletId, $sellerWalletId] = $this->resolveEscrowCounterpartyWallets($escrow);
+            $lastBatchId = null;
+            $from = $escrow->state;
+
+            if ($bScale > 0) {
+                $refundEvent = $bScale === $remaining ? LedgerPostingEventName::Refund : LedgerPostingEventName::PartialRefund;
+                $amount = $this->fromScale($bScale);
+                $batch = $this->walletLedgerService->postLedgerBatch(new PostLedgerBatchCommand(
+                    eventName: $refundEvent,
+                    referenceType: 'escrow_account',
+                    referenceId: $escrow->id,
+                    idempotencyKey: $command->idempotencyKey.':ledger:dispute_refund',
+                    entries: [
+                        new LedgerPostingLine(
+                            walletId: $buyerWalletId,
+                            entrySide: WalletLedgerEntrySide::Credit,
+                            entryType: WalletLedgerEntryType::RefundCredit,
+                            amount: $amount,
+                            currency: (string) $escrow->currency,
+                            referenceType: 'dispute_case',
+                            referenceId: $command->disputeCaseId,
+                            counterpartyWalletId: $sellerWalletId,
+                            description: 'escrow_dispute_refund',
+                        ),
+                    ],
+                ));
+                $lastBatchId = (int) $batch['batch_id'];
+            }
+
+            if ($sScale > 0) {
+                $amount = $this->fromScale($sScale);
+                $batch = $this->walletLedgerService->postLedgerBatch(new PostLedgerBatchCommand(
+                    eventName: LedgerPostingEventName::Release,
+                    referenceType: 'escrow_account',
+                    referenceId: $escrow->id,
+                    idempotencyKey: $command->idempotencyKey.':ledger:dispute_release',
+                    entries: [
+                        new LedgerPostingLine(
+                            walletId: $sellerWalletId,
+                            entrySide: WalletLedgerEntrySide::Credit,
+                            entryType: WalletLedgerEntryType::EscrowReleaseCredit,
+                            amount: $amount,
+                            currency: (string) $escrow->currency,
+                            referenceType: 'dispute_case',
+                            referenceId: $command->disputeCaseId,
+                            counterpartyWalletId: $buyerWalletId,
+                            description: 'escrow_dispute_release',
+                        ),
+                    ],
+                ));
+                $lastBatchId = (int) $batch['batch_id'];
+            }
+
+            $escrow->refunded_amount = $this->fromScale($this->toScale((string) $escrow->refunded_amount) + $bScale);
+            $escrow->released_amount = $this->fromScale($this->toScale((string) $escrow->released_amount) + $sScale);
+            $terminal = $sScale > 0 ? EscrowState::Released : EscrowState::Refunded;
+            $this->applyTerminalStateAfterSettlement($escrow, $terminal);
+            $escrow->save();
+            $this->consumeEscrowHoldIfTerminal($escrow);
+
+            $totalAmount = $this->fromScale($bScale + $sScale);
+            $event = EscrowEvent::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'escrow_account_id' => $escrow->id,
+                'event_type' => EscrowEventType::DisputeResolved,
+                'amount' => $totalAmount,
+                'currency' => $escrow->currency,
+                'from_state' => $from->value,
+                'to_state' => $escrow->state->value,
+                'reference_type' => 'dispute_case',
+                'reference_id' => $command->disputeCaseId,
+                'idempotency_key_id' => $idem['idempotency']->id,
+            ]);
+
+            $this->markIdempotencySucceeded($idem['idempotency'], [
+                'escrow_account_id' => $escrow->id,
+                'state' => $escrow->state->value,
+                'escrow_event_id' => $event->id,
+            ]);
+
+            return [
+                'escrow_account_id' => $escrow->id,
+                'state' => $escrow->state->value,
+                'released_amount' => (string) $escrow->released_amount,
+                'refunded_amount' => (string) $escrow->refunded_amount,
+                'escrow_event_id' => $event->id,
+                'ledger_batch_id' => $lastBatchId,
                 'idempotent_replay' => false,
             ];
         });

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Auth\RoleCodes;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\UserRole> $userRoles
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\UserRole> $userRoles
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\UserRole> $assignedUserRoles
  * @property-read \App\Models\SellerProfile|null $sellerProfile
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\KycVerification> $kycVerifications
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Cart> $carts
@@ -70,9 +71,22 @@ class User extends Model
         return $this->hasMany(UserRole::class, 'user_id');
     }
 
-    public function userRoles(): HasMany
+    /**
+     * {@see UserRole} rows where this user recorded {@code assigned_by} (distinct from roles held).
+     */
+    public function assignedUserRoles(): HasMany
     {
         return $this->hasMany(UserRole::class, 'assigned_by');
+    }
+
+    public function hasRoleCode(string $code): bool
+    {
+        return $this->roles()->where('roles.code', $code)->exists();
+    }
+
+    public function isPlatformStaff(): bool
+    {
+        return $this->hasRoleCode(RoleCodes::Admin) || $this->hasRoleCode(RoleCodes::Adjudicator);
     }
 
     public function sellerProfile(): HasOne
