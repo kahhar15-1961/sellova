@@ -1,0 +1,276 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use App\Domain\Commands\Order\MarkOrderPaidCommand;
+use App\Domain\Commands\Order\MarkOrderPendingPaymentCommand;
+use App\Domain\Commands\WalletLedger\CreateWalletIfMissingCommand;
+use App\Domain\Commands\WalletLedger\PostLedgerBatchCommand;
+use App\Domain\Enums\EscrowState;
+use App\Domain\Enums\LedgerPostingEventName;
+use App\Domain\Enums\OrderStatus;
+use App\Domain\Enums\WalletLedgerEntrySide;
+use App\Domain\Enums\WalletLedgerEntryType;
+use App\Domain\Enums\WalletType;
+use App\Domain\Exceptions\InvalidOrderStateTransitionException;
+use App\Domain\Exceptions\OrderValidationFailedException;
+use App\Domain\Value\LedgerPostingLine;
+use App\Models\EscrowAccount;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\PaymentIntent;
+use App\Models\PaymentTransaction;
+use App\Models\SellerProfile;
+use App\Models\User;
+use App\Services\Order\OrderService;
+use App\Services\WalletLedger\WalletLedgerService;
+use Illuminate\Support\Str;
+
+final class OrderServicePaymentOrchestrationTest extends TestCase
+{
+    private OrderService $orders;
+    private WalletLedgerService $wallet;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->wallet = new WalletLedgerService();
+        $this->orders = new OrderService($this->wallet);
+    }
+
+    public function test_mark_pending_payment_transitions_draft_to_pending_payment(): void
+    {
+        [$order] = $this->seedSingleSellerOrder(OrderStatus::Draft, '25.0000');
+        $result = $this->orders->markPendingPayment(new MarkOrderPendingPaymentCommand($order->id));
+        self::assertSame('pending_payment', $result['status']);
+        $order->refresh();
+        self::assertSame(OrderStatus::PendingPayment, $order->status);
+    }
+
+    public function test_mark_paid_creates_escrow_hold_and_sets_order_paid(): void
+    {
+        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '42.0000');
+        $this->fundBuyerWallet($buyerWalletId, $order->id, '200.0000');
+        [$intent, $txn] = $this->seedCapturedPayment($order, '42.0000');
+
+        $result = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        self::assertSame('paid', $result['status']);
+        self::assertSame('held', $result['escrow_state']);
+
+        $order->refresh();
+        self::assertSame(OrderStatus::Paid, $order->status);
+        self::assertNotNull($order->placed_at);
+
+        $escrow = EscrowAccount::query()->where('order_id', $order->id)->firstOrFail();
+        self::assertSame(EscrowState::Held, $escrow->state);
+        self::assertSame('42.0000', (string) $escrow->held_amount);
+    }
+
+    public function test_mark_paid_idempotent_replay(): void
+    {
+        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '15.0000');
+        $this->fundBuyerWallet($buyerWalletId, $order->id, '100.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '15.0000');
+
+        $first = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        $second = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+
+        self::assertFalse($first['idempotent_replay']);
+        self::assertTrue($second['idempotent_replay']);
+        self::assertSame((int) $first['escrow_account_id'], (int) $second['escrow_account_id']);
+    }
+
+    public function test_mark_paid_rejects_multi_seller(): void
+    {
+        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '30.0000');
+        $sellerBUser = User::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'email' => 'seller-b-'.Str::random(8).'@example.test',
+            'password_hash' => 'hash',
+        ]);
+        $sellerB = SellerProfile::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $sellerBUser->id,
+            'display_name' => 'Seller B',
+            'country_code' => 'US',
+            'default_currency' => 'USD',
+        ]);
+        $this->wallet->createWalletIfMissing(new CreateWalletIfMissingCommand(
+            userId: $sellerBUser->id,
+            walletType: WalletType::Seller,
+            currency: 'USD',
+        ));
+
+        OrderItem::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_id' => $order->id,
+            'seller_profile_id' => $sellerB->id,
+            'product_type_snapshot' => 'physical',
+            'title_snapshot' => 'Second line',
+            'sku_snapshot' => 'SKU-B',
+            'quantity' => 1,
+            'unit_price_snapshot' => '10.0000',
+            'line_total_snapshot' => '10.0000',
+            'commission_rule_snapshot_json' => [],
+            'delivery_state' => 'not_started',
+        ]);
+
+        $this->fundBuyerWallet($buyerWalletId, $order->id, '200.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '30.0000');
+
+        $this->expectException(OrderValidationFailedException::class);
+        try {
+            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        } catch (OrderValidationFailedException $e) {
+            self::assertSame('multi_seller_escrow_not_supported', $e->reasonCode);
+            throw $e;
+        }
+    }
+
+    public function test_mark_paid_from_draft_throws_invalid_transition(): void
+    {
+        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::Draft, '20.0000');
+        $this->fundBuyerWallet($buyerWalletId, $order->id, '100.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '20.0000');
+
+        $this->expectException(InvalidOrderStateTransitionException::class);
+        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+    }
+
+    public function test_mark_paid_insufficient_buyer_balance_maps_to_order_validation(): void
+    {
+        [$order, $buyerWalletId] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '99.0000');
+        $this->fundBuyerWallet($buyerWalletId, $order->id, '10.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '99.0000');
+
+        $this->expectException(OrderValidationFailedException::class);
+        try {
+            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        } catch (OrderValidationFailedException $e) {
+            self::assertSame('buyer_wallet_insufficient_for_escrow_hold', $e->reasonCode);
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array{0: Order, 1: int, 2: SellerProfile}
+     */
+    private function seedSingleSellerOrder(OrderStatus $initialStatus, string $netAmount): array
+    {
+        $buyer = User::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'email' => 'buyer-'.Str::random(8).'@example.test',
+            'password_hash' => 'hash',
+        ]);
+        $sellerUser = User::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'email' => 'seller-'.Str::random(8).'@example.test',
+            'password_hash' => 'hash',
+        ]);
+
+        $seller = SellerProfile::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $sellerUser->id,
+            'display_name' => 'Seller',
+            'country_code' => 'US',
+            'default_currency' => 'USD',
+        ]);
+
+        $order = Order::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_number' => 'ORD-'.Str::upper(Str::random(10)),
+            'buyer_user_id' => $buyer->id,
+            'status' => $initialStatus,
+            'currency' => 'USD',
+            'gross_amount' => $netAmount,
+            'discount_amount' => '0.0000',
+            'fee_amount' => '0.0000',
+            'net_amount' => $netAmount,
+            'placed_at' => null,
+        ]);
+
+        OrderItem::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_id' => $order->id,
+            'seller_profile_id' => $seller->id,
+            'product_type_snapshot' => 'physical',
+            'title_snapshot' => 'Item',
+            'sku_snapshot' => 'SKU-'.Str::upper(Str::random(6)),
+            'quantity' => 1,
+            'unit_price_snapshot' => $netAmount,
+            'line_total_snapshot' => $netAmount,
+            'commission_rule_snapshot_json' => [],
+            'delivery_state' => 'not_started',
+        ]);
+
+        $buyerWalletId = (int) $this->wallet->createWalletIfMissing(new CreateWalletIfMissingCommand(
+            userId: $buyer->id,
+            walletType: WalletType::Buyer,
+            currency: 'USD',
+        ))['wallet_id'];
+
+        $this->wallet->createWalletIfMissing(new CreateWalletIfMissingCommand(
+            userId: $sellerUser->id,
+            walletType: WalletType::Seller,
+            currency: 'USD',
+        ));
+
+        return [$order, $buyerWalletId, $seller];
+    }
+
+    private function fundBuyerWallet(int $buyerWalletId, int $orderId, string $amount): void
+    {
+        $this->wallet->postLedgerBatch(new PostLedgerBatchCommand(
+            eventName: LedgerPostingEventName::Deposit,
+            referenceType: 'seed',
+            referenceId: $orderId,
+            idempotencyKey: 'seed-buyer-'.$orderId.'-'.Str::random(6),
+            entries: [
+                new LedgerPostingLine(
+                    walletId: $buyerWalletId,
+                    entrySide: WalletLedgerEntrySide::Credit,
+                    entryType: WalletLedgerEntryType::DepositCredit,
+                    amount: $amount,
+                    currency: 'USD',
+                    referenceType: 'seed',
+                    referenceId: $orderId,
+                    counterpartyWalletId: null,
+                    description: 'seed_buyer',
+                ),
+            ],
+        ));
+    }
+
+    /**
+     * @return array{0: PaymentIntent, 1: PaymentTransaction}
+     */
+    private function seedCapturedPayment(Order $order, string $amount): array
+    {
+        $intent = PaymentIntent::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_id' => $order->id,
+            'provider' => 'test',
+            'provider_intent_ref' => 'pi_'.Str::random(12),
+            'status' => 'captured',
+            'amount' => $amount,
+            'currency' => (string) $order->currency,
+            'expires_at' => null,
+        ]);
+
+        $txn = PaymentTransaction::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'payment_intent_id' => $intent->id,
+            'order_id' => $order->id,
+            'provider_txn_ref' => 'txn_'.Str::random(12),
+            'txn_type' => 'capture',
+            'status' => 'success',
+            'amount' => $amount,
+            'raw_payload_json' => [],
+            'processed_at' => now(),
+        ]);
+
+        return [$intent, $txn];
+    }
+}

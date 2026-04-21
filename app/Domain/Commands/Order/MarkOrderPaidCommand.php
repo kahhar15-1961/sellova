@@ -10,6 +10,8 @@ final readonly class MarkOrderPaidCommand
     public function __construct(
         public int $orderId,
         public int $paymentTransactionId,
+        public ?string $correlationId = null,
+        public ?int $actorUserId = null,
     ) {
     }
 }

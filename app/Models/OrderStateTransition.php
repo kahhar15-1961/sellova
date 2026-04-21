@@ -25,6 +25,8 @@ class OrderStateTransition extends Model
 {
     use TransactionSensitive;
 
+    public $timestamps = false;
+
     protected $table = 'order_state_transitions';
 
     protected $fillable = [
