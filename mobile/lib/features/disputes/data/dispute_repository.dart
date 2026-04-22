@@ -6,6 +6,62 @@ class DisputeDto {
   const DisputeDto(this.raw);
   final Map<String, dynamic> raw;
   // TODO: tighten dispute fields once payload schema is fully frozen.
+
+  int? get id => (raw['id'] as num?)?.toInt() ?? (raw['dispute_case_id'] as num?)?.toInt();
+
+  int? get orderId => (raw['order_id'] as num?)?.toInt();
+
+  String get status => (raw['status'] ?? raw['state'] ?? 'unknown').toString();
+
+  String get summary {
+    final reason = raw['reason_code'] ?? raw['reason'] ?? raw['summary'] ?? raw['description'];
+    if (reason == null || reason.toString().isEmpty) {
+      return 'No reason summary';
+    }
+    return reason.toString();
+  }
+
+  DateTime? get createdAt {
+    final rawValue = raw['created_at'] ?? raw['createdAt'];
+    if (rawValue is String && rawValue.isNotEmpty) {
+      return DateTime.tryParse(rawValue);
+    }
+    return null;
+  }
+
+  String get createdDateLabel {
+    final date = createdAt;
+    if (date == null) {
+      return 'Date unavailable';
+    }
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  List<Map<String, dynamic>> get timeline {
+    final rawTimeline = raw['timeline'] ?? raw['events'] ?? raw['status_history'];
+    if (rawTimeline is List) {
+      return rawTimeline.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  List<Map<String, dynamic>> get evidence {
+    final rawEvidence = raw['evidence'] ?? raw['evidence_items'];
+    if (rawEvidence is List) {
+      return rawEvidence.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  String get outcome {
+    final value = raw['resolution_outcome'] ?? raw['decision'] ?? raw['final_outcome'];
+    if (value == null || value.toString().isEmpty) {
+      return 'Outcome unavailable';
+    }
+    return value.toString();
+  }
 }
 
 class DisputeRepository {

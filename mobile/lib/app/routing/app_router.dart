@@ -5,11 +5,15 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/application/auth_session_controller.dart';
 import '../../features/auth/presentation/sign_in_gate_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/disputes/presentation/dispute_detail_screen.dart';
+import '../../features/disputes/presentation/dispute_list_screen.dart';
 import '../../features/orders/presentation/order_detail_screen.dart';
 import '../../features/orders/presentation/order_list_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/product_list_screen.dart';
 import '../../features/shell/presentation/app_shell_screen.dart';
+import '../../features/withdrawals/presentation/withdrawal_detail_screen.dart';
+import '../../features/withdrawals/presentation/withdrawal_list_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authSessionControllerProvider);
@@ -35,6 +39,38 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/orders',
             builder: (_, __) => const OrderListScreen(),
+          ),
+          GoRoute(
+            path: '/disputes',
+            builder: (_, __) => const DisputeListScreen(),
+          ),
+          GoRoute(
+            path: '/withdrawals',
+            builder: (_, __) => const WithdrawalListScreen(),
+          ),
+          GoRoute(
+            path: '/withdrawals/:withdrawalId',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['withdrawalId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                  body: Center(child: Text('Invalid withdrawal ID')),
+                );
+              }
+              return WithdrawalDetailScreen(withdrawalId: id);
+            },
+          ),
+          GoRoute(
+            path: '/disputes/:disputeId',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['disputeId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                  body: Center(child: Text('Invalid dispute ID')),
+                );
+              }
+              return DisputeDetailScreen(disputeId: id);
+            },
           ),
           GoRoute(
             path: '/orders/:orderId',

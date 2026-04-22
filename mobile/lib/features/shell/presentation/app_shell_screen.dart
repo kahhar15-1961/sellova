@@ -28,6 +28,16 @@ class AppShellScreen extends ConsumerWidget {
             onPressed: () => context.go('/orders'),
             icon: const Icon(Icons.receipt_long_outlined),
           ),
+          IconButton(
+            tooltip: 'Disputes',
+            onPressed: () => context.go('/disputes'),
+            icon: const Icon(Icons.gavel_outlined),
+          ),
+          IconButton(
+            tooltip: 'Withdrawals',
+            onPressed: () => context.go('/withdrawals'),
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
           TextButton(
             onPressed: () => ref.read(authSessionControllerProvider.notifier).logout(),
             child: const Text('Logout'),
