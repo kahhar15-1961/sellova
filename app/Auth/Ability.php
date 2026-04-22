@@ -9,6 +9,12 @@ final class Ability
 {
     public const OrderView = 'order.view';
 
+    /** Buyer or platform staff only (not line-item sellers). */
+    public const OrderMarkPendingPayment = 'order.markPendingPayment';
+
+    /** Buyer or platform staff only (not line-item sellers). */
+    public const OrderMarkPaid = 'order.markPaid';
+
     public const OrderOpenDispute = 'order.openDispute';
 
     public const EscrowView = 'escrow.view';

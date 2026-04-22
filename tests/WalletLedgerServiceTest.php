@@ -23,11 +23,15 @@ use App\Domain\Exceptions\WalletNotFoundException;
 use App\Domain\Value\LedgerPostingLine;
 use App\Models\IdempotencyKey;
 use App\Models\Wallet;
+use App\Models\WalletBalanceSnapshot;
 use App\Models\WalletHold;
 use App\Models\WalletLedgerBatch;
 use App\Models\WalletLedgerEntry;
+use App\Models\User;
 use App\Services\WalletLedger\WalletLedgerService;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 final class WalletLedgerServiceTest extends TestCase
 {
@@ -281,6 +285,46 @@ final class WalletLedgerServiceTest extends TestCase
         $balance = $this->svc->computeWalletBalances(new \App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand($walletId));
         self::assertSame('-2.0000', (string) $balance['available_balance']);
         self::assertSame('0.0000', (string) $balance['held_balance']);
+    }
+
+    public function test_compute_wallet_balances_avoids_same_wallet_same_as_of_collision(): void
+    {
+        $user = User::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'email' => 'wallet-collision-'.bin2hex(random_bytes(4)).'@example.test',
+            'password_hash' => password_hash('secret1234', PASSWORD_DEFAULT),
+            'status' => 'active',
+            'risk_level' => 'low',
+        ]);
+        $walletId = $this->createWallet(userId: (int) $user->id, type: WalletType::Buyer, currency: 'USD');
+        $this->svc->postLedgerBatch(PostLedgerBatchCommand::fromLines(
+            LedgerPostingEventName::Deposit,
+            'seed',
+            407,
+            'idem-seed-collision-'.Str::random(8),
+            new LedgerPostingLine(
+                $walletId,
+                WalletLedgerEntrySide::Credit,
+                WalletLedgerEntryType::DepositCredit,
+                '5.0000',
+                'USD',
+                'seed',
+                407,
+                null,
+                null
+            ),
+        ));
+
+        Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00.000000'));
+        try {
+            $first = $this->svc->computeWalletBalances(new \App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand($walletId));
+            $second = $this->svc->computeWalletBalances(new \App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand($walletId));
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        self::assertNotSame((string) $first['as_of'], (string) $second['as_of']);
+        self::assertSame(2, WalletBalanceSnapshot::query()->where('wallet_id', $walletId)->count());
     }
 
     public function test_invariant_invalid_ledger_operation_event_entry_mismatch_rolls_back(): void

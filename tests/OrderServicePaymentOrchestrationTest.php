@@ -11,6 +11,7 @@ use App\Domain\Enums\EscrowState;
 use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\OrderStatus;
 use App\Domain\Enums\WalletType;
+use App\Domain\Exceptions\DomainAuthorizationDeniedException;
 use App\Domain\Exceptions\InvalidOrderStateTransitionException;
 use App\Domain\Exceptions\OrderValidationFailedException;
 use App\Models\EscrowAccount;
@@ -40,7 +41,10 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
     public function test_mark_pending_payment_transitions_draft_to_pending_payment(): void
     {
         [$order] = $this->seedSingleSellerOrder(OrderStatus::Draft, '25.0000');
-        $result = $this->orders->markPendingPayment(new MarkOrderPendingPaymentCommand($order->id));
+        $result = $this->orders->markPendingPayment(new MarkOrderPendingPaymentCommand(
+            orderId: $order->id,
+            actorUserId: (int) $order->buyer_user_id,
+        ));
         self::assertSame('pending_payment', $result['status']);
         $order->refresh();
         self::assertSame(OrderStatus::PendingPayment, $order->status);
@@ -51,7 +55,11 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '42.0000');
         [, $txn] = $this->seedCapturedPayment($order, '42.0000');
 
-        $result = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        $result = $this->orders->markPaid(new MarkOrderPaidCommand(
+            orderId: $order->id,
+            paymentTransactionId: $txn->id,
+            actorUserId: (int) $order->buyer_user_id,
+        ));
         self::assertSame('paid_in_escrow', $result['status']);
         self::assertSame('held', $result['escrow_state']);
 
@@ -77,8 +85,9 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '15.0000');
         [, $txn] = $this->seedCapturedPayment($order, '15.0000');
 
-        $first = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
-        $second = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        $buyerId = (int) $order->buyer_user_id;
+        $first = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id, null, $buyerId));
+        $second = $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id, null, $buyerId));
 
         self::assertFalse($first['idempotent_replay']);
         self::assertTrue($second['idempotent_replay']);
@@ -89,13 +98,14 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
     {
         [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '18.0000');
         [, $txn1] = $this->seedCapturedPayment($order, '18.0000');
-        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn1->id));
+        $buyerId = (int) $order->buyer_user_id;
+        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn1->id, null, $buyerId));
 
         [, $txn2] = $this->seedCapturedPayment($order, '18.0000');
 
         $this->expectException(OrderValidationFailedException::class);
         try {
-            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn2->id));
+            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn2->id, null, $buyerId));
         } catch (OrderValidationFailedException $e) {
             self::assertSame('order_already_paid_in_escrow', $e->reasonCode);
             throw $e;
@@ -141,7 +151,7 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
 
         $this->expectException(OrderValidationFailedException::class);
         try {
-            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+            $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id, null, (int) $order->buyer_user_id));
         } catch (OrderValidationFailedException $e) {
             self::assertSame('multi_seller_escrow_not_supported', $e->reasonCode);
             throw $e;
@@ -154,7 +164,33 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         [, $txn] = $this->seedCapturedPayment($order, '20.0000');
 
         $this->expectException(InvalidOrderStateTransitionException::class);
-        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id));
+        $this->orders->markPaid(new MarkOrderPaidCommand($order->id, $txn->id, null, (int) $order->buyer_user_id));
+    }
+
+    public function test_mark_pending_payment_denied_for_seller_actor(): void
+    {
+        [$order, , $sellerProfile] = $this->seedSingleSellerOrder(OrderStatus::Draft, '11.0000');
+        $sellerUserId = (int) $sellerProfile->user_id;
+
+        $this->expectException(DomainAuthorizationDeniedException::class);
+        $this->orders->markPendingPayment(new MarkOrderPendingPaymentCommand(
+            orderId: $order->id,
+            actorUserId: $sellerUserId,
+        ));
+    }
+
+    public function test_mark_paid_denied_for_seller_actor(): void
+    {
+        [$order, , $sellerProfile] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '12.0000');
+        [, $txn] = $this->seedCapturedPayment($order, '12.0000');
+        $sellerUserId = (int) $sellerProfile->user_id;
+
+        $this->expectException(DomainAuthorizationDeniedException::class);
+        $this->orders->markPaid(new MarkOrderPaidCommand(
+            orderId: $order->id,
+            paymentTransactionId: $txn->id,
+            actorUserId: $sellerUserId,
+        ));
     }
 
     public function test_resolve_buyer_and_seller_wallet_ids(): void

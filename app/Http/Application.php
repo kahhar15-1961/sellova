@@ -7,8 +7,11 @@ namespace App\Http;
 use App\Auth\DomainGate;
 use App\Http\Auth\AuthenticationRequiredException;
 use App\Models\User;
+use App\Services\Auth\AuthService;
 use App\Services\Dispute\DisputeService;
 use App\Services\Order\OrderService;
+use App\Services\Product\ProductService;
+use App\Services\UserSeller\UserSellerService;
 use App\Services\Withdrawal\WithdrawalService;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -19,6 +22,12 @@ final class Application
     private ?WithdrawalService $withdrawalService = null;
 
     private ?DisputeService $disputeService = null;
+
+    private ?AuthService $authService = null;
+
+    private ?UserSellerService $userSellerService = null;
+
+    private ?ProductService $productService = null;
 
     private ?DomainGate $domainGate = null;
 
@@ -35,6 +44,21 @@ final class Application
     public function disputeService(): DisputeService
     {
         return $this->disputeService ??= new DisputeService();
+    }
+
+    public function authService(): AuthService
+    {
+        return $this->authService ??= new AuthService();
+    }
+
+    public function userSellerService(): UserSellerService
+    {
+        return $this->userSellerService ??= new UserSellerService();
+    }
+
+    public function productService(): ProductService
+    {
+        return $this->productService ??= new ProductService();
     }
 
     public function domainGate(): DomainGate

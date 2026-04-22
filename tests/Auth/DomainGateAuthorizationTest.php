@@ -53,6 +53,28 @@ final class DomainGateAuthorizationTest extends TestCase
         self::assertFalse($this->gate->allows(Ability::OrderOpenDispute, $buyer, $order));
     }
 
+    public function test_payment_mutation_abilities_allow_buyer_and_admin_not_seller(): void
+    {
+        [$buyer, $sellerUser, $order] = $this->seedOrderWithParticipants();
+        $order->status = OrderStatus::Draft;
+        $order->save();
+
+        self::assertTrue($this->gate->allows(Ability::OrderMarkPendingPayment, $buyer, $order));
+        self::assertFalse($this->gate->allows(Ability::OrderMarkPendingPayment, $sellerUser, $order));
+        self::assertTrue($this->gate->allows(Ability::OrderMarkPaid, $buyer, $order));
+        self::assertFalse($this->gate->allows(Ability::OrderMarkPaid, $sellerUser, $order));
+
+        $admin = $this->makeUser('admin-pay-mut');
+        $this->assignRole($admin, RoleCodes::Admin);
+        self::assertTrue($this->gate->allows(Ability::OrderMarkPendingPayment, $admin, $order));
+        self::assertTrue($this->gate->allows(Ability::OrderMarkPaid, $admin, $order));
+
+        $order->status = OrderStatus::PendingPayment;
+        $order->save();
+        self::assertTrue($this->gate->allows(Ability::OrderMarkPaid, $buyer, $order));
+        self::assertFalse($this->gate->allows(Ability::OrderMarkPaid, $sellerUser, $order));
+    }
+
     public function test_seller_cannot_resolve_dispute_even_when_on_order(): void
     {
         [$buyer, $sellerUser, $order] = $this->seedOrderWithParticipants();

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Capsule\Manager as Capsule;
 
 final class DatabaseSchema
 {
@@ -16,7 +16,7 @@ final class DatabaseSchema
         }
 
         foreach (self::splitSqlStatements($sql) as $statement) {
-            \Illuminate\Support\Facades\DB::unprepared($statement);
+            Capsule::connection()->unprepared($statement);
         }
     }
 
@@ -31,11 +31,31 @@ final class DatabaseSchema
         $buffer = '';
         $inSingle = false;
         $inDouble = false;
+        $inLineComment = false;
         $len = strlen($sql);
 
         for ($i = 0; $i < $len; $i++) {
             $ch = $sql[$i];
             $prev = $i > 0 ? $sql[$i - 1] : '';
+            $next = $i + 1 < $len ? $sql[$i + 1] : '';
+
+            if ($inLineComment) {
+                $buffer .= $ch;
+                if ($ch === "\n" || ($ch === "\r" && $next !== "\n")) {
+                    $inLineComment = false;
+                }
+
+                continue;
+            }
+
+            if (! $inSingle && ! $inDouble && $ch === '-' && $next === '-') {
+                $buffer .= '-';
+                $buffer .= $next;
+                $inLineComment = true;
+                $i++;
+
+                continue;
+            }
 
             if ($ch === "'" && $prev !== '\\' && ! $inDouble) {
                 $inSingle = ! $inSingle;
@@ -59,8 +79,23 @@ final class DatabaseSchema
         }
 
         return array_values(array_filter($statements, static function (string $stmt): bool {
-            $clean = ltrim($stmt);
-            return $clean !== '' && ! str_starts_with($clean, '--');
+            $trimmed = trim($stmt);
+            if ($trimmed === '') {
+                return false;
+            }
+            // Keep statements that contain real SQL even if they start with full-line `--` comments
+            // (CANONICAL_SCHEMA groups comments immediately before some CREATE blocks).
+            foreach (preg_split("/\R/u", $trimmed) as $line) {
+                $t = trim($line);
+                if ($t === '') {
+                    continue;
+                }
+                if (! str_starts_with($t, '--')) {
+                    return true;
+                }
+            }
+
+            return false;
         }));
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Auth\Ability;
+use App\Domain\Queries\Disputes\DisputeListQuery;
 use App\Http\Application;
 use App\Http\Requests\V1\DisputeResolveRefundFormRequest;
 use App\Http\Requests\V1\DisputeResolveReleaseFormRequest;
@@ -15,8 +16,8 @@ use App\Http\Requests\V1\OpenDisputeRequest;
 use App\Http\Requests\V1\SubmitDisputeEvidenceRequest;
 use App\Http\Resources\DisputeCaseResource;
 use App\Http\Responses\ApiEnvelope;
-use App\Models\DisputeCase;
-use App\Models\Order;
+use App\Http\Support\AggregateHttpLookup;
+use App\Http\Support\RequestPagination;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -30,10 +31,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeView, $actor, $case);
 
@@ -44,10 +42,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $orderId = (int) $request->attributes->get('orderId');
-        $order = Order::query()->find($orderId);
-        if ($order === null) {
-            return ApiEnvelope::error('not_found', 'Order not found.', Response::HTTP_NOT_FOUND);
-        }
+        $order = AggregateHttpLookup::order($orderId);
 
         $this->app->domainGate()->authorize(Ability::OrderOpenDispute, $actor, $order);
 
@@ -61,10 +56,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeSubmitEvidence, $actor, $case);
 
@@ -78,10 +70,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeMoveToReview, $actor, $case);
 
@@ -95,10 +84,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeEscalate, $actor, $case);
 
@@ -112,10 +98,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeResolve, $actor, $case);
 
@@ -137,10 +120,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeResolve, $actor, $case);
 
@@ -162,10 +142,7 @@ final class DisputeController
     {
         $actor = $this->app->requireActor($request);
         $disputeCaseId = (int) $request->attributes->get('disputeCaseId');
-        $case = DisputeCase::query()->find($disputeCaseId);
-        if ($case === null) {
-            return ApiEnvelope::error('not_found', 'Dispute case not found.', Response::HTTP_NOT_FOUND);
-        }
+        $case = AggregateHttpLookup::disputeCase($disputeCaseId);
 
         $this->app->domainGate()->authorize(Ability::DisputeResolve, $actor, $case);
 
@@ -186,8 +163,15 @@ final class DisputeController
 
     public function index(Request $request): Response
     {
-        $this->app->requireActor($request);
+        $actor = $this->app->requireActor($request);
+        $p = RequestPagination::pageAndPerPage($request);
+        $result = $this->app->disputeService()->listDisputeCases(new DisputeListQuery(
+            viewerUserId: (int) $actor->id,
+            viewerIsPlatformStaff: $actor->isPlatformStaff(),
+            page: $p['page'],
+            perPage: $p['per_page'],
+        ));
 
-        return ApiEnvelope::notImplemented('disputes', 'listDisputes');
+        return ApiEnvelope::paginated($result['items'], $result['page'], $result['per_page'], $result['total']);
     }
 }

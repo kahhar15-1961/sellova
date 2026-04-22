@@ -36,6 +36,7 @@ class OrderStateTransition extends Model
         'reason_code',
         'actor_user_id',
         'correlation_id',
+        'created_at',
     ];
 
     protected $casts = [

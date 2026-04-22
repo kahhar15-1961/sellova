@@ -42,6 +42,18 @@ final class ExceptionMapperTest extends TestCase
         self::assertSame(Response::HTTP_NOT_FOUND, $r->getStatusCode());
     }
 
+    public function test_maps_order_actor_user_not_found_to_404(): void
+    {
+        $r = ExceptionToHttpMapper::map(new OrderValidationFailedException(3, 'actor_user_not_found', ['actor_user_id' => 99]));
+        self::assertSame(Response::HTTP_NOT_FOUND, $r->getStatusCode());
+    }
+
+    public function test_maps_payment_mutation_actor_required_to_422(): void
+    {
+        $r = ExceptionToHttpMapper::map(new OrderValidationFailedException(3, 'payment_mutation_actor_required', []));
+        self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $r->getStatusCode());
+    }
+
     public function test_maps_idempotency_conflict_to_409(): void
     {
         $r = ExceptionToHttpMapper::map(new IdempotencyConflictException('k', 'scope'));

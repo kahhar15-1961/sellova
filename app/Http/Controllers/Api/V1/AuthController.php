@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Commands\Auth\LoginCommand;
+use App\Domain\Commands\Auth\LogoutCommand;
+use App\Domain\Commands\Auth\RefreshTokenCommand;
+use App\Domain\Commands\Auth\RegisterBuyerCommand;
+use App\Domain\Commands\Auth\RegisterSellerCommand;
 use App\Http\Application;
 use App\Http\Requests\V1\LoginRequest;
 use App\Http\Requests\V1\RefreshSessionRequest;
@@ -20,29 +25,59 @@ final class AuthController
 
     public function register(Request $request): Response
     {
-        RegisterRequest::payload($request);
+        $payload = RegisterRequest::payload($request);
+        if ($payload['account_type'] === 'buyer') {
+            $result = $this->app->authService()->registerBuyer(new RegisterBuyerCommand(
+                email: $payload['email'],
+                phone: $payload['phone'],
+                passwordPlain: $payload['password'],
+                displayName: $payload['display_name'],
+                countryCode: $payload['country_code'],
+                defaultCurrency: $payload['default_currency'],
+            ));
+        } else {
+            $result = $this->app->authService()->registerSeller(new RegisterSellerCommand(
+                email: $payload['email'],
+                phone: $payload['phone'],
+                passwordPlain: $payload['password'],
+                displayName: $payload['display_name'],
+                legalName: (string) $payload['legal_name'],
+                countryCode: $payload['country_code'],
+                defaultCurrency: $payload['default_currency'],
+            ));
+        }
 
-        return ApiEnvelope::notImplemented('auth', 'register');
+        return ApiEnvelope::data($result, Response::HTTP_CREATED);
     }
 
     public function login(Request $request): Response
     {
-        LoginRequest::credentials($request);
+        $creds = LoginRequest::credentials($request);
+        $device = $creds['device_name'] !== '' ? $creds['device_name'] : null;
+        $command = new LoginCommand(
+            email: $creds['email'] !== '' ? $creds['email'] : null,
+            phone: $creds['phone'] !== '' ? $creds['phone'] : null,
+            passwordPlain: $creds['password'],
+            deviceName: $device,
+        );
+        $result = $this->app->authService()->login($command);
 
-        return ApiEnvelope::notImplemented('auth', 'login');
+        return ApiEnvelope::data($result);
     }
 
     public function logout(Request $request): Response
     {
-        $this->app->requireActor($request);
+        $actor = $this->app->requireActor($request);
+        $this->app->authService()->logout(new LogoutCommand((int) $actor->id));
 
-        return ApiEnvelope::notImplemented('auth', 'logout');
+        return ApiEnvelope::data(['ok' => true]);
     }
 
     public function refresh(Request $request): Response
     {
-        RefreshSessionRequest::token($request);
+        $token = RefreshSessionRequest::token($request);
+        $result = $this->app->authService()->refreshToken(new RefreshTokenCommand($token));
 
-        return ApiEnvelope::notImplemented('auth', 'refresh');
+        return ApiEnvelope::data($result);
     }
 }

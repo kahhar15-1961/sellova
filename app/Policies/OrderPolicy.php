@@ -32,4 +32,29 @@ final class OrderPolicy
 
         return $order->status === OrderStatus::PaidInEscrow;
     }
+
+    /**
+     * Draft → pending_payment: only the buyer or platform staff may advance checkout payment state.
+     */
+    public function markPendingPayment(User $actor, Order $order): bool
+    {
+        return $this->buyerOrStaffMayDrivePaymentMutation($actor, $order);
+    }
+
+    /**
+     * Pending payment → paid_in_escrow: only the buyer or platform staff may apply captured payment.
+     */
+    public function markPaid(User $actor, Order $order): bool
+    {
+        return $this->buyerOrStaffMayDrivePaymentMutation($actor, $order);
+    }
+
+    private function buyerOrStaffMayDrivePaymentMutation(User $actor, Order $order): bool
+    {
+        if ($actor->isPlatformStaff()) {
+            return true;
+        }
+
+        return OrderParticipant::isBuyer($actor, $order);
+    }
 }

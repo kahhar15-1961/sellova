@@ -162,13 +162,17 @@ class EscrowService
                 currency: (string) $escrow->currency,
             );
 
-            $this->walletLedgerService->placeHold(new PlaceWalletHoldCommand(
+            $hold = $this->walletLedgerService->placeHold(new PlaceWalletHoldCommand(
                 walletId: $buyerWalletId,
                 holdType: WalletHoldType::Escrow,
                 referenceType: 'escrow_account',
                 referenceId: $escrow->id,
                 amount: (string) $escrow->held_amount,
             ));
+
+            // Escrow hold is represented in the append-only ledger as EscrowHoldDebit.
+            // Consume the reservation first so availability is not counted twice.
+            $this->consumeEscrowHoldReservation((int) $hold['wallet_hold_id']);
 
             $this->walletLedgerService->postLedgerBatch(new PostLedgerBatchCommand(
                 eventName: LedgerPostingEventName::EscrowHold,
@@ -724,6 +728,25 @@ class EscrowService
             $hold->status = WalletHoldStatus::Consumed;
             $hold->save();
         }
+    }
+
+    private function consumeEscrowHoldReservation(int $walletHoldId): void
+    {
+        $hold = \App\Models\WalletHold::query()
+            ->whereKey($walletHoldId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($hold === null) {
+            throw new InvalidLedgerOperationException('escrow_hold_missing_for_ledger_debit');
+        }
+
+        if ($hold->status !== WalletHoldStatus::Active) {
+            throw new InvalidLedgerOperationException('escrow_hold_not_active_for_ledger_debit');
+        }
+
+        $hold->status = WalletHoldStatus::Consumed;
+        $hold->save();
     }
 
     /**

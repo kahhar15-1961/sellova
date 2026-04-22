@@ -3,7 +3,7 @@
         'name' => 'sellova/domain',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => 'a29e254811f04015371dd5e1de77ccd36b3df355',
+        'reference' => 'd214eb3fc5a6b15dc2b2afad7ea07e4c9efa7683',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -274,6 +274,30 @@
             'aliases' => array(),
             'dev_requirement' => false,
         ),
+        'ramsey/collection' => array(
+            'pretty_version' => '2.1.1',
+            'version' => '2.1.1.0',
+            'reference' => '344572933ad0181accbf4ba763e85a0306a8c5e2',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../ramsey/collection',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'ramsey/uuid' => array(
+            'pretty_version' => '4.9.2',
+            'version' => '4.9.2.0',
+            'reference' => '8429c78ca35a09f27565311b98101e2826affde0',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../ramsey/uuid',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'rhumsaa/uuid' => array(
+            'dev_requirement' => false,
+            'replaced' => array(
+                0 => '4.9.2',
+            ),
+        ),
         'sebastian/cli-parser' => array(
             'pretty_version' => '2.0.1',
             'version' => '2.0.1.0',
@@ -412,7 +436,7 @@
         'sellova/domain' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => 'a29e254811f04015371dd5e1de77ccd36b3df355',
+            'reference' => 'd214eb3fc5a6b15dc2b2afad7ea07e4c9efa7683',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

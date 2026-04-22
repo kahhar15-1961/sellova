@@ -131,7 +131,7 @@ final class ApiRouteRegistrar
         $c = new ProductController($app);
         $routes->add('api.v1.products.index', new Route(
             '/api/v1/products',
-            ['_controller' => $c->index(...), '_auth' => true],
+            ['_controller' => $c->index(...), '_auth' => false],
             [],
             [],
             '',
@@ -147,9 +147,18 @@ final class ApiRouteRegistrar
             [],
             ['POST'],
         ));
+        $routes->add('api.v1.products.search', new Route(
+            '/api/v1/products/search',
+            ['_controller' => $c->search(...), '_auth' => false],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
         $routes->add('api.v1.products.show', new Route(
             '/api/v1/products/{productId}',
-            ['_controller' => $c->show(...), '_auth' => true],
+            ['_controller' => $c->show(...), '_auth' => false],
             ['productId' => '\d+'],
             [],
             '',

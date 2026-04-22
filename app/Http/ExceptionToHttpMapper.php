@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Domain\Exceptions\AuthValidationFailedException;
 use App\Domain\Exceptions\DisputeResolutionConflictException;
 use App\Domain\Exceptions\DomainAuthorizationDeniedException;
 use App\Domain\Exceptions\DomainException;
@@ -122,13 +123,34 @@ final class ExceptionToHttpMapper
             ], $status);
         }
 
-        if ($e instanceof ProductValidationFailedException) {
+        if ($e instanceof AuthValidationFailedException) {
+            $status = self::authValidationStatus($e);
+            $error = match ($e->reasonCode) {
+                'invalid_credentials', 'invalid_refresh_token' => 'unauthenticated',
+                'email_taken', 'phone_taken' => 'conflict',
+                'account_inactive' => 'forbidden',
+                'user_not_found', 'seller_profile_not_found' => 'not_found',
+                default => $status === Response::HTTP_UNAUTHORIZED ? 'unauthenticated' : 'validation_failed',
+            };
+
             return new JsonResponse([
-                'error' => 'validation_failed',
+                'error' => $error,
                 'message' => $e->getMessage(),
                 'reason_code' => $e->reasonCode,
                 'violations' => $e->violations,
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            ], $status);
+        }
+
+        if ($e instanceof ProductValidationFailedException) {
+            $status = self::productValidationStatus($e);
+
+            return new JsonResponse([
+                'error' => $status === Response::HTTP_NOT_FOUND ? 'not_found' : 'validation_failed',
+                'message' => $e->getMessage(),
+                'reason_code' => $e->reasonCode,
+                'product_id' => $e->productId,
+                'violations' => $e->violations,
+            ], $status);
         }
 
         if ($e instanceof DisputeResolutionConflictException) {
@@ -189,7 +211,8 @@ final class ExceptionToHttpMapper
     private static function orderValidationStatus(OrderValidationFailedException $e): int
     {
         return match ($e->reasonCode) {
-            'order_not_found', 'payment_transaction_not_found', 'payment_intent_not_found' => Response::HTTP_NOT_FOUND,
+            'order_not_found', 'payment_transaction_not_found', 'payment_intent_not_found', 'actor_user_not_found' => Response::HTTP_NOT_FOUND,
+            'payment_mutation_actor_required' => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => Response::HTTP_UNPROCESSABLE_ENTITY,
         };
     }
@@ -197,7 +220,7 @@ final class ExceptionToHttpMapper
     private static function withdrawalValidationStatus(WithdrawalValidationFailedException $e): int
     {
         return match ($e->reasonCode) {
-            'withdrawal_request_not_found' => Response::HTTP_NOT_FOUND,
+            'withdrawal_request_not_found', 'seller_profile_not_found' => Response::HTTP_NOT_FOUND,
             default => Response::HTTP_UNPROCESSABLE_ENTITY,
         };
     }
@@ -217,6 +240,25 @@ final class ExceptionToHttpMapper
             Response::HTTP_NOT_FOUND => 'not_found',
             Response::HTTP_CONFLICT => 'conflict',
             default => 'validation_failed',
+        };
+    }
+
+    private static function authValidationStatus(AuthValidationFailedException $e): int
+    {
+        return match ($e->reasonCode) {
+            'invalid_credentials', 'invalid_refresh_token' => Response::HTTP_UNAUTHORIZED,
+            'email_taken', 'phone_taken' => Response::HTTP_CONFLICT,
+            'account_inactive' => Response::HTTP_FORBIDDEN,
+            'user_not_found', 'seller_profile_not_found' => Response::HTTP_NOT_FOUND,
+            default => Response::HTTP_UNPROCESSABLE_ENTITY,
+        };
+    }
+
+    private static function productValidationStatus(ProductValidationFailedException $e): int
+    {
+        return match ($e->reasonCode) {
+            'product_not_found' => Response::HTTP_NOT_FOUND,
+            default => Response::HTTP_UNPROCESSABLE_ENTITY,
         };
     }
 }

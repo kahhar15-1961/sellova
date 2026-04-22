@@ -11,6 +11,7 @@ use App\Domain\Commands\Escrow\MarkEscrowUnderDisputeCommand;
 use App\Domain\Commands\Escrow\SettleEscrowFromDisputeCommand;
 use App\Domain\Commands\Order\ApplyOrderStatusAfterDisputeResolutionCommand;
 use App\Domain\Commands\Order\MarkOrderDisputedCommand;
+use App\Domain\Queries\Disputes\DisputeListQuery;
 use App\Domain\Enums\DisputeCaseStatus;
 use App\Domain\Enums\DisputeResolutionOutcome;
 use App\Domain\Enums\EscrowState;
@@ -55,6 +56,52 @@ class DisputeService
         $ledger = $walletLedgerService ?? new WalletLedgerService();
         $this->escrowService = $escrowService ?? new EscrowService($ledger);
         $this->orderService = $orderService ?? new OrderService($ledger, $this->escrowService);
+    }
+
+    /**
+     * @return array{items: list<array<string, mixed>>, page: int, per_page: int, total: int, last_page: int}
+     */
+    public function listDisputeCases(DisputeListQuery $query): array
+    {
+        $builder = DisputeCase::query()->with(['order'])->orderByDesc('id');
+        if (! $query->viewerIsPlatformStaff) {
+            $uid = $query->viewerUserId;
+            $builder->where(function ($w) use ($uid): void {
+                $w->where('opened_by_user_id', $uid)
+                    ->orWhereHas('order', function ($oq) use ($uid): void {
+                        $oq->where('buyer_user_id', $uid)
+                            ->orWhereHas('orderItems.seller_profile', static function ($sp) use ($uid): void {
+                                $sp->where('user_id', $uid);
+                            });
+                    });
+            });
+        }
+
+        $page = max(1, $query->page);
+        $perPage = min(100, max(1, $query->perPage));
+        $total = (int) $builder->count();
+        $rows = (clone $builder)->forPage($page, $perPage)->get();
+        $items = [];
+        foreach ($rows as $case) {
+            $items[] = [
+                'id' => $case->id,
+                'uuid' => $case->uuid,
+                'order_id' => $case->order_id,
+                'status' => $case->status->value,
+                'opened_by_user_id' => $case->opened_by_user_id,
+                'opened_at' => $case->opened_at?->toIso8601String(),
+                'resolution_outcome' => $case->resolution_outcome?->value,
+            ];
+        }
+        $lastPage = max(1, (int) ceil($total / $perPage));
+
+        return [
+            'items' => $items,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'last_page' => $lastPage,
+        ];
     }
 
     public function openDispute(OpenDisputeCommand $command): array

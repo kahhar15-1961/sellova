@@ -22,6 +22,10 @@ abstract class TestCase extends BaseTestCase
         $this->ensureSchemaApplied();
         $this->truncateAllTables();
         $this->ensureOrdersStatusEnumIncludesPaidInEscrow();
+        $this->ensureProductsStatusEnumIncludesPublished();
+        $this->ensureUserRolesUpdatedAtColumn();
+        $this->ensureEscrowEventsUpdatedAtColumn();
+        $this->ensureWalletBalanceSnapshotsUpdatedAtColumn();
         $this->ensureWithdrawalRequestsIdempotencyKeyColumn();
     }
 
@@ -46,7 +50,8 @@ abstract class TestCase extends BaseTestCase
             'payment_transactions','payment_intents','idempotency_keys','order_state_transitions',
             'order_items','orders','commission_rules','membership_plans','cart_items','carts',
             'inventory_records','product_variants','products','categories','storefronts','kyc_documents',
-            'kyc_verifications','seller_profiles','role_permissions','user_roles','permissions','roles','users',
+            'kyc_verifications','seller_profiles','role_permissions','user_roles','permissions','roles',
+            'user_auth_tokens','users',
         ];
 
         Capsule::connection()->statement('SET FOREIGN_KEY_CHECKS=0');
@@ -75,6 +80,70 @@ abstract class TestCase extends BaseTestCase
             ) NOT NULL");
         } catch (\Throwable) {
             // Definition may already match; ignore.
+        }
+    }
+
+    private function ensureProductsStatusEnumIncludesPublished(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('products')) {
+            return;
+        }
+
+        try {
+            Capsule::connection()->statement("ALTER TABLE products MODIFY COLUMN status ENUM(
+                'draft','active','inactive','archived','published'
+            ) NOT NULL DEFAULT 'draft'");
+        } catch (\Throwable) {
+            // Definition may already match; ignore.
+        }
+    }
+
+    private function ensureUserRolesUpdatedAtColumn(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('user_roles') || $schema->hasColumn('user_roles', 'updated_at')) {
+            return;
+        }
+
+        try {
+            Capsule::connection()->statement(
+                'ALTER TABLE user_roles ADD COLUMN updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) AFTER created_at'
+            );
+        } catch (\Throwable) {
+            // Column may already exist; ignore.
+        }
+    }
+
+    private function ensureEscrowEventsUpdatedAtColumn(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('escrow_events') || $schema->hasColumn('escrow_events', 'updated_at')) {
+            return;
+        }
+
+        try {
+            Capsule::connection()->statement(
+                'ALTER TABLE escrow_events ADD COLUMN updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) AFTER created_at'
+            );
+        } catch (\Throwable) {
+            // Column may already exist; ignore.
+        }
+    }
+
+    private function ensureWalletBalanceSnapshotsUpdatedAtColumn(): void
+    {
+        $schema = Capsule::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('wallet_balance_snapshots') || $schema->hasColumn('wallet_balance_snapshots', 'updated_at')) {
+            return;
+        }
+
+        try {
+            Capsule::connection()->statement(
+                'ALTER TABLE wallet_balance_snapshots ADD COLUMN updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) AFTER created_at'
+            );
+        } catch (\Throwable) {
+            // Column may already exist; ignore.
         }
     }
 

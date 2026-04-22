@@ -13,6 +13,7 @@ use App\Domain\Commands\Withdrawal\RejectWithdrawalCommand;
 use App\Domain\Commands\Withdrawal\RequestWithdrawalCommand;
 use App\Domain\Commands\Withdrawal\ReviewWithdrawalCommand;
 use App\Domain\Commands\Withdrawal\SubmitPayoutCommand;
+use App\Domain\Queries\Withdrawals\WithdrawalListQuery;
 use App\Domain\Enums\IdempotencyKeyStatus;
 use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\WalletHoldType;
@@ -45,6 +46,46 @@ class WithdrawalService
     public function __construct(
         private readonly WalletLedgerService $walletLedgerService = new WalletLedgerService(),
     ) {
+    }
+
+    /**
+     * @return array{items: list<array<string, mixed>>, page: int, per_page: int, total: int, last_page: int}
+     */
+    public function listWithdrawalRequests(WithdrawalListQuery $query): array
+    {
+        $builder = WithdrawalRequest::query()->with(['seller_profile'])->orderByDesc('id');
+        if (! $query->viewerIsPlatformStaff) {
+            $builder->whereHas('seller_profile', static function ($sp) use ($query): void {
+                $sp->where('user_id', $query->viewerUserId);
+            });
+        }
+
+        $page = max(1, $query->page);
+        $perPage = min(100, max(1, $query->perPage));
+        $total = (int) $builder->count();
+        $rows = (clone $builder)->forPage($page, $perPage)->get();
+        $items = [];
+        foreach ($rows as $wr) {
+            $items[] = [
+                'id' => $wr->id,
+                'uuid' => $wr->uuid,
+                'seller_profile_id' => $wr->seller_profile_id,
+                'wallet_id' => $wr->wallet_id,
+                'status' => $wr->status->value,
+                'requested_amount' => (string) $wr->requested_amount,
+                'currency' => $wr->currency,
+                'created_at' => $wr->created_at?->toIso8601String(),
+            ];
+        }
+        $lastPage = max(1, (int) ceil($total / $perPage));
+
+        return [
+            'items' => $items,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'last_page' => $lastPage,
+        ];
     }
 
     public function requestWithdrawal(RequestWithdrawalCommand $command): array

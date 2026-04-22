@@ -2,12 +2,14 @@
 
 namespace App\Services\Order;
 
+use App\Auth\Ability;
 use App\Domain\Commands\Escrow\CreateEscrowForOrderCommand;
 use App\Domain\Commands\Escrow\HoldEscrowCommand;
 use App\Domain\Commands\Order\AdvanceOrderFulfillmentCommand;
 use App\Domain\Commands\Order\ApplyOrderStatusAfterDisputeResolutionCommand;
 use App\Domain\Commands\Order\CompleteOrderCommand;
 use App\Domain\Commands\Order\CreateOrderCommand;
+use App\Domain\Queries\Orders\OrderListQuery;
 use App\Domain\Commands\Order\MarkOrderDisputedCommand;
 use App\Domain\Commands\Order\MarkOrderPaidCommand;
 use App\Domain\Commands\Order\MarkOrderPendingPaymentCommand;
@@ -19,6 +21,7 @@ use App\Domain\Enums\OrderStatus;
 use App\Domain\Enums\WalletLedgerEntrySide;
 use App\Domain\Enums\WalletLedgerEntryType;
 use App\Domain\Enums\WalletType;
+use App\Domain\Exceptions\DomainAuthorizationDeniedException;
 use App\Domain\Exceptions\IdempotencyConflictException;
 use App\Domain\Exceptions\InsufficientWalletBalanceException;
 use App\Domain\Exceptions\InvalidOrderStateTransitionException;
@@ -30,7 +33,9 @@ use App\Models\OrderStateTransition;
 use App\Models\PaymentIntent;
 use App\Models\PaymentTransaction;
 use App\Models\SellerProfile;
+use App\Models\User;
 use App\Models\Wallet;
+use App\Policies\OrderPolicy;
 use App\Domain\Value\LedgerPostingLine;
 use App\Services\Escrow\EscrowService;
 use App\Services\Support\FinancialCritical;
@@ -61,6 +66,53 @@ class OrderService
     }
 
     /**
+     * Paginated orders visible to the viewer (buyer, line-item seller, or platform staff for all).
+     *
+     * @return array{items: list<array<string, mixed>>, page: int, per_page: int, total: int, last_page: int}
+     */
+    public function listOrders(OrderListQuery $query): array
+    {
+        $builder = Order::query()->orderByDesc('id');
+        if (! $query->viewerIsPlatformStaff) {
+            $uid = $query->viewerUserId;
+            $builder->where(function ($w) use ($uid): void {
+                $w->where('buyer_user_id', $uid)
+                    ->orWhereHas('orderItems.seller_profile', static function ($sp) use ($uid): void {
+                        $sp->where('user_id', $uid);
+                    });
+            });
+        }
+
+        $page = max(1, $query->page);
+        $perPage = min(100, max(1, $query->perPage));
+        $total = (int) $builder->count();
+        $rows = (clone $builder)->forPage($page, $perPage)->get();
+        $items = [];
+        foreach ($rows as $order) {
+            $items[] = [
+                'id' => $order->id,
+                'uuid' => $order->uuid,
+                'order_number' => $order->order_number,
+                'buyer_user_id' => $order->buyer_user_id,
+                'status' => $order->status->value,
+                'currency' => $order->currency,
+                'net_amount' => (string) $order->net_amount,
+                'placed_at' => $order->placed_at?->toIso8601String(),
+                'created_at' => $order->created_at?->toIso8601String(),
+            ];
+        }
+        $lastPage = max(1, (int) ceil($total / $perPage));
+
+        return [
+            'items' => $items,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'last_page' => $lastPage,
+        ];
+    }
+
+    /**
      * Draft → pending_payment. Does not touch payments or escrow.
      */
     public function markPendingPayment(MarkOrderPendingPaymentCommand $command): array
@@ -70,6 +122,8 @@ class OrderService
             if ($order === null) {
                 throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
             }
+
+            $this->assertPaymentMutationActorAuthorized($order, $command->actorUserId, Ability::OrderMarkPendingPayment);
 
             if ($order->status !== OrderStatus::Draft) {
                 throw new InvalidOrderStateTransitionException(
@@ -163,6 +217,13 @@ class OrderService
     public function markPaid(MarkOrderPaidCommand $command): array
     {
         return DB::transaction(function () use ($command): array {
+            $order = Order::query()->whereKey($command->orderId)->lockForUpdate()->first();
+            if ($order === null) {
+                throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
+            }
+
+            $this->assertPaymentMutationActorAuthorized($order, $command->actorUserId, Ability::OrderMarkPaid);
+
             $idemKey = $this->orderMarkPaidIdempotencyKey($command->orderId, $command->paymentTransactionId);
             $requestHash = $this->hashPayload([
                 'order_id' => $command->orderId,
@@ -185,11 +246,6 @@ class OrderService
                 throw new OrderValidationFailedException($command->orderId, 'payment_intent_not_found', [
                     'payment_intent_id' => $txn->payment_intent_id,
                 ]);
-            }
-
-            $order = Order::query()->whereKey($command->orderId)->lockForUpdate()->first();
-            if ($order === null) {
-                throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
             }
 
             $this->assertPaymentCaptureAppliesToOrder($order, $intent, $txn);
@@ -383,6 +439,32 @@ class OrderService
                 'idempotent_replay' => false,
             ];
         });
+    }
+
+    /**
+     * @param  non-empty-string  $action  {@see Ability::OrderMarkPendingPayment} or {@see Ability::OrderMarkPaid}
+     */
+    private function assertPaymentMutationActorAuthorized(Order $order, ?int $actorUserId, string $action): void
+    {
+        if ($actorUserId === null) {
+            throw new OrderValidationFailedException($order->id, 'payment_mutation_actor_required', []);
+        }
+
+        $actor = User::query()->find($actorUserId);
+        if ($actor === null) {
+            throw new OrderValidationFailedException($order->id, 'actor_user_not_found', ['actor_user_id' => $actorUserId]);
+        }
+
+        $policy = new OrderPolicy();
+        $allowed = match ($action) {
+            Ability::OrderMarkPendingPayment => $policy->markPendingPayment($actor, $order),
+            Ability::OrderMarkPaid => $policy->markPaid($actor, $order),
+            default => false,
+        };
+
+        if (! $allowed) {
+            throw new DomainAuthorizationDeniedException($action, $actorUserId);
+        }
     }
 
     /**

@@ -78,7 +78,7 @@ final class EscrowWalletIntegrationTest extends TestCase
             ->where('reference_type', 'escrow_account')
             ->where('reference_id', $escrowId)
             ->firstOrFail();
-        self::assertSame(WalletHoldStatus::Active, $holdRow->status);
+        self::assertSame(WalletHoldStatus::Consumed, $holdRow->status);
         self::assertSame($buyerWalletId, (int) $holdRow->wallet_id);
 
         $entry = WalletLedgerEntry::query()

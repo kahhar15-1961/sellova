@@ -537,10 +537,11 @@ class WalletLedgerService
             $ledger = $this->readWalletLedgerBalanceScale($wallet->id);
             $held = $this->readActiveHoldsScale($wallet->id);
             $available = $ledger - $held;
+            $asOf = $this->nextAvailableSnapshotAsOf($wallet->id);
 
             $snapshot = WalletBalanceSnapshot::query()->create([
                 'wallet_id' => $wallet->id,
-                'as_of' => now(),
+                'as_of' => $asOf,
                 'available_balance' => $this->fromScale($available),
                 'held_balance' => $this->fromScale($held),
             ]);
@@ -553,6 +554,26 @@ class WalletLedgerService
                 'as_of' => optional($snapshot->as_of)?->toISOString(),
             ];
         });
+    }
+
+    private function nextAvailableSnapshotAsOf(int $walletId): \Illuminate\Support\Carbon
+    {
+        // Eloquent persists datetimes to second precision in this project setup.
+        $candidate = now()->copy()->startOfSecond();
+        $latest = WalletBalanceSnapshot::query()
+            ->where('wallet_id', $walletId)
+            ->orderByDesc('as_of')
+            ->lockForUpdate()
+            ->first();
+
+        if ($latest !== null && $latest->as_of !== null) {
+            $latestAsOf = $latest->as_of->copy();
+            if ($latestAsOf->greaterThanOrEqualTo($candidate)) {
+                return $latestAsOf->addSecond();
+            }
+        }
+
+        return $candidate;
     }
 
     private function lockWalletOrFail(int $walletId): Wallet

@@ -47,6 +47,8 @@ final class DomainGate
     {
         return match ($ability) {
             Ability::OrderView => $this->orderPolicy->view($user, $this->arg($arguments, 0, Order::class)),
+            Ability::OrderMarkPendingPayment => $this->orderPolicy->markPendingPayment($user, $this->arg($arguments, 0, Order::class)),
+            Ability::OrderMarkPaid => $this->orderPolicy->markPaid($user, $this->arg($arguments, 0, Order::class)),
             Ability::OrderOpenDispute => $this->orderPolicy->openDisputeAsBuyer($user, $this->arg($arguments, 0, Order::class)),
             Ability::EscrowView => $this->escrowPolicy->view($user, $this->arg($arguments, 0, EscrowAccount::class)),
             Ability::DisputeView => $this->disputeCasePolicy->view($user, $this->arg($arguments, 0, DisputeCase::class)),

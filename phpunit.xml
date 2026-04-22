@@ -15,13 +15,19 @@
     </testsuites>
 
     <php>
-        <!-- MySQL-backed integration tests -->
+        <!-- Primary: TEST_DB_* (read by tests/bootstrap.php). Mirror DB_* for parity with runtime env. -->
         <env name="TEST_DB_CONNECTION" value="mysql"/>
         <env name="TEST_DB_HOST" value="127.0.0.1"/>
         <env name="TEST_DB_PORT" value="3306"/>
-        <env name="TEST_DB_DATABASE" value="sellova_test"/>
+        <env name="TEST_DB_DATABASE" value="db_sellova"/>
         <env name="TEST_DB_USERNAME" value="root"/>
-        <env name="TEST_DB_PASSWORD" value=""/>
+        <env name="TEST_DB_PASSWORD" value="root"/>
+
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="db_sellova"/>
+        <env name="DB_USERNAME" value="root"/>
+        <env name="DB_PASSWORD" value="root"/>
     </php>
 </phpunit>
-

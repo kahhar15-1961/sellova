@@ -66,6 +66,7 @@ CREATE TABLE user_roles (
   role_id BIGINT UNSIGNED NOT NULL,
   assigned_by BIGINT UNSIGNED NULL,
   created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_user_roles_user_role (user_id, role_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -168,7 +169,7 @@ CREATE TABLE products (
   description LONGTEXT NULL,
   base_price DECIMAL(18,4) NOT NULL,
   currency CHAR(3) NOT NULL,
-  status ENUM('draft','active','inactive','archived') NOT NULL DEFAULT 'draft',
+  status ENUM('draft','active','inactive','archived','published') NOT NULL DEFAULT 'draft',
   published_at DATETIME(6) NULL,
   created_at DATETIME(6) NOT NULL,
   updated_at DATETIME(6) NOT NULL,
@@ -455,6 +456,7 @@ CREATE TABLE escrow_events (
   reference_id BIGINT UNSIGNED NOT NULL,
   idempotency_key_id BIGINT UNSIGNED NULL,
   created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_escrow_events_uuid (uuid),
   CONSTRAINT chk_escrow_events_amount_nonneg CHECK (amount >= 0)
@@ -556,6 +558,7 @@ CREATE TABLE wallet_balance_snapshots (
   available_balance DECIMAL(18,4) NOT NULL,
   held_balance DECIMAL(18,4) NOT NULL,
   created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_wallet_balance_snapshots_wallet_asof (wallet_id, as_of),
   CONSTRAINT chk_wallet_balance_snapshots_nonneg CHECK (held_balance >= 0)
@@ -766,6 +769,23 @@ CREATE TABLE outbox_events (
   UNIQUE KEY uq_outbox_events_uuid (uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---- API authentication (opaque bearer tokens) -----------------------------
+CREATE TABLE user_auth_tokens (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  uuid CHAR(36) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  token_family CHAR(36) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  kind ENUM('access','refresh') NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  revoked_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_user_auth_tokens_token_hash (token_hash),
+  KEY idx_user_auth_tokens_user_family (user_id, token_family),
+  KEY idx_user_auth_tokens_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================================
 -- Phase 2: Foreign Keys (separate phase)
 -- ============================================================================
@@ -774,6 +794,9 @@ ALTER TABLE user_roles
   ADD CONSTRAINT fk_user_roles_user FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   ADD CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
   ADD CONSTRAINT fk_user_roles_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE SET NULL;
+
+ALTER TABLE user_auth_tokens
+  ADD CONSTRAINT fk_user_auth_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE CASCADE;
 
 ALTER TABLE role_permissions
   ADD CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_id) REFERENCES roles(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
@@ -966,6 +989,8 @@ CREATE INDEX idx_notifications_user_status_created ON notifications (user_id, st
 CREATE INDEX idx_audit_logs_target_created ON audit_logs (target_type, target_id, created_at);
 CREATE INDEX idx_audit_logs_actor_created ON audit_logs (actor_user_id, created_at);
 CREATE INDEX idx_audit_logs_correlation ON audit_logs (correlation_id);
+
+CREATE INDEX idx_user_auth_tokens_user_kind ON user_auth_tokens (user_id, kind, revoked_at);
 
 CREATE INDEX idx_outbox_events_status_available ON outbox_events (status, available_at, attempts);
 CREATE INDEX idx_outbox_events_aggregate ON outbox_events (aggregate_type, aggregate_id, created_at);
