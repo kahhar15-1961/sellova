@@ -6,6 +6,63 @@ class ProductDto {
   const ProductDto(this.raw);
   final Map<String, dynamic> raw;
   // TODO: tighten product fields once payload schema is fully frozen.
+
+  int? get id => (raw['id'] as num?)?.toInt();
+
+  String get title => (raw['title'] ?? raw['name'] ?? 'Untitled product').toString();
+
+  String get description => (raw['description'] ?? raw['short_description'] ?? '').toString();
+
+  String get shortInfo => (raw['short_info'] ?? raw['subtitle'] ?? description).toString();
+
+  String get priceLabel {
+    final currency = (raw['currency'] ?? '').toString().toUpperCase();
+    final amount = raw['base_price'] ?? raw['price'] ?? raw['amount'];
+    if (amount == null) {
+      return currency.isEmpty ? 'Price unavailable' : currency;
+    }
+    return currency.isEmpty ? amount.toString() : '$currency $amount';
+  }
+
+  String? get primaryImageUrl {
+    final direct = raw['image_url'] ?? raw['thumbnail_url'] ?? raw['cover_image_url'];
+    if (direct is String && direct.isNotEmpty) {
+      return direct;
+    }
+    final images = imageUrls;
+    return images.isEmpty ? null : images.first;
+  }
+
+  List<String> get imageUrls {
+    final values = <String>[];
+    final rawImages = raw['images'];
+    if (rawImages is List) {
+      for (final item in rawImages) {
+        if (item is String && item.isNotEmpty) {
+          values.add(item);
+        } else if (item is Map && item['url'] is String) {
+          final url = item['url'].toString();
+          if (url.isNotEmpty) {
+            values.add(url);
+          }
+        }
+      }
+    }
+    if (values.isNotEmpty) {
+      return values;
+    }
+    final fallback = primaryImageUrl;
+    return fallback == null ? <String>[] : <String>[fallback];
+  }
+
+  String get sellerLabel {
+    final seller =
+        raw['seller_name'] ?? raw['store_name'] ?? raw['seller'] ?? raw['seller_profile_name'];
+    if (seller == null || seller.toString().isEmpty) {
+      return 'Seller unavailable';
+    }
+    return seller.toString();
+  }
 }
 
 class ProductRepository {
