@@ -1,0 +1,13 @@
+name: sellova_mobile
+description: Sellova mobile API/data layer scaffold.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  dio: ^5.9.0
+
+dev_dependencies:
+  lints: ^4.0.0
