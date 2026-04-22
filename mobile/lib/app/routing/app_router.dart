@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../providers/app_providers.dart';
 import '../../features/auth/application/auth_session_controller.dart';
 import '../../features/auth/presentation/sign_in_gate_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
@@ -9,6 +10,8 @@ import '../../features/disputes/presentation/dispute_detail_screen.dart';
 import '../../features/disputes/presentation/dispute_list_screen.dart';
 import '../../features/orders/presentation/order_detail_screen.dart';
 import '../../features/orders/presentation/order_list_screen.dart';
+import '../../features/profile/presentation/my_profile_screen.dart';
+import '../../features/profile/presentation/seller_profile_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/product_list_screen.dart';
 import '../../features/shell/presentation/app_shell_screen.dart';
@@ -17,6 +20,7 @@ import '../../features/withdrawals/presentation/withdrawal_list_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authSessionControllerProvider);
+  final lastRoute = ref.watch(navigationStatePersistenceProvider).loadLastRoute() ?? '/home';
 
   return GoRouter(
     initialLocation: '/splash',
@@ -39,6 +43,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/orders',
             builder: (_, __) => const OrderListScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (_, __) => const MyProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/seller',
+            builder: (_, __) => const SellerProfileScreen(),
           ),
           GoRoute(
             path: '/disputes',
@@ -114,7 +126,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (isSignIn || isSplash) {
-        return '/home';
+        return lastRoute;
       }
       return null;
     },

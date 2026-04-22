@@ -19,7 +19,17 @@ class _WithdrawalListScreenState extends ConsumerState<WithdrawalListScreen> {
   void initState() {
     super.initState();
     Future<void>.microtask(
-      () => ref.read(withdrawalListControllerProvider.notifier).loadFirstPage(),
+      () async {
+        await ref.read(withdrawalListControllerProvider.notifier).initialize();
+        final saved = ref.read(withdrawalListControllerProvider.notifier).scrollOffset;
+        if (saved > 0 && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.jumpTo(saved.clamp(0, _scrollController.position.maxScrollExtent));
+            }
+          });
+        }
+      },
     );
     _scrollController.addListener(_onScroll);
   }
@@ -33,6 +43,7 @@ class _WithdrawalListScreenState extends ConsumerState<WithdrawalListScreen> {
   }
 
   void _onScroll() {
+    ref.read(withdrawalListControllerProvider.notifier).updateScrollOffset(_scrollController.offset);
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       ref.read(withdrawalListControllerProvider.notifier).loadNextPage();
     }
@@ -62,15 +73,26 @@ class _WithdrawalListScreenState extends ConsumerState<WithdrawalListScreen> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        itemCount: state.items.length + 1,
+        itemCount: state.items.length + 2,
         itemBuilder: (context, index) {
-          if (index == state.items.length) {
+          if (index == 0) {
+            return Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => ref.read(withdrawalListControllerProvider.notifier).clearPersistedState(),
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Reset state'),
+              ),
+            );
+          }
+          final itemIndex = index - 1;
+          if (itemIndex == state.items.length) {
             return _LoadMoreFooter(
               isAppending: state.isAppending,
               hasMore: state.hasMore,
             );
           }
-          final withdrawal = state.items[index];
+          final withdrawal = state.items[itemIndex];
           return _WithdrawalCard(withdrawal: withdrawal);
         },
       ),

@@ -73,10 +73,17 @@ class ProductRepository {
   Future<PaginatedResult<ProductDto>> list({
     int page = 1,
     int perPage = 10,
+    int? categoryId,
+    int? storefrontId,
   }) async {
     final json = await _apiClient.get(
       '/api/v1/products',
-      queryParameters: <String, dynamic>{'page': page, 'per_page': perPage},
+      queryParameters: <String, dynamic>{
+        'page': page,
+        'per_page': perPage,
+        if (categoryId != null) 'category_id': categoryId,
+        if (storefrontId != null) 'storefront_id': storefrontId,
+      },
     );
     final result = parsePaginatedObjectList(json);
     return PaginatedResult<ProductDto>(
@@ -89,6 +96,8 @@ class ProductRepository {
     required String query,
     int page = 1,
     int perPage = 10,
+    int? categoryId,
+    int? storefrontId,
   }) async {
     final json = await _apiClient.get(
       '/api/v1/products/search',
@@ -96,6 +105,8 @@ class ProductRepository {
         'search': query,
         'page': page,
         'per_page': perPage,
+        if (categoryId != null) 'category_id': categoryId,
+        if (storefrontId != null) 'storefront_id': storefrontId,
       },
     );
     final result = parsePaginatedObjectList(json);

@@ -19,7 +19,17 @@ class _DisputeListScreenState extends ConsumerState<DisputeListScreen> {
   void initState() {
     super.initState();
     Future<void>.microtask(
-      () => ref.read(disputeListControllerProvider.notifier).loadFirstPage(),
+      () async {
+        await ref.read(disputeListControllerProvider.notifier).initialize();
+        final saved = ref.read(disputeListControllerProvider.notifier).scrollOffset;
+        if (saved > 0 && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.jumpTo(saved.clamp(0, _scrollController.position.maxScrollExtent));
+            }
+          });
+        }
+      },
     );
     _scrollController.addListener(_onScroll);
   }
@@ -33,6 +43,7 @@ class _DisputeListScreenState extends ConsumerState<DisputeListScreen> {
   }
 
   void _onScroll() {
+    ref.read(disputeListControllerProvider.notifier).updateScrollOffset(_scrollController.offset);
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       ref.read(disputeListControllerProvider.notifier).loadNextPage();
     }
@@ -62,15 +73,26 @@ class _DisputeListScreenState extends ConsumerState<DisputeListScreen> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        itemCount: state.items.length + 1,
+        itemCount: state.items.length + 2,
         itemBuilder: (context, index) {
-          if (index == state.items.length) {
+          if (index == 0) {
+            return Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => ref.read(disputeListControllerProvider.notifier).clearPersistedState(),
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Reset state'),
+              ),
+            );
+          }
+          final itemIndex = index - 1;
+          if (itemIndex == state.items.length) {
             return _LoadMoreFooter(
               isAppending: state.isAppending,
               hasMore: state.hasMore,
             );
           }
-          final dispute = state.items[index];
+          final dispute = state.items[itemIndex];
           return _DisputeCard(dispute: dispute);
         },
       ),

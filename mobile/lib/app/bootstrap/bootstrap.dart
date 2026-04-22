@@ -10,6 +10,7 @@ Future<List<Override>> buildBootstrapOverrides() async {
   final tokenStore = PersistentTokenStore(preferences);
   return <Override>[
     tokenStoreProvider.overrideWithValue(tokenStore),
+    sharedPreferencesProvider.overrideWithValue(preferences),
   ];
 }
 
