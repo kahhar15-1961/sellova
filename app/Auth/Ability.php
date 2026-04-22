@@ -30,6 +30,9 @@ final class Ability
 
     public const WithdrawalRequest = 'withdrawal.request';
 
+    /** View a single withdrawal request (seller owner or admin). */
+    public const WithdrawalView = 'withdrawal.view';
+
     public const WithdrawalApprove = 'withdrawal.approve';
 
     public const WithdrawalReject = 'withdrawal.reject';

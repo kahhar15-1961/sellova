@@ -11,6 +11,21 @@ use App\Models\WithdrawalRequest;
 
 final class WithdrawalRequestPolicy
 {
+    public function view(User $actor, WithdrawalRequest $request): bool
+    {
+        if ($actor->hasRoleCode(RoleCodes::Admin)) {
+            return true;
+        }
+
+        $request->loadMissing('seller_profile');
+        $profile = $request->seller_profile;
+        if ($profile === null) {
+            return false;
+        }
+
+        return (int) $profile->user_id === (int) $actor->id;
+    }
+
     /**
      * Only the seller that owns the profile (and wallet) may request a withdrawal — matches {@see \App\Services\Withdrawal\WithdrawalService} ownership checks.
      */

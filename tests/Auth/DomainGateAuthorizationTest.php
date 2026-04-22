@@ -105,6 +105,47 @@ final class DomainGateAuthorizationTest extends TestCase
         self::assertFalse($this->gate->allows(Ability::WithdrawalRequest, $admin, $profile, $wallet));
     }
 
+    public function test_withdrawal_view_seller_owner_or_admin(): void
+    {
+        $sellerUser = $this->makeUser('seller-view-w');
+        $stranger = $this->makeUser('stranger-view-w');
+        $admin = $this->makeUser('admin-view-w');
+        $this->assignRole($admin, RoleCodes::Admin);
+
+        $profile = SellerProfile::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $sellerUser->id,
+            'display_name' => 'S',
+            'country_code' => 'US',
+            'default_currency' => 'USD',
+        ]);
+        $wallet = Wallet::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $sellerUser->id,
+            'wallet_type' => WalletType::Seller->value,
+            'currency' => 'USD',
+            'status' => 'active',
+            'version' => 1,
+        ]);
+
+        $wr = WithdrawalRequest::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'idempotency_key' => 'w-view-'.Str::random(8),
+            'seller_profile_id' => $profile->id,
+            'wallet_id' => $wallet->id,
+            'status' => WithdrawalRequestStatus::Requested,
+            'requested_amount' => '10.0000',
+            'fee_amount' => '0.0000',
+            'net_payout_amount' => '10.0000',
+            'currency' => 'USD',
+            'hold_id' => null,
+        ]);
+
+        self::assertTrue($this->gate->allows(Ability::WithdrawalView, $sellerUser, $wr));
+        self::assertTrue($this->gate->allows(Ability::WithdrawalView, $admin, $wr));
+        self::assertFalse($this->gate->allows(Ability::WithdrawalView, $stranger, $wr));
+    }
+
     public function test_withdrawal_approve_reject_admin_only_not_adjudicator(): void
     {
         $admin = $this->makeUser('admin-ww');

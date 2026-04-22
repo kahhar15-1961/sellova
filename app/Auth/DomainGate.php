@@ -61,6 +61,7 @@ final class DomainGate
                 $this->arg($arguments, 0, SellerProfile::class),
                 $this->arg($arguments, 1, Wallet::class),
             ),
+            Ability::WithdrawalView => $this->withdrawalPolicy->view($user, $this->arg($arguments, 0, WithdrawalRequest::class)),
             Ability::WithdrawalApprove => $this->withdrawalPolicy->approve($user, $this->arg($arguments, 0, WithdrawalRequest::class)),
             Ability::WithdrawalReject => $this->withdrawalPolicy->reject($user, $this->arg($arguments, 0, WithdrawalRequest::class)),
             default => false,
