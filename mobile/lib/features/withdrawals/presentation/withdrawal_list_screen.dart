@@ -16,6 +16,14 @@ class _WithdrawalListScreenState extends ConsumerState<WithdrawalListScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    Future<void>.microtask(
+      () => ref.read(withdrawalListControllerProvider.notifier).refreshIfStale(),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     Future<void>.microtask(

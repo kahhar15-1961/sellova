@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/providers/app_providers.dart';
 import '../application/my_profile_controller.dart';
 
 class MyProfileScreen extends ConsumerStatefulWidget {
@@ -169,6 +170,61 @@ class _MyProfileScreenState extends ConsumerState<MyProfileScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text('Session & browsing', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Clears saved search/filter/sort, list cache, and position for catalog, orders, disputes, and withdrawals.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Clear saved browsing state?'),
+                              content: const Text(
+                                'This resets saved list state for products, orders, disputes, and withdrawals.',
+                              ),
+                              actions: <Widget>[
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(false),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.of(context).pop(true),
+                                  child: const Text('Clear'),
+                                ),
+                              ],
+                            ),
+                          ) ??
+                          false;
+                      if (!confirmed) {
+                        return;
+                      }
+                      await ref.read(listStatePersistenceProvider).clearAllBrowsingState();
+                      await ref.read(navigationStatePersistenceProvider).resetToHome();
+                      if (!context.mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Saved browsing state cleared.')),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: const Text('Clear all saved browsing state'),
+                  ),
+                ],
               ),
             ),
           ),

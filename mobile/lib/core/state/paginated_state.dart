@@ -2,7 +2,7 @@ import '../pagination/pagination_meta.dart';
 
 class PaginatedState<T> {
   const PaginatedState({
-    this.items = const <T>[],
+    this.items = const [],
     this.meta,
     this.isInitialLoading = false,
     this.isAppending = false,

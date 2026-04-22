@@ -16,6 +16,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    Future<void>.microtask(
+      () => ref.read(orderListControllerProvider.notifier).refreshIfStale(),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     Future<void>.microtask(

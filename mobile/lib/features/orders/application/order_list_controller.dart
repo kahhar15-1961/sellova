@@ -109,9 +109,18 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
           raw: <String, dynamic>{'page': page, 'per_page': perPage, 'total': total, 'last_page': page + 1},
         ),
       );
+      await refreshIfStale();
     } else {
       await loadFirstPage();
     }
+  }
+
+  Future<void> refreshIfStale() async {
+    final isStale = ref.read(listStatePersistenceProvider).isStale(_moduleKey);
+    if (!isStale) {
+      return;
+    }
+    await refresh();
   }
 
   Future<void> clearPersistedState() async {
@@ -140,6 +149,7 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
         page: meta?.page ?? 1,
         perPage: meta?.perPage ?? 10,
         items: state.items.map((e) => e.raw).toList(),
+        savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
   }

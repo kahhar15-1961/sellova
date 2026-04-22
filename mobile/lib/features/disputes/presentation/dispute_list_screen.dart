@@ -16,6 +16,14 @@ class _DisputeListScreenState extends ConsumerState<DisputeListScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    Future<void>.microtask(
+      () => ref.read(disputeListControllerProvider.notifier).refreshIfStale(),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     Future<void>.microtask(

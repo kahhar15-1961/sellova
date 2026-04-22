@@ -12,6 +12,7 @@ class PersistedListUiState {
     required this.page,
     required this.perPage,
     required this.items,
+    required this.savedAtEpochMs,
   });
 
   final String query;
@@ -22,6 +23,9 @@ class PersistedListUiState {
   final int page;
   final int perPage;
   final List<Map<String, dynamic>> items;
+  final int savedAtEpochMs;
+
+  DateTime get savedAt => DateTime.fromMillisecondsSinceEpoch(savedAtEpochMs);
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'query': query,
@@ -32,6 +36,7 @@ class PersistedListUiState {
         'page': page,
         'per_page': perPage,
         'items': items,
+        'saved_at_ms': savedAtEpochMs,
       };
 
   factory PersistedListUiState.fromJson(Map<String, dynamic> json) {
@@ -49,6 +54,8 @@ class PersistedListUiState {
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList(),
+      savedAtEpochMs: (json['saved_at_ms'] as num?)?.toInt() ??
+          DateTime.now().millisecondsSinceEpoch,
     );
   }
 }
@@ -60,8 +67,27 @@ class ListStatePersistence {
 
   static String _key(String moduleKey) => 'list_state.$moduleKey';
 
+  static const Duration staleTtl = Duration(minutes: 20);
+  static const List<String> moduleKeys = <String>[
+    'products',
+    'orders',
+    'disputes',
+    'withdrawals',
+  ];
+
   Future<void> save(String moduleKey, PersistedListUiState state) async {
-    await _preferences.setString(_key(moduleKey), jsonEncode(state.toJson()));
+    final nowStamped = PersistedListUiState(
+      query: state.query,
+      sort: state.sort,
+      filters: state.filters,
+      currentTab: state.currentTab,
+      scrollOffset: state.scrollOffset,
+      page: state.page,
+      perPage: state.perPage,
+      items: state.items,
+      savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    await _preferences.setString(_key(moduleKey), jsonEncode(nowStamped.toJson()));
   }
 
   PersistedListUiState? load(String moduleKey) {
@@ -83,6 +109,24 @@ class ListStatePersistence {
   Future<void> clear(String moduleKey) async {
     await _preferences.remove(_key(moduleKey));
   }
+
+  bool isStale(
+    String moduleKey, {
+    Duration ttl = staleTtl,
+  }) {
+    final state = load(moduleKey);
+    if (state == null) {
+      return false;
+    }
+    final age = DateTime.now().difference(state.savedAt);
+    return age > ttl;
+  }
+
+  Future<void> clearAllBrowsingState() async {
+    for (final key in moduleKeys) {
+      await clear(key);
+    }
+  }
 }
 
 class NavigationStatePersistence {
@@ -90,10 +134,15 @@ class NavigationStatePersistence {
 
   final SharedPreferences _preferences;
   static const _key = 'navigation.last_route';
+  static const _home = '/home';
 
   String? loadLastRoute() => _preferences.getString(_key);
 
   Future<void> saveLastRoute(String route) async {
     await _preferences.setString(_key, route);
+  }
+
+  Future<void> resetToHome() async {
+    await _preferences.setString(_key, _home);
   }
 }

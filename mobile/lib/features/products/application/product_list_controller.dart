@@ -141,9 +141,18 @@ class ProductListController extends Notifier<PaginatedState<ProductDto>> {
           },
         ),
       );
+      await refreshIfStale();
     } else {
       await loadFirstPage();
     }
+  }
+
+  Future<void> refreshIfStale() async {
+    final isStale = ref.read(listStatePersistenceProvider).isStale(_moduleKey);
+    if (!isStale) {
+      return;
+    }
+    await refresh();
   }
 
   Future<void> clearPersistedState() async {
@@ -199,6 +208,7 @@ class ProductListController extends Notifier<PaginatedState<ProductDto>> {
         page: meta?.page ?? 1,
         perPage: meta?.perPage ?? 10,
         items: state.items.map((e) => e.raw).toList(),
+        savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
       ),
     );
   }

@@ -20,6 +20,14 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   _SortOption _sortOption = _SortOption.latest;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    Future<void>.microtask(
+      () => ref.read(productListControllerProvider.notifier).refreshIfStale(),
+    );
+  }
+
+  @override
   void initState() {
     super.initState();
     Future<void>.microtask(
