@@ -74,6 +74,11 @@ final class WithdrawalServiceTest extends TestCase
     public function test_request_then_reject_restores_available_balance(): void
     {
         [$sellerProfileId, $walletId] = $this->seedSellerWithFundedWallet('200.0000');
+        $reviewer = User::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'email' => 'reviewer-'.Str::random(8).'@example.test',
+            'password_hash' => 'hash',
+        ]);
 
         $r = $this->withdrawals->requestWithdrawal(new RequestWithdrawalCommand(
             sellerProfileId: $sellerProfileId,
@@ -89,7 +94,7 @@ final class WithdrawalServiceTest extends TestCase
 
         $this->withdrawals->rejectWithdrawal(new RejectWithdrawalCommand(
             withdrawalRequestId: $wrId,
-            reviewerUserId: 2,
+            reviewerUserId: (int) $reviewer->id,
             idempotencyKey: 'wd-rj-'.Str::random(8),
             reason: 'KYC incomplete',
         ));

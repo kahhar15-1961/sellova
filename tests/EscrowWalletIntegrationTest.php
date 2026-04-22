@@ -78,7 +78,7 @@ final class EscrowWalletIntegrationTest extends TestCase
             ->where('reference_type', 'escrow_account')
             ->where('reference_id', $escrowId)
             ->firstOrFail();
-        self::assertSame(WalletHoldStatus::Consumed, $holdRow->status);
+        self::assertSame(WalletHoldStatus::Active, $holdRow->status);
         self::assertSame($buyerWalletId, (int) $holdRow->wallet_id);
 
         $entry = WalletLedgerEntry::query()
@@ -88,7 +88,7 @@ final class EscrowWalletIntegrationTest extends TestCase
             ->firstOrFail();
         self::assertSame($buyerWalletId, (int) $entry->wallet_id);
 
-        self::assertSame(3, IdempotencyKey::query()->count()); // create + hold + ledger hold
+        self::assertSame(4, IdempotencyKey::query()->count()); // seed deposit + create + hold + ledger hold
         self::assertSame(2, EscrowEvent::query()->where('escrow_account_id', $escrowId)->count()); // initiated + hold
         $events = EscrowEvent::query()->where('escrow_account_id', $escrowId)->orderBy('id')->get();
         self::assertSame(EscrowEventType::Initiated, $events[0]->event_type);

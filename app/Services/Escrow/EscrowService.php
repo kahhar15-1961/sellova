@@ -133,14 +133,6 @@ class EscrowService
     {
         return DB::transaction(function () use ($command): array {
             $escrow = $this->lockEscrowOrFail($command->escrowAccountId);
-            if ($escrow->state !== EscrowState::Initiated) {
-                throw new InvalidEscrowStateTransitionException(
-                    escrowAccountId: $escrow->id,
-                    fromState: $escrow->state->value,
-                    toState: EscrowState::Held->value,
-                );
-            }
-
             $requestHash = $this->hashPayload(['escrow_account_id' => $escrow->id]);
             $idem = $this->claimEscrowIdempotency('escrow_hold', $command->idempotencyKey, $requestHash);
             if ($idem['replay']) {
@@ -149,6 +141,13 @@ class EscrowService
                     'state' => $escrow->state->value,
                     'idempotent_replay' => true,
                 ];
+            }
+            if ($escrow->state !== EscrowState::Initiated) {
+                throw new InvalidEscrowStateTransitionException(
+                    escrowAccountId: $escrow->id,
+                    fromState: $escrow->state->value,
+                    toState: EscrowState::Held->value,
+                );
             }
 
             $order = Order::query()->whereKey($escrow->order_id)->lockForUpdate()->first();
@@ -169,10 +168,6 @@ class EscrowService
                 referenceId: $escrow->id,
                 amount: (string) $escrow->held_amount,
             ));
-
-            // Escrow hold is represented in the append-only ledger as EscrowHoldDebit.
-            // Consume the reservation first so availability is not counted twice.
-            $this->consumeEscrowHoldReservation((int) $hold['wallet_hold_id']);
 
             $this->walletLedgerService->postLedgerBatch(new PostLedgerBatchCommand(
                 eventName: LedgerPostingEventName::EscrowHold,
@@ -226,6 +221,11 @@ class EscrowService
     {
         return DB::transaction(function () use ($command): array {
             $escrow = $this->lockEscrowOrFail($command->escrowAccountId);
+            $requestHash = $this->hashPayload(['escrow_account_id' => $escrow->id]);
+            $idem = $this->claimEscrowIdempotency('escrow_release', $command->idempotencyKey, $requestHash);
+            if ($idem['replay']) {
+                return ['escrow_account_id' => $escrow->id, 'state' => $escrow->state->value, 'idempotent_replay' => true];
+            }
             if ($escrow->state === EscrowState::UnderDispute) {
                 throw new EscrowReleaseConflictException(
                     escrowAccountId: $escrow->id,
@@ -238,12 +238,6 @@ class EscrowService
                     fromState: $escrow->state->value,
                     toState: EscrowState::Released->value,
                 );
-            }
-
-            $requestHash = $this->hashPayload(['escrow_account_id' => $escrow->id]);
-            $idem = $this->claimEscrowIdempotency('escrow_release', $command->idempotencyKey, $requestHash);
-            if ($idem['replay']) {
-                return ['escrow_account_id' => $escrow->id, 'state' => $escrow->state->value, 'idempotent_replay' => true];
             }
 
             $remaining = $this->remainingEscrowScale($escrow);
@@ -312,14 +306,6 @@ class EscrowService
     {
         return DB::transaction(function () use ($command): array {
             $escrow = $this->lockEscrowOrFail($command->escrowAccountId);
-            if (! in_array($escrow->state, [EscrowState::Held, EscrowState::UnderDispute], true)) {
-                throw new InvalidEscrowStateTransitionException(
-                    escrowAccountId: $escrow->id,
-                    fromState: $escrow->state->value,
-                    toState: EscrowState::Refunded->value,
-                );
-            }
-
             $requestHash = $this->hashPayload([
                 'escrow_account_id' => $escrow->id,
                 'refund_amount' => $command->refundAmount,
@@ -327,6 +313,13 @@ class EscrowService
             $idem = $this->claimEscrowIdempotency('escrow_refund', $command->idempotencyKey, $requestHash);
             if ($idem['replay']) {
                 return ['escrow_account_id' => $escrow->id, 'state' => $escrow->state->value, 'idempotent_replay' => true];
+            }
+            if (! in_array($escrow->state, [EscrowState::Held, EscrowState::UnderDispute], true)) {
+                throw new InvalidEscrowStateTransitionException(
+                    escrowAccountId: $escrow->id,
+                    fromState: $escrow->state->value,
+                    toState: EscrowState::Refunded->value,
+                );
             }
 
             $remaining = $this->remainingEscrowScale($escrow);
@@ -728,25 +721,6 @@ class EscrowService
             $hold->status = WalletHoldStatus::Consumed;
             $hold->save();
         }
-    }
-
-    private function consumeEscrowHoldReservation(int $walletHoldId): void
-    {
-        $hold = \App\Models\WalletHold::query()
-            ->whereKey($walletHoldId)
-            ->lockForUpdate()
-            ->first();
-
-        if ($hold === null) {
-            throw new InvalidLedgerOperationException('escrow_hold_missing_for_ledger_debit');
-        }
-
-        if ($hold->status !== WalletHoldStatus::Active) {
-            throw new InvalidLedgerOperationException('escrow_hold_not_active_for_ledger_debit');
-        }
-
-        $hold->status = WalletHoldStatus::Consumed;
-        $hold->save();
     }
 
     /**

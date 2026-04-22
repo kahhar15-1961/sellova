@@ -112,14 +112,6 @@ class DisputeService
                 throw new OrderValidationFailedException($command->orderId, 'order_not_found', ['order_id' => $command->orderId]);
             }
 
-            if ($order->status !== OrderStatus::PaidInEscrow) {
-                throw new InvalidOrderStateTransitionException(
-                    orderId: $order->id,
-                    fromStatus: $order->status->value,
-                    toStatus: OrderStatus::Disputed->value,
-                );
-            }
-
             if ($command->orderItemId !== null) {
                 $item = OrderItem::query()
                     ->whereKey($command->orderItemId)
@@ -131,25 +123,6 @@ class DisputeService
                         reasonCode: 'order_item_not_on_order',
                     );
                 }
-            }
-
-            $escrow = EscrowAccount::query()
-                ->where('order_id', $order->id)
-                ->lockForUpdate()
-                ->first();
-            if ($escrow === null) {
-                throw new DisputeResolutionConflictException(0, 'escrow_not_found_for_order');
-            }
-            if ($escrow->state !== EscrowState::Held) {
-                throw new InvalidEscrowStateTransitionException(
-                    escrowAccountId: $escrow->id,
-                    fromState: $escrow->state->value,
-                    toState: EscrowState::UnderDispute->value,
-                );
-            }
-
-            if ($this->hasActiveDisputeOnOrder($order->id)) {
-                throw new DisputeResolutionConflictException(0, 'active_dispute_exists_for_order');
             }
 
             $idem = null;
@@ -167,14 +140,49 @@ class DisputeService
                         throw new IdempotencyConflictException($command->idempotencyKey, 'dispute_open');
                     }
 
+                    $escrowReplay = EscrowAccount::query()
+                        ->where('order_id', $order->id)
+                        ->lockForUpdate()
+                        ->first();
+                    if ($escrowReplay === null) {
+                        throw new DisputeResolutionConflictException(0, 'escrow_not_found_for_order');
+                    }
+
                     return [
                         'dispute_case_id' => $existing->id,
                         'order_id' => $existing->order_id,
-                        'escrow_account_id' => $escrow->id,
+                        'escrow_account_id' => $escrowReplay->id,
                         'status' => $existing->status->value,
                         'idempotent_replay' => true,
                     ];
                 }
+            }
+
+            if ($this->hasActiveDisputeOnOrder($order->id)) {
+                throw new DisputeResolutionConflictException(0, 'active_dispute_exists_for_order');
+            }
+
+            if ($order->status !== OrderStatus::PaidInEscrow) {
+                throw new InvalidOrderStateTransitionException(
+                    orderId: $order->id,
+                    fromStatus: $order->status->value,
+                    toStatus: OrderStatus::Disputed->value,
+                );
+            }
+
+            $escrow = EscrowAccount::query()
+                ->where('order_id', $order->id)
+                ->lockForUpdate()
+                ->first();
+            if ($escrow === null) {
+                throw new DisputeResolutionConflictException(0, 'escrow_not_found_for_order');
+            }
+            if ($escrow->state !== EscrowState::Held) {
+                throw new InvalidEscrowStateTransitionException(
+                    escrowAccountId: $escrow->id,
+                    fromState: $escrow->state->value,
+                    toState: EscrowState::UnderDispute->value,
+                );
             }
 
             $case = DisputeCase::query()->create([

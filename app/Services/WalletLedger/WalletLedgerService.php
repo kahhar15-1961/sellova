@@ -100,8 +100,8 @@ class WalletLedgerService
             }
 
             $balance = $this->readWalletLedgerBalanceScale($wallet->id);
-            $activeHolds = $this->readActiveHoldsScale($wallet->id);
-            $available = $balance - $activeHolds;
+            $effectiveActiveHolds = $this->readEffectiveActiveHoldsScale($wallet->id);
+            $available = $balance - $effectiveActiveHolds;
             if ($available - $amountScale < 0) {
                 throw new InsufficientWalletBalanceException(
                     walletId: $wallet->id,
@@ -301,7 +301,7 @@ class WalletLedgerService
 
             foreach ($walletIds as $walletId) {
                 $runningBalances[$walletId] = $this->readWalletLedgerBalanceScale($walletId);
-                $activeHolds[$walletId] = $this->readActiveHoldsScale($walletId);
+                $activeHolds[$walletId] = $this->readEffectiveActiveHoldsScale($walletId);
             }
 
             foreach ($command->entries as $line) {
@@ -319,13 +319,20 @@ class WalletLedgerService
                     ? $currentBalance + $amount
                     : $currentBalance - $amount;
 
-                $availableAfter = $newBalance - $activeHolds[$wallet->id];
+                $effectiveActiveHolds = $activeHolds[$wallet->id];
+                if ($command->eventName === LedgerPostingEventName::EscrowHold
+                    && $line->entryType === WalletLedgerEntryType::EscrowHoldDebit
+                    && $line->referenceType === 'escrow_account') {
+                    $effectiveActiveHolds -= $this->activeEscrowReservationScale($wallet->id, $line->referenceId);
+                }
+
+                $availableAfter = $newBalance - $effectiveActiveHolds;
                 if ($availableAfter < 0 && ! $this->allowsNegativeAvailable($line->entryType)) {
                     throw new InsufficientWalletBalanceException(
                         walletId: $wallet->id,
                         currency: (string) $wallet->currency,
                         requestedAmount: $line->amount,
-                        availableAmount: $this->fromScale($currentBalance - $activeHolds[$wallet->id]),
+                        availableAmount: $this->fromScale($currentBalance - $effectiveActiveHolds),
                     );
                 }
 
@@ -469,7 +476,7 @@ class WalletLedgerService
             $activeHolds = [];
             foreach ($walletIds as $walletId) {
                 $runningBalances[$walletId] = $this->readWalletLedgerBalanceScale($walletId);
-                $activeHolds[$walletId] = $this->readActiveHoldsScale($walletId);
+                $activeHolds[$walletId] = $this->readEffectiveActiveHoldsScale($walletId);
             }
 
             foreach ($entries as $entry) {
@@ -536,7 +543,8 @@ class WalletLedgerService
             $wallet = $this->lockWalletOrFail($command->walletId);
             $ledger = $this->readWalletLedgerBalanceScale($wallet->id);
             $held = $this->readActiveHoldsScale($wallet->id);
-            $available = $ledger - $held;
+            $effectiveHeld = $this->readEffectiveActiveHoldsScale($wallet->id, $held);
+            $available = $ledger - $effectiveHeld;
             $asOf = $this->nextAvailableSnapshotAsOf($wallet->id);
 
             $snapshot = WalletBalanceSnapshot::query()->create([
@@ -659,6 +667,50 @@ class WalletLedgerService
             ->sum('amount');
 
         return $this->toScale((string) $sum);
+    }
+
+    private function activeEscrowReservationScale(int $walletId, int $escrowAccountId): int
+    {
+        $sum = WalletHold::query()
+            ->where('wallet_id', $walletId)
+            ->where('hold_type', 'escrow')
+            ->where('reference_type', 'escrow_account')
+            ->where('reference_id', $escrowAccountId)
+            ->where('status', WalletHoldStatus::Active)
+            ->lockForUpdate()
+            ->sum('amount');
+
+        return $this->toScale((string) $sum);
+    }
+
+    private function readEffectiveActiveHoldsScale(int $walletId, ?int $activeHoldsScale = null): int
+    {
+        $active = $activeHoldsScale ?? $this->readActiveHoldsScale($walletId);
+        $debitedEscrowReservations = $this->readDebitedEscrowReservationsScale($walletId);
+        $effective = $active - $debitedEscrowReservations;
+
+        return $effective > 0 ? $effective : 0;
+    }
+
+    private function readDebitedEscrowReservationsScale(int $walletId): int
+    {
+        $sum = (string) DB::table('wallet_holds as h')
+            ->where('h.wallet_id', $walletId)
+            ->where('h.hold_type', 'escrow')
+            ->where('h.reference_type', 'escrow_account')
+            ->where('h.status', WalletHoldStatus::Active->value)
+            ->whereExists(function ($q) use ($walletId): void {
+                $q->select(DB::raw(1))
+                    ->from('wallet_ledger_entries as e')
+                    ->whereColumn('e.reference_id', 'h.reference_id')
+                    ->where('e.wallet_id', $walletId)
+                    ->where('e.reference_type', 'escrow_account')
+                    ->where('e.entry_type', WalletLedgerEntryType::EscrowHoldDebit->value);
+            })
+            ->lockForUpdate()
+            ->sum('h.amount');
+
+        return $this->toScale($sum);
     }
 
     private function toScale(string $amount): int
