@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../../app/providers/app_providers.dart';
+import '../../auth/application/auth_session_controller.dart';
+import '../../auth/presentation/auth_ui_constants.dart';
 import '../application/my_profile_controller.dart';
+import '../data/profile_repository.dart';
 
 class MyProfileScreen extends ConsumerStatefulWidget {
   const MyProfileScreen({super.key});
@@ -12,289 +15,261 @@ class MyProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _MyProfileScreenState extends ConsumerState<MyProfileScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _displayNameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _seeded = false;
-  bool _hidePassword = true;
-
   @override
   void initState() {
     super.initState();
     Future<void>.microtask(() => ref.read(myProfileControllerProvider.notifier).load());
   }
 
-  @override
-  void dispose() {
-    _displayNameController.dispose();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    super.dispose();
+  String _displayName(ActorProfileDto? p) {
+    if (p == null) {
+      return 'User';
+    }
+    final n = p.displayName.trim();
+    if (n.isEmpty || n == 'Unnamed user') {
+      final e = p.email;
+      if (e.contains('@')) {
+        return e.split('@').first;
+      }
+      return 'User';
+    }
+    return n;
+  }
+
+  String _phoneLine(ActorProfileDto? p) {
+    if (p == null) {
+      return '';
+    }
+    final ph = p.phone.trim();
+    if (ph.isEmpty) {
+      return 'No phone on file';
+    }
+    return ph;
+  }
+
+  String _initials(ActorProfileDto? p) {
+    final name = _displayName(p);
+    final parts = name.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    if (name.isNotEmpty) {
+      return name.substring(0, 1).toUpperCase();
+    }
+    return 'U';
+  }
+
+  Future<void> _logout() async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: const Text('Sign out?'),
+            content: const Text('You will need to sign in again.'),
+            actions: <Widget>[
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Sign out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok || !mounted) {
+      return;
+    }
+    await ref.read(authSessionControllerProvider.notifier).logout();
+    if (!mounted) {
+      return;
+    }
+    context.go('/sign-in');
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(myProfileControllerProvider);
     final profile = state.profile;
-
-    if (profile != null && !_seeded) {
-      _displayNameController.text = profile.displayName;
-      _phoneController.text = profile.phone;
-      _seeded = true;
-    }
+    final staff = ref.watch(authSessionControllerProvider).session?.isPlatformStaff ?? false;
+    final theme = Theme.of(context);
 
     if (state.isLoading && profile == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (state.errorMessage != null && profile == null) {
-      return _ProfileError(
-        message: state.errorMessage!,
-        onRetry: () => ref.read(myProfileControllerProvider.notifier).load(),
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          title: const Text('My Profile'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(myProfileControllerProvider.notifier).load(),
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text('My Profile', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          if (state.successMessage != null)
-            _Banner(
-              text: state.successMessage!,
-              icon: Icons.check_circle_outline,
-              color: Colors.green,
-            ),
-          if (state.errorMessage != null)
-            _Banner(
-              text: state.errorMessage!,
-              icon: Icons.error_outline,
-              color: Colors.red,
-            ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Account info', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  Text('Email: ${profile?.email ?? 'Unavailable'}'),
-                  Text('Country: ${profile?.country.isEmpty ?? true ? 'N/A' : profile!.country}'),
-                  Text('Currency: ${profile?.currency.isEmpty ?? true ? 'N/A' : profile!.currency}'),
-                ],
-              ),
+    if (state.errorMessage != null && profile == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          title: const Text('My Profile'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+                const SizedBox(height: 12),
+                Text(state.errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => ref.read(myProfileControllerProvider.notifier).load(),
+                  child: const Text('Try again'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('Edit profile', style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _displayNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Display name',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if ((value ?? '').trim().isEmpty) {
-                          return 'Display name is required';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _hidePassword,
-                      decoration: InputDecoration(
-                        labelText: 'Password (optional)',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(() => _hidePassword = !_hidePassword),
-                          icon: Icon(_hidePassword ? Icons.visibility : Icons.visibility_off),
-                        ),
-                      ),
-                      validator: (value) {
-                        final input = (value ?? '').trim();
-                        if (input.isNotEmpty && input.length < 8) {
-                          return 'Password must be at least 8 characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: state.isSaving
-                            ? null
-                            : () async {
-                                if (!(_formKey.currentState?.validate() ?? false)) {
-                                  return;
-                                }
-                                await ref.read(myProfileControllerProvider.notifier).update(
-                                      displayName: _displayNameController.text,
-                                      phone: _phoneController.text,
-                                      password: _passwordController.text,
-                                    );
-                                _passwordController.clear();
-                              },
-                        child: state.isSaving
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Save changes'),
-                      ),
-                    ),
-                  ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => context.go('/home'),
+        ),
+        title: const Text('My Profile'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => ref.read(myProfileControllerProvider.notifier).load(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          children: <Widget>[
+            const SizedBox(height: 8),
+            Center(
+              child: CircleAvatar(
+                radius: 48,
+                backgroundColor: kAuthAccentPurple.withValues(alpha: 0.15),
+                child: Text(
+                  _initials(profile),
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: kAuthAccentPurple,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Session & browsing', style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Clears saved search/filter/sort, list cache, and position for catalog, orders, disputes, and withdrawals.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Clear saved browsing state?'),
-                              content: const Text(
-                                'This resets saved list state for products, orders, disputes, and withdrawals.',
-                              ),
-                              actions: <Widget>[
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(false),
-                                  child: const Text('Cancel'),
-                                ),
-                                FilledButton(
-                                  onPressed: () => Navigator.of(context).pop(true),
-                                  child: const Text('Clear'),
-                                ),
-                              ],
-                            ),
-                          ) ??
-                          false;
-                      if (!confirmed) {
-                        return;
-                      }
-                      await ref.read(listStatePersistenceProvider).clearAllBrowsingState();
-                      await ref.read(navigationStatePersistenceProvider).resetToHome();
-                      if (!context.mounted) {
-                        return;
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved browsing state cleared.')),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_sweep_outlined),
-                    label: const Text('Clear all saved browsing state'),
-                  ),
-                ],
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                _displayName(profile),
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Banner extends StatelessWidget {
-  const _Banner({
-    required this.text,
-    required this.icon,
-    required this.color,
-  });
-
-  final String text;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: color.withOpacity(0.12),
-        ),
-        child: Row(
-          children: <Widget>[
-            Icon(icon, color: color),
-            const SizedBox(width: 8),
-            Expanded(child: Text(text)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileError extends StatelessWidget {
-  const _ProfileError({
-    required this.message,
-    required this.onRetry,
-  });
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(Icons.error_outline, size: 44),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: onRetry,
-              child: const Text('Try again'),
+            const SizedBox(height: 6),
+            Center(
+              child: Text(
+                _phoneLine(profile),
+                style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF64748B)),
+              ),
+            ),
+            const SizedBox(height: 28),
+            if (staff)
+              _ProfileMenuTile(
+                icon: Icons.admin_panel_settings_outlined,
+                title: 'Staff profile',
+                subtitle: 'Admin & adjudicator',
+                onTap: () => context.push('/profile/admin'),
+              ),
+            _ProfileMenuTile(
+              icon: Icons.person_outline_rounded,
+              title: 'Personal Information',
+              onTap: () => context.push('/profile/personal'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.location_on_outlined,
+              title: 'Address Book',
+              onTap: () => context.push('/addresses'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.credit_card_outlined,
+              title: 'Payment Methods',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Add or change cards during checkout from your cart.')),
+                );
+                context.push('/cart');
+              },
+            ),
+            _ProfileMenuTile(
+              icon: Icons.star_border_rounded,
+              title: 'My Reviews',
+              onTap: () => context.push('/orders'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.favorite_border_rounded,
+              title: 'Wishlist',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Wishlist is coming soon.')),
+                );
+              },
+            ),
+            _ProfileMenuTile(
+              icon: Icons.help_outline_rounded,
+              title: 'Help & Support',
+              onTap: () => context.push('/profile/help'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.storefront_outlined,
+              title: 'Seller center',
+              subtitle: 'Manage your store',
+              onTap: () => context.push('/profile/seller'),
+            ),
+            const Divider(height: 32),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.logout_rounded, color: Colors.red.shade700),
+              title: Text(
+                'Logout',
+                style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w700),
+              ),
+              onTap: _logout,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ProfileMenuTile extends StatelessWidget {
+  const _ProfileMenuTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: Icon(icon, color: const Color(0xFF334155), size: 26),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+      subtitle: subtitle == null ? null : Text(subtitle!, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+      trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+      onTap: onTap,
     );
   }
 }

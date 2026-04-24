@@ -21,10 +21,12 @@ class UserSellerService
      */
     public function getBuyerProfile(int $userId): array
     {
-        $user = User::query()->find($userId);
+        $user = User::query()->with('roles')->find($userId);
         if ($user === null) {
             throw new AuthValidationFailedException('user_not_found', ['user_id' => $userId]);
         }
+
+        $roleCodes = $user->roles->pluck('code')->map(static fn ($code): string => (string) $code)->values()->all();
 
         return [
             'id' => $user->id,
@@ -35,6 +37,7 @@ class UserSellerService
             'risk_level' => $user->risk_level,
             'last_login_at' => $user->last_login_at?->toIso8601String(),
             'created_at' => $user->created_at?->toIso8601String(),
+            'role_codes' => $roleCodes,
         ];
     }
 

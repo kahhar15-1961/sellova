@@ -26,7 +26,12 @@ class AppShellScreen extends ConsumerWidget {
     final location = GoRouterState.of(context).matchedLocation;
     final selectedIndex = _selectedIndex(location);
     final inSellerArea = location.startsWith('/seller/');
+    final session = ref.watch(authSessionControllerProvider).session;
     final hideShellAppBar = inSellerArea ||
+        location.startsWith('/profile/admin') ||
+        location == '/profile' ||
+        location.startsWith('/profile/help') ||
+        location.startsWith('/profile/personal') ||
         location.startsWith('/home') ||
         location.startsWith('/products') ||
         location.startsWith('/cart') ||
@@ -39,6 +44,9 @@ class AppShellScreen extends ConsumerWidget {
         location.contains('/track') ||
         location.startsWith('/disputes/create');
     final hideBottomNav = inSellerArea ||
+        location.startsWith('/profile/help') ||
+        location.startsWith('/profile/personal') ||
+        location.startsWith('/profile/admin') ||
         location.startsWith('/checkout/') ||
         location.startsWith('/addresses') ||
         location.startsWith('/order-success') ||
@@ -61,6 +69,12 @@ class AppShellScreen extends ConsumerWidget {
           : AppBar(
               title: const Text('Sellova'),
               actions: <Widget>[
+                if (session?.isPlatformStaff ?? false)
+                  IconButton(
+                    tooltip: 'Staff profile',
+                    onPressed: () => context.push('/profile/admin'),
+                    icon: const Icon(Icons.admin_panel_settings_outlined),
+                  ),
                 IconButton(
                   tooltip: 'Seller Profile',
                   onPressed: () => go('/profile/seller'),
@@ -68,14 +82,17 @@ class AppShellScreen extends ConsumerWidget {
                 ),
                 PopupMenuButton<String>(
                   tooltip: 'More',
-                  onSelected: (value) {
+                  onSelected: (value) async {
                     switch (value) {
                       case '/profile':
-                        go('/profile');
-                        break;
+                        await go('/profile');
+                        return;
                       case 'logout':
-                        ref.read(authSessionControllerProvider.notifier).logout();
-                        break;
+                        await ref.read(authSessionControllerProvider.notifier).logout();
+                        if (context.mounted) {
+                          context.go('/sign-in');
+                        }
+                        return;
                     }
                   },
                   itemBuilder: (_) => const <PopupMenuEntry<String>>[

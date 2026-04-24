@@ -7,6 +7,7 @@ namespace App\Http\Foundation;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Facade;
 
 /**
@@ -58,6 +59,10 @@ final class EloquentBootstrap
         $capsule->bootEloquent();
 
         $app->instance('db', $capsule->getDatabaseManager());
+        $app->singleton('files', static fn (): Filesystem => new Filesystem());
+        $app->bind('db.schema', static function () use ($capsule) {
+            return $capsule->getConnection()->getSchemaBuilder();
+        });
         Facade::setFacadeApplication($app);
 
         return true;

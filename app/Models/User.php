@@ -55,6 +55,7 @@ class User extends Model
         'status',
         'risk_level',
         'last_login_at',
+        'apple_sub',
     ];
 
     protected $casts = [

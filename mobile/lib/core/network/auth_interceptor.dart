@@ -22,7 +22,10 @@ class AuthInterceptor extends Interceptor {
     // which can surface as 500 if the DB schema is incomplete.
     final path = options.uri.path;
     final isAnonymousAuth = path.contains('/api/v1/auth/login') ||
-        path.contains('/api/v1/auth/register');
+        path.contains('/api/v1/auth/register') ||
+        path.contains('/api/v1/auth/refresh') ||
+        path.contains('/api/v1/auth/google') ||
+        path.contains('/api/v1/auth/apple');
     if (!isAnonymousAuth) {
       final accessToken = await tokenStore.readAccessToken();
       if (accessToken != null && accessToken.isNotEmpty) {

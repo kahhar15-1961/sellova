@@ -9,6 +9,7 @@ use App\Domain\Commands\Auth\LogoutCommand;
 use App\Domain\Commands\Auth\RefreshTokenCommand;
 use App\Domain\Commands\Auth\RegisterBuyerCommand;
 use App\Domain\Commands\Auth\RegisterSellerCommand;
+use App\Domain\Exceptions\AuthValidationFailedException;
 use App\Http\Application;
 use App\Http\Requests\V1\LoginRequest;
 use App\Http\Requests\V1\RefreshSessionRequest;
@@ -77,6 +78,40 @@ final class AuthController
     {
         $token = RefreshSessionRequest::token($request);
         $result = $this->app->authService()->refreshToken(new RefreshTokenCommand($token));
+
+        return ApiEnvelope::data($result);
+    }
+
+    public function loginGoogle(Request $request): Response
+    {
+        $body = json_decode($request->getContent(), true);
+        if (! is_array($body)) {
+            throw new AuthValidationFailedException('invalid_social_token', ['provider' => 'google']);
+        }
+        $idToken = trim((string) ($body['id_token'] ?? ''));
+        if ($idToken === '') {
+            throw new AuthValidationFailedException('invalid_social_token', ['provider' => 'google', 'detail' => 'id_token_required']);
+        }
+        $result = $this->app->authService()->loginWithGoogleIdToken($idToken);
+
+        return ApiEnvelope::data($result);
+    }
+
+    public function loginApple(Request $request): Response
+    {
+        $body = json_decode($request->getContent(), true);
+        if (! is_array($body)) {
+            throw new AuthValidationFailedException('invalid_social_token', ['provider' => 'apple']);
+        }
+        $identityToken = trim((string) ($body['identity_token'] ?? ''));
+        if ($identityToken === '') {
+            throw new AuthValidationFailedException('invalid_social_token', ['provider' => 'apple', 'detail' => 'identity_token_required']);
+        }
+        $email = isset($body['email']) ? trim((string) $body['email']) : null;
+        if ($email === '') {
+            $email = null;
+        }
+        $result = $this->app->authService()->loginWithAppleIdentityToken($identityToken, $email);
 
         return ApiEnvelope::data($result);
     }

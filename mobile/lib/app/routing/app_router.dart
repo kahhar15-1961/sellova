@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/app_providers.dart';
 import '../../features/auth/application/auth_session_controller.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/sign_in_gate_screen.dart';
 import '../../features/auth/presentation/sign_up_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
@@ -18,7 +19,10 @@ import '../../features/orders/presentation/rate_review_screen.dart';
 import '../../features/orders/presentation/confirm_delivery_screen.dart';
 import '../../features/orders/presentation/contact_seller_chat_screen.dart';
 import '../../features/orders/presentation/track_order_screen.dart';
+import '../../features/profile/presentation/admin_profile_screen.dart';
+import '../../features/profile/presentation/help_support_screen.dart';
 import '../../features/profile/presentation/my_profile_screen.dart';
+import '../../features/profile/presentation/personal_information_screen.dart';
 import '../../features/profile/presentation/seller_profile_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/product_list_screen.dart';
@@ -95,6 +99,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/sign-up',
         builder: (_, __) => const SignUpScreen(),
       ),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (_, __) => const ForgotPasswordScreen(),
+      ),
       ShellRoute(
         builder: (_, __, child) => AppShellScreen(child: child),
         routes: <RouteBase>[
@@ -129,6 +137,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile/seller',
             builder: (_, __) => const SellerProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/admin',
+            builder: (_, __) => const AdminProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/help',
+            builder: (_, __) => const HelpSupportScreen(),
+          ),
+          GoRoute(
+            path: '/profile/personal',
+            builder: (_, __) => const PersonalInformationScreen(),
           ),
           GoRoute(
             path: '/seller/dashboard',
@@ -571,19 +591,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isSplash = location == '/splash';
       final isSignIn = location == '/sign-in';
       final isSignUp = location == '/sign-up';
+      final isForgotPassword = location == '/forgot-password';
 
       if (authState.status == AuthStatus.unknown) {
         return isSplash ? null : '/splash';
       }
 
       if (!isAuth) {
-        if (isSignIn || isSignUp) {
+        if (isSignIn || isSignUp || isForgotPassword) {
           return null;
         }
         return '/sign-in';
       }
 
-      if (isSignIn || isSplash || isSignUp) {
+      if (isSignIn || isSplash || isSignUp || isForgotPassword) {
         return lastRoute;
       }
       return null;

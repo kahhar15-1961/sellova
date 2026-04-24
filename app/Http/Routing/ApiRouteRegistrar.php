@@ -85,6 +85,24 @@ final class ApiRouteRegistrar
             [],
             ['POST'],
         ));
+        $routes->add('api.v1.auth.google', new Route(
+            '/api/v1/auth/google',
+            ['_controller' => $c->loginGoogle(...), '_auth' => false],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.auth.apple', new Route(
+            '/api/v1/auth/apple',
+            ['_controller' => $c->loginApple(...), '_auth' => false],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
     }
 
     private static function profileRoutes(RouteCollection $routes, Application $app): void

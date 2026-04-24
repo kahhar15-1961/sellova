@@ -9,6 +9,27 @@ class AuthSessionDto {
 
   String get accessToken => (raw['access_token'] ?? '').toString();
   String get refreshToken => (raw['refresh_token'] ?? '').toString();
+
+  int? get userId {
+    final v = raw['user_id'];
+    if (v is int) {
+      return v;
+    }
+    if (v is num) {
+      return v.toInt();
+    }
+    return int.tryParse(v?.toString() ?? '');
+  }
+
+  List<String> get roleCodes {
+    final r = raw['role_codes'];
+    if (r is List) {
+      return r.map((e) => e.toString()).toList();
+    }
+    return const <String>[];
+  }
+
+  bool get isPlatformStaff => roleCodes.contains('admin') || roleCodes.contains('adjudicator');
 }
 
 class AuthRepository {
@@ -31,6 +52,34 @@ class AuthRepository {
 
   Future<AuthSessionDto> login(Map<String, dynamic> request) async {
     final json = await _apiClient.post('/api/v1/auth/login', data: request);
+    final envelope = parseObjectEnvelope(json);
+    final dto = AuthSessionDto(envelope.data);
+    await _persistTokens(dto);
+    return dto;
+  }
+
+  Future<AuthSessionDto> loginWithGoogle({required String idToken}) async {
+    final json = await _apiClient.post(
+      '/api/v1/auth/google',
+      data: <String, dynamic>{'id_token': idToken},
+    );
+    final envelope = parseObjectEnvelope(json);
+    final dto = AuthSessionDto(envelope.data);
+    await _persistTokens(dto);
+    return dto;
+  }
+
+  Future<AuthSessionDto> loginWithApple({
+    required String identityToken,
+    String? email,
+  }) async {
+    final json = await _apiClient.post(
+      '/api/v1/auth/apple',
+      data: <String, dynamic>{
+        'identity_token': identityToken,
+        if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+      },
+    );
     final envelope = parseObjectEnvelope(json);
     final dto = AuthSessionDto(envelope.data);
     await _persistTokens(dto);

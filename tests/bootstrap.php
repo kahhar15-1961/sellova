@@ -3,25 +3,13 @@
 declare(strict_types=1);
 
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/../app/Http/Foundation/global_helpers.php';
 
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Facade;
-
-/**
- * Laravel helpers like {@code now()} live in the full framework; the domain package
- * still calls them from services. Provide a minimal global for PHPUnit runs.
- */
-if (! function_exists('now')) {
-    /**
-     * @param  \DateTimeZone|string|int|null  $tz
-     */
-    function now($tz = null): \Illuminate\Support\Carbon
-    {
-        return \Illuminate\Support\Carbon::now($tz);
-    }
-}
 
 /**
  * Minimal Eloquent bootstrap for integration tests.
@@ -78,6 +66,10 @@ final class TestBootstrap
         $capsule->bootEloquent();
 
         $app->instance('db', $capsule->getDatabaseManager());
+        $app->singleton('files', static fn (): Filesystem => new Filesystem());
+        $app->bind('db.schema', static function () use ($capsule) {
+            return $capsule->getConnection()->getSchemaBuilder();
+        });
         Facade::setFacadeApplication($app);
 
         define('TEST_DB_AVAILABLE', true);

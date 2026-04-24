@@ -9,6 +9,17 @@ class ActorProfileDto {
   String get displayName =>
       (raw['display_name'] ?? raw['name'] ?? raw['full_name'] ?? 'Unnamed user').toString();
 
+  int? get id {
+    final v = raw['id'];
+    if (v is int) {
+      return v;
+    }
+    if (v is num) {
+      return v.toInt();
+    }
+    return int.tryParse(v?.toString() ?? '');
+  }
+
   String get email => (raw['email'] ?? '').toString();
 
   String get phone => (raw['phone'] ?? '').toString();
@@ -17,6 +28,16 @@ class ActorProfileDto {
 
   String get currency =>
       (raw['default_currency'] ?? raw['currency'] ?? '').toString().toUpperCase();
+
+  List<String> get roleCodes {
+    final r = raw['role_codes'];
+    if (r is List) {
+      return r.map((e) => e.toString()).toList();
+    }
+    return const <String>[];
+  }
+
+  bool get isPlatformStaff => roleCodes.contains('admin') || roleCodes.contains('adjudicator');
 }
 
 class SellerProfileDto {

@@ -68,6 +68,21 @@ class AuthSessionController extends Notifier<AuthSessionState> {
     state = AuthSessionState(status: AuthStatus.authenticated, session: session);
   }
 
+  Future<void> loginWithGoogleIdToken({required String idToken}) async {
+    final authRepository = ref.read(authRepositoryProvider);
+    final session = await authRepository.loginWithGoogle(idToken: idToken);
+    state = AuthSessionState(status: AuthStatus.authenticated, session: session);
+  }
+
+  Future<void> loginWithApple({
+    required String identityToken,
+    String? email,
+  }) async {
+    final authRepository = ref.read(authRepositoryProvider);
+    final session = await authRepository.loginWithApple(identityToken: identityToken, email: email);
+    state = AuthSessionState(status: AuthStatus.authenticated, session: session);
+  }
+
   Future<void> register(Map<String, dynamic> request) async {
     final authRepository = ref.read(authRepositoryProvider);
     final session = await authRepository.register(request);

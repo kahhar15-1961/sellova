@@ -123,10 +123,154 @@ class AuthService
     }
 
     /**
-     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, user_id: int}
+     * Sign in or register a buyer using a verified Google ID token.
+     *
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, user_id: int, role_codes: list<string>}
+     */
+    public function loginWithGoogleIdToken(string $idToken): array
+    {
+        $csv = (string) (getenv('GOOGLE_OAUTH_CLIENT_IDS') ?: getenv('GOOGLE_OAUTH_CLIENT_ID') ?: '');
+        $audiences = array_values(array_filter(array_map(trim(...), explode(',', $csv)), static fn (string $s): bool => $s !== ''));
+        if ($audiences === []) {
+            throw new AuthValidationFailedException('social_login_not_configured', ['provider' => 'google']);
+        }
+
+        try {
+            $claims = GoogleIdTokenVerifier::verify($idToken, $audiences);
+        } catch (\Throwable $e) {
+            throw new AuthValidationFailedException('invalid_social_token', [
+                'provider' => 'google',
+                'detail' => $e->getMessage(),
+            ]);
+        }
+
+        if (! $claims['email_verified']) {
+            throw new AuthValidationFailedException('invalid_social_token', [
+                'provider' => 'google',
+                'detail' => 'email_not_verified',
+            ]);
+        }
+
+        $email = $claims['email'];
+        $display = $claims['name'] ?? explode('@', $email)[0];
+
+        return DB::transaction(function () use ($email, $display): array {
+            $user = User::query()->where('email', $email)->first();
+            if ($user !== null) {
+                if ($user->status !== 'active') {
+                    throw new AuthValidationFailedException('account_inactive', ['status' => $user->status]);
+                }
+                $user->forceFill(['last_login_at' => now()])->save();
+
+                return $this->issueTokenResponsePayload((int) $user->id);
+            }
+
+            return $this->registerBuyer(new RegisterBuyerCommand(
+                email: $email,
+                phone: null,
+                passwordPlain: Str::random(64),
+                displayName: $display !== '' ? $display : 'Google user',
+                countryCode: 'US',
+                defaultCurrency: 'USD',
+            ));
+        });
+    }
+
+    /**
+     * Sign in or register a buyer using a verified Apple identity token.
+     *
+     * @param  string|null  $emailFromClient  Email from {@see SignInWithApple} on first authorization (JWT may omit email later).
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, user_id: int, role_codes: list<string>}
+     */
+    public function loginWithAppleIdentityToken(string $identityToken, ?string $emailFromClient = null): array
+    {
+        $appleClientId = trim((string) (getenv('APPLE_CLIENT_ID') ?: ''));
+        if ($appleClientId === '') {
+            throw new AuthValidationFailedException('social_login_not_configured', ['provider' => 'apple']);
+        }
+
+        try {
+            $claims = AppleIdTokenVerifier::verify($identityToken, $appleClientId);
+        } catch (\Throwable $e) {
+            throw new AuthValidationFailedException('invalid_social_token', [
+                'provider' => 'apple',
+                'detail' => $e->getMessage(),
+            ]);
+        }
+
+        $sub = $claims['sub'];
+        $emailFromToken = $claims['email'] ?? null;
+        $emailFromClient = $emailFromClient !== null ? strtolower(trim($emailFromClient)) : null;
+        if ($emailFromClient === '') {
+            $emailFromClient = null;
+        }
+
+        $email = $emailFromToken ?? $emailFromClient;
+        if ($email === null || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new AuthValidationFailedException('invalid_social_token', [
+                'provider' => 'apple',
+                'detail' => 'email_required',
+            ]);
+        }
+
+        return DB::transaction(function () use ($sub, $email): array {
+            $bySub = User::query()->where('apple_sub', $sub)->first();
+            if ($bySub !== null) {
+                if ($bySub->status !== 'active') {
+                    throw new AuthValidationFailedException('account_inactive', ['status' => $bySub->status]);
+                }
+                $bySub->forceFill(['last_login_at' => now()])->save();
+
+                return $this->issueTokenResponsePayload((int) $bySub->id);
+            }
+
+            $byEmail = User::query()->where('email', $email)->first();
+            if ($byEmail !== null) {
+                if ($byEmail->status !== 'active') {
+                    throw new AuthValidationFailedException('account_inactive', ['status' => $byEmail->status]);
+                }
+                $existingApple = (string) ($byEmail->apple_sub ?? '');
+                if ($existingApple !== '' && $existingApple !== $sub) {
+                    throw new AuthValidationFailedException('invalid_social_token', [
+                        'provider' => 'apple',
+                        'detail' => 'email_linked_to_different_apple_id',
+                    ]);
+                }
+                if ($existingApple === '') {
+                    $byEmail->forceFill(['apple_sub' => $sub, 'last_login_at' => now()])->save();
+                } else {
+                    $byEmail->forceFill(['last_login_at' => now()])->save();
+                }
+
+                return $this->issueTokenResponsePayload((int) $byEmail->id);
+            }
+
+            $user = User::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'email' => $email,
+                'phone' => null,
+                'password_hash' => password_hash(Str::random(64), PASSWORD_DEFAULT),
+                'status' => 'active',
+                'risk_level' => 'low',
+                'apple_sub' => $sub,
+            ]);
+
+            return $this->issueTokenResponsePayload((int) $user->id);
+        });
+    }
+
+    /**
+     * @return array{access_token: string, refresh_token: string, token_type: string, expires_in: int, user_id: int, role_codes: list<string>}
      */
     private function issueTokenResponsePayload(int $userId): array
     {
+        $user = User::query()->with('roles')->find($userId);
+        if ($user === null) {
+            throw new AuthValidationFailedException('user_not_found', ['user_id' => $userId]);
+        }
+
+        $roleCodes = $user->roles->pluck('code')->map(static fn ($code): string => (string) $code)->values()->all();
+
         $family = (string) Str::uuid();
         $accessPlain = 'at_'.Str::random(48);
         $refreshPlain = 'rt_'.Str::random(48);
@@ -162,6 +306,7 @@ class AuthService
             'token_type' => 'Bearer',
             'expires_in' => self::ACCESS_TTL_SECONDS,
             'user_id' => $userId,
+            'role_codes' => $roleCodes,
         ];
     }
 
