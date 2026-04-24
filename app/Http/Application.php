@@ -8,6 +8,7 @@ use App\Auth\DomainGate;
 use App\Http\Auth\AuthenticationRequiredException;
 use App\Models\User;
 use App\Services\Auth\AuthService;
+use App\Services\Category\CategoryService;
 use App\Services\Dispute\DisputeService;
 use App\Services\Order\OrderService;
 use App\Services\Product\ProductService;
@@ -28,6 +29,8 @@ final class Application
     private ?UserSellerService $userSellerService = null;
 
     private ?ProductService $productService = null;
+
+    private ?CategoryService $categoryService = null;
 
     private ?DomainGate $domainGate = null;
 
@@ -59,6 +62,11 @@ final class Application
     public function productService(): ProductService
     {
         return $this->productService ??= new ProductService();
+    }
+
+    public function categoryService(): CategoryService
+    {
+        return $this->categoryService ??= new CategoryService();
     }
 
     public function domainGate(): DomainGate

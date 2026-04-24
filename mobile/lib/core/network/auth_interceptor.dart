@@ -17,9 +17,17 @@ class AuthInterceptor extends Interceptor {
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final accessToken = await tokenStore.readAccessToken();
-    if (accessToken != null && accessToken.isNotEmpty) {
-      options.headers['Authorization'] = 'Bearer $accessToken';
+    // Never send a stale access token on anonymous auth calls: the server may
+    // resolve an actor and eager-load relations (e.g. roles) before login runs,
+    // which can surface as 500 if the DB schema is incomplete.
+    final path = options.uri.path;
+    final isAnonymousAuth = path.contains('/api/v1/auth/login') ||
+        path.contains('/api/v1/auth/register');
+    if (!isAnonymousAuth) {
+      final accessToken = await tokenStore.readAccessToken();
+      if (accessToken != null && accessToken.isNotEmpty) {
+        options.headers['Authorization'] = 'Bearer $accessToken';
+      }
     }
     handler.next(options);
   }

@@ -23,6 +23,7 @@ use App\Domain\Exceptions\WalletNotFoundException;
 use App\Domain\Exceptions\WithdrawalValidationFailedException;
 use App\Http\Auth\AuthenticationRequiredException;
 use App\Http\Validation\ValidationFailedException;
+use Illuminate\Database\QueryException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
@@ -200,6 +201,13 @@ final class ExceptionToHttpMapper
                 'error' => 'not_implemented',
                 'message' => $e->getMessage(),
             ], Response::HTTP_NOT_IMPLEMENTED);
+        }
+
+        if ($e instanceof QueryException) {
+            return new JsonResponse([
+                'error' => 'database_error',
+                'message' => 'A database error occurred. Check that MySQL is running and the schema is applied (see CANONICAL_SCHEMA.sql).',
+            ], Response::HTTP_SERVICE_UNAVAILABLE);
         }
 
         return new JsonResponse([

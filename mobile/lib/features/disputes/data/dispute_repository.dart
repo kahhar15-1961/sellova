@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/network/api_client.dart';
 import '../../../core/network/repository_helpers.dart';
 import '../../../core/pagination/pagination_meta.dart';
@@ -149,5 +151,30 @@ class DisputeRepository {
       data: request,
     );
     return DisputeDto(parseObjectEnvelope(json).data);
+  }
+
+  /// Multipart upload for dispute evidence (image/file). Backend should return `{ data: { url|storage_path } }` or a flat map.
+  Future<String> uploadEvidenceFile({
+    required int disputeCaseId,
+    required String filePath,
+  }) async {
+    final form = FormData.fromMap(<String, dynamic>{
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final json = await _apiClient.postMultipart(
+      '/api/v1/disputes/$disputeCaseId/evidence/upload',
+      data: form,
+    );
+    Map<String, dynamic> payload;
+    try {
+      payload = parseObjectEnvelope(json).data;
+    } catch (_) {
+      payload = Map<String, dynamic>.from(json);
+    }
+    final url = (payload['url'] ?? payload['storage_path'] ?? payload['file_url'] ?? payload['path'] ?? '').toString();
+    if (url.isEmpty) {
+      throw const FormatException('Upload response missing file URL');
+    }
+    return url;
   }
 }

@@ -80,4 +80,22 @@ class ApiClient {
       throw _errorMapper.map(error);
     }
   }
+
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required FormData data,
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: Options(contentType: 'multipart/form-data'),
+      );
+      return response.data ?? <String, dynamic>{};
+    } catch (error) {
+      throw _errorMapper.map(error);
+    }
+  }
 }

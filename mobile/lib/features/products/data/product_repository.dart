@@ -29,8 +29,21 @@ class ProductDto {
     if (direct is String && direct.isNotEmpty) {
       return direct;
     }
-    final images = imageUrls;
-    return images.isEmpty ? null : images.first;
+    final rawImages = raw['images'];
+    if (rawImages is List) {
+      for (final item in rawImages) {
+        if (item is String && item.isNotEmpty) {
+          return item;
+        }
+        if (item is Map && item['url'] is String) {
+          final url = item['url'].toString();
+          if (url.isNotEmpty) {
+            return url;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   List<String> get imageUrls {
@@ -51,7 +64,8 @@ class ProductDto {
     if (values.isNotEmpty) {
       return values;
     }
-    final fallback = primaryImageUrl;
+    final direct = raw['image_url'] ?? raw['thumbnail_url'] ?? raw['cover_image_url'];
+    final fallback = direct is String && direct.isNotEmpty ? direct : null;
     return fallback == null ? <String>[] : <String>[fallback];
   }
 
@@ -63,6 +77,96 @@ class ProductDto {
     }
     return seller.toString();
   }
+
+  /// Catalog detail payload (`ProductService::productToDetailArray`).
+  String get status => (raw['status'] ?? '').toString().trim();
+
+  String get productType => (raw['product_type'] ?? '').toString().trim();
+
+  int? get categoryId => (raw['category_id'] as num?)?.toInt();
+
+  int? get storefrontId => (raw['storefront_id'] as num?)?.toInt();
+
+  int? get sellerProfileId => (raw['seller_profile_id'] as num?)?.toInt();
+
+  String get uuid => (raw['uuid'] ?? '').toString().trim();
+
+  String get publishedLabel {
+    final rawValue = raw['published_at'] ?? raw['publishedAt'];
+    if (rawValue is String && rawValue.isNotEmpty) {
+      final d = DateTime.tryParse(rawValue);
+      if (d != null) {
+        return _formatYmdAtHm(d.toLocal());
+      }
+    }
+    return '—';
+  }
+
+  String get updatedLabel {
+    final rawValue = raw['updated_at'] ?? raw['updatedAt'];
+    if (rawValue is String && rawValue.isNotEmpty) {
+      final d = DateTime.tryParse(rawValue);
+      if (d != null) {
+        return _formatYmdAtHm(d.toLocal());
+      }
+    }
+    return '—';
+  }
+
+  /// Shown under the title when the API does not send `short_info` / `subtitle`.
+  String get heroHighlight {
+    final explicit = raw['short_info'] ?? raw['subtitle'];
+    if (explicit != null && explicit.toString().trim().isNotEmpty) {
+      return explicit.toString().trim();
+    }
+    final d = description.trim();
+    if (d.isEmpty) {
+      return '';
+    }
+    final nl = d.indexOf('\n');
+    if (nl > 0 && nl <= 200) {
+      return d.substring(0, nl).trim();
+    }
+    if (d.length <= 160) {
+      return d;
+    }
+    return '${d.substring(0, 157)}…';
+  }
+
+  /// Optional compare/list price when present in the payload (same [currency] as base price).
+  String? get compareAtLabel {
+    final keys = <String>['compare_at_price', 'list_price', 'original_price', 'msrp'];
+    for (final k in keys) {
+      final v = raw[k];
+      if (v == null) {
+        continue;
+      }
+      final s = v.toString().trim();
+      if (s.isEmpty) {
+        continue;
+      }
+      final c = (raw['currency'] ?? '').toString().toUpperCase();
+      return c.isEmpty ? s : '$c $s';
+    }
+    return null;
+  }
+
+  bool get hasMeaningfulComparePrice {
+    final compare = compareAtLabel;
+    if (compare == null) {
+      return false;
+    }
+    return compare.trim() != priceLabel.trim();
+  }
+}
+
+String _formatYmdAtHm(DateTime local) {
+  final y = local.year.toString().padLeft(4, '0');
+  final m = local.month.toString().padLeft(2, '0');
+  final d = local.day.toString().padLeft(2, '0');
+  final h = local.hour.toString().padLeft(2, '0');
+  final min = local.minute.toString().padLeft(2, '0');
+  return '$y-$m-$d at $h:$min';
 }
 
 class ProductRepository {

@@ -6,6 +6,7 @@ namespace App\Http\Routing;
 
 use App\Http\Application;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DisputeController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -38,6 +39,7 @@ final class ApiRouteRegistrar
 
         self::authRoutes($routes, $app);
         self::profileRoutes($routes, $app);
+        self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
         self::disputeRoutes($routes, $app);
@@ -182,6 +184,20 @@ final class ApiRouteRegistrar
             '',
             [],
             ['DELETE'],
+        ));
+    }
+
+    private static function categoryRoutes(RouteCollection $routes, Application $app): void
+    {
+        $c = new CategoryController($app);
+        $routes->add('api.v1.categories.index', new Route(
+            '/api/v1/categories',
+            ['_controller' => $c->index(...), '_auth' => false],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
         ));
     }
 

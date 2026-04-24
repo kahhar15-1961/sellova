@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/auth/persistent_token_store.dart';
-import '../../core/auth/token_store.dart';
+import '../../core/telemetry/telemetry.dart';
 import '../providers/app_providers.dart';
 
 Future<List<Override>> buildBootstrapOverrides() async {
@@ -11,6 +12,7 @@ Future<List<Override>> buildBootstrapOverrides() async {
   return <Override>[
     tokenStoreProvider.overrideWithValue(tokenStore),
     sharedPreferencesProvider.overrideWithValue(preferences),
+    if (kDebugMode) telemetryProvider.overrideWithValue(const DebugTelemetry()),
   ];
 }
 
@@ -21,7 +23,7 @@ ProviderContainer buildBootstrapContainer({
 }
 
 Future<void> warmupAuthState(ProviderContainer container) async {
-  final tokenStore = container.read(tokenStoreProvider) as TokenStore;
+  final tokenStore = container.read(tokenStoreProvider);
   final refreshToken = await tokenStore.readRefreshToken();
   if (refreshToken == null || refreshToken.isEmpty) {
     return;

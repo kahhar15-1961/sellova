@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/api_exception.dart';
 import '../application/auth_session_controller.dart';
@@ -124,9 +125,9 @@ class _SignInGateScreenState extends ConsumerState<SignInGateScreen> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
+                        suffixIcon: TextButton(
                           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          child: Text(_obscurePassword ? 'Show' : 'Hide'),
                         ),
                       ),
                       validator: (value) {
@@ -162,6 +163,11 @@ class _SignInGateScreenState extends ConsumerState<SignInGateScreen> {
                               )
                             : const Text('Sign in'),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => context.push('/sign-up'),
+                      child: const Text('Create an account'),
                     ),
                   ],
                 ),

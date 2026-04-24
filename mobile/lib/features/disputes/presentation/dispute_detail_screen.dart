@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../application/dispute_detail_provider.dart';
 import '../data/dispute_repository.dart';
@@ -17,7 +19,7 @@ class DisputeDetailScreen extends ConsumerWidget {
     final detailAsync = ref.watch(disputeDetailProvider(disputeId));
     return Scaffold(
       body: detailAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const _DisputeDetailSkeleton(),
         error: (error, _) => _DisputeDetailError(
           message: error.toString(),
           onRetry: () => ref.refresh(disputeDetailProvider(disputeId)),
@@ -133,6 +135,21 @@ class _DisputeDetailContent extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _EvidenceCard(item: item),
                     )),
+              const SizedBox(height: 10),
+              FilledButton(
+                onPressed: () {
+                  final orderId = dispute.orderId;
+                  if (orderId != null) {
+                    HapticFeedback.lightImpact();
+                    context.push('/orders/$orderId/chat');
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('View Conversation'),
+              ),
             ],
           ),
         ),
@@ -952,6 +969,43 @@ class _DisputeDetailError extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DisputeDetailSkeleton extends StatelessWidget {
+  const _DisputeDetailSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      children: <Widget>[
+        Container(
+          height: 110,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 180,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 140,
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ],
     );
   }
 }

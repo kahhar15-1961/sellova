@@ -18,7 +18,8 @@
   },
   "autoload": {
     "psr-4": {
-      "App\\": "app/"
+      "App\\": "app/",
+      "Database\\": "database/"
     }
   },
   "autoload-dev": {
@@ -27,7 +28,9 @@
     }
   },
   "scripts": {
-    "test": "phpunit"
+    "test": "phpunit",
+    "seed:dev": "@php scripts/seed_dev_data.php",
+    "seed:local": "@php scripts/seed_local_full.php"
   }
 }
 

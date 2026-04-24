@@ -13,67 +13,139 @@ class AppShellScreen extends ConsumerWidget {
 
   final Widget child;
 
+  int _selectedIndex(String location) {
+    if (location.startsWith('/categories')) return 1;
+    if (location.startsWith('/cart')) return 2;
+    if (location.startsWith('/orders')) return 3;
+    if (location.startsWith('/profile')) return 4;
+    return 0;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final location = GoRouterState.of(context).matchedLocation;
+    final selectedIndex = _selectedIndex(location);
+    final inSellerArea = location.startsWith('/seller/');
+    final hideShellAppBar = inSellerArea ||
+        location.startsWith('/home') ||
+        location.startsWith('/products') ||
+        location.startsWith('/cart') ||
+        location.startsWith('/checkout/') ||
+        location.startsWith('/addresses') ||
+        location.startsWith('/order-success') ||
+        location.contains('/review') ||
+        location.contains('/confirm-delivery') ||
+        location.contains('/chat') ||
+        location.contains('/track') ||
+        location.startsWith('/disputes/create');
+    final hideBottomNav = inSellerArea ||
+        location.startsWith('/checkout/') ||
+        location.startsWith('/addresses') ||
+        location.startsWith('/order-success') ||
+        location.contains('/review') ||
+        location.contains('/confirm-delivery') ||
+        location.contains('/chat') ||
+        location.contains('/track') ||
+        location.startsWith('/disputes/create');
+
+    Future<void> go(String route) async {
+      await ref.read(navigationStatePersistenceProvider).saveLastRoute(route);
+      if (context.mounted) {
+        context.go(route);
+      }
+    }
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sellova'),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Products',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/home');
-              if (context.mounted) context.go('/home');
-            },
-            icon: const Icon(Icons.storefront_outlined),
-          ),
-          IconButton(
-            tooltip: 'Orders',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/orders');
-              if (context.mounted) context.go('/orders');
-            },
-            icon: const Icon(Icons.receipt_long_outlined),
-          ),
-          IconButton(
-            tooltip: 'Disputes',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/disputes');
-              if (context.mounted) context.go('/disputes');
-            },
-            icon: const Icon(Icons.gavel_outlined),
-          ),
-          IconButton(
-            tooltip: 'My Profile',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/profile');
-              if (context.mounted) context.go('/profile');
-            },
-            icon: const Icon(Icons.person_outline),
-          ),
-          IconButton(
-            tooltip: 'Seller Profile',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/profile/seller');
-              if (context.mounted) context.go('/profile/seller');
-            },
-            icon: const Icon(Icons.store_outlined),
-          ),
-          IconButton(
-            tooltip: 'Withdrawals',
-            onPressed: () async {
-              await ref.read(navigationStatePersistenceProvider).saveLastRoute('/withdrawals');
-              if (context.mounted) context.go('/withdrawals');
-            },
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-          ),
-          TextButton(
-            onPressed: () => ref.read(authSessionControllerProvider.notifier).logout(),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
+      appBar: hideShellAppBar
+          ? null
+          : AppBar(
+              title: const Text('Sellova'),
+              actions: <Widget>[
+                IconButton(
+                  tooltip: 'Seller Profile',
+                  onPressed: () => go('/profile/seller'),
+                  icon: const Icon(Icons.store_outlined),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'More',
+                  onSelected: (value) {
+                    switch (value) {
+                      case '/profile':
+                        go('/profile');
+                        break;
+                      case 'logout':
+                        ref.read(authSessionControllerProvider.notifier).logout();
+                        break;
+                    }
+                  },
+                  itemBuilder: (_) => const <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: '/profile',
+                      child: Text('My Profile'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem<String>(
+                      value: 'logout',
+                      child: Text('Logout'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              ],
+            ),
       body: child,
+      bottomNavigationBar: hideBottomNav
+          ? null
+          : NavigationBar(
+              selectedIndex: selectedIndex,
+              height: 70,
+              onDestinationSelected: (index) {
+                switch (index) {
+                  case 0:
+                    go('/home');
+                    break;
+                  case 1:
+                    go('/categories');
+                    break;
+                  case 2:
+                    go('/cart');
+                    break;
+                  case 3:
+                    go('/orders');
+                    break;
+                  case 4:
+                    go('/profile');
+                    break;
+                }
+              },
+              destinations: const <NavigationDestination>[
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.grid_view_outlined),
+                  selectedIcon: Icon(Icons.grid_view_rounded),
+                  label: 'Categories',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.shopping_cart_outlined),
+                  selectedIcon: Icon(Icons.shopping_cart),
+                  label: 'Cart',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.receipt_long_outlined),
+                  selectedIcon: Icon(Icons.receipt_long),
+                  label: 'Orders',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
     );
   }
 }

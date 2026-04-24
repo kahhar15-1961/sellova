@@ -29,7 +29,11 @@ final class HttpKernel
             $parse = new ParseJsonBody();
             $early = $parse($request);
             if ($early instanceof Response) {
-                return $early;
+                return Cors::apply($request, $early);
+            }
+
+            if ($request->getMethod() === 'OPTIONS' && str_starts_with($request->getPathInfo(), '/api/')) {
+                return Cors::preflightResponse($request);
             }
 
             (new ResolveActorUser())($request);
@@ -54,11 +58,11 @@ final class HttpKernel
                 throw new \RuntimeException('Route is missing a valid _controller.');
             }
 
-            return $controller($request);
+            return Cors::apply($request, $controller($request));
         } catch (ResourceNotFoundException|MethodNotAllowedException $e) {
-            return ExceptionToHttpMapper::map($e);
+            return Cors::apply($request, ExceptionToHttpMapper::map($e));
         } catch (\Throwable $e) {
-            return ExceptionToHttpMapper::map($e);
+            return Cors::apply($request, ExceptionToHttpMapper::map($e));
         }
     }
 }

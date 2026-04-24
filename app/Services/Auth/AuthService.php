@@ -131,6 +131,7 @@ class AuthService
         $accessPlain = 'at_'.Str::random(48);
         $refreshPlain = 'rt_'.Str::random(48);
         $now = now();
+        $format = static fn (\Illuminate\Support\Carbon $c): string => $c->format('Y-m-d H:i:s.u');
 
         UserAuthToken::query()->insert([
             [
@@ -139,9 +140,9 @@ class AuthService
                 'token_family' => $family,
                 'token_hash' => $this->hashToken($accessPlain),
                 'kind' => UserAuthToken::KIND_ACCESS,
-                'expires_at' => $now->copy()->addSeconds(self::ACCESS_TTL_SECONDS),
+                'expires_at' => $format($now->copy()->addSeconds(self::ACCESS_TTL_SECONDS)),
                 'revoked_at' => null,
-                'created_at' => $now,
+                'created_at' => $format($now),
             ],
             [
                 'uuid' => (string) Str::uuid(),
@@ -149,9 +150,9 @@ class AuthService
                 'token_family' => $family,
                 'token_hash' => $this->hashToken($refreshPlain),
                 'kind' => UserAuthToken::KIND_REFRESH,
-                'expires_at' => $now->copy()->addDays(self::REFRESH_TTL_DAYS),
+                'expires_at' => $format($now->copy()->addDays(self::REFRESH_TTL_DAYS)),
                 'revoked_at' => null,
-                'created_at' => $now,
+                'created_at' => $format($now),
             ],
         ]);
 

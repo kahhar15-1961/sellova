@@ -1,15 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/data/auth_repository.dart';
+import '../../features/categories/data/category_repository.dart';
 import '../../features/disputes/data/dispute_repository.dart';
 import '../../features/orders/data/order_repository.dart';
 import '../../features/products/data/product_repository.dart';
 import '../../features/profile/data/profile_repository.dart';
+import '../../features/seller/data/seller_business_datasource.dart';
+import '../../features/seller/data/seller_repository.dart';
 import '../../features/withdrawals/data/withdrawal_repository.dart';
 import 'app_providers.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return ref.watch(apiLayerProvider).authRepository;
+});
+
+final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
+  return ref.watch(apiLayerProvider).categoryRepository;
 });
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
@@ -30,4 +37,12 @@ final disputeRepositoryProvider = Provider<DisputeRepository>((ref) {
 
 final withdrawalRepositoryProvider = Provider<WithdrawalRepository>((ref) {
   return ref.watch(apiLayerProvider).withdrawalRepository;
+});
+
+final sellerRepositoryProvider = Provider<SellerRepository>((ref) {
+  return SellerRepository(ref.watch(apiLayerProvider).apiClient);
+});
+
+final sellerBusinessDataSourceProvider = Provider<SellerBusinessDataSource>((ref) {
+  return SellerRepositoryBusinessAdapter(ref.watch(sellerRepositoryProvider));
 });

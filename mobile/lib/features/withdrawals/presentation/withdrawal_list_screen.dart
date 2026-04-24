@@ -80,16 +80,39 @@ class _WithdrawalListScreenState extends ConsumerState<WithdrawalListScreen> {
       onRefresh: () => ref.read(withdrawalListControllerProvider.notifier).refresh(),
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         itemCount: state.items.length + 2,
         itemBuilder: (context, index) {
           if (index == 0) {
-            return Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => ref.read(withdrawalListControllerProvider.notifier).clearPersistedState(),
-                icon: const Icon(Icons.restart_alt),
-                label: const Text('Reset state'),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Withdrawals',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Monitor payout requests and release status.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: () => ref.read(withdrawalListControllerProvider.notifier).clearPersistedState(),
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Reset'),
+                  ),
+                ],
               ),
             );
           }
@@ -115,10 +138,11 @@ class _WithdrawalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           final id = withdrawal.id;
           if (id != null) {
@@ -126,7 +150,7 @@ class _WithdrawalCard extends StatelessWidget {
           }
         },
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -135,30 +159,51 @@ class _WithdrawalCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Withdrawal #${withdrawal.id ?? 'unknown'}',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
                     ),
                   ),
-                  Chip(label: Text(withdrawal.status)),
+                  _StatusPill(label: withdrawal.status),
                 ],
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: <Widget>[
-                  Text('Amount: ${withdrawal.amountLabel}'),
-                  Text('Fee: ${withdrawal.feeLabel}'),
-                  Text('Net: ${withdrawal.netLabel}'),
-                ],
-              ),
-              const SizedBox(height: 6),
               Text(
-                'Created: ${withdrawal.createdDateLabel}',
+                'Amount: ${withdrawal.amountLabel} • Fee: ${withdrawal.feeLabel}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Net: ${withdrawal.netLabel}   Created: ${withdrawal.createdDateLabel}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: cs.primaryContainer.withValues(alpha: 0.75),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: cs.primary,
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }
@@ -202,13 +247,16 @@ class _WithdrawalEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const Icon(Icons.account_balance_wallet_outlined, size: 50),
-          const SizedBox(height: 12),
-          Text('No withdrawals yet.', style: Theme.of(context).textTheme.titleMedium),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.account_balance_wallet_outlined, size: 50),
+            const SizedBox(height: 12),
+            Text('No withdrawals yet.', style: Theme.of(context).textTheme.titleMedium),
+          ],
+        ),
       ),
     );
   }

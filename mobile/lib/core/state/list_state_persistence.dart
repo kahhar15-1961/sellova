@@ -126,6 +126,12 @@ class ListStatePersistence {
     for (final key in moduleKeys) {
       await clear(key);
     }
+    const storefrontListPrefix = 'list_state.storefront_';
+    for (final key in _preferences.getKeys()) {
+      if (key.startsWith(storefrontListPrefix)) {
+        await _preferences.remove(key);
+      }
+    }
   }
 }
 

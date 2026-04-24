@@ -2,6 +2,7 @@ import '../auth/auth_session_manager.dart';
 import '../auth/token_store.dart';
 import '../errors/api_error_mapper.dart';
 import '../../features/auth/data/auth_repository.dart';
+import '../../features/categories/data/category_repository.dart';
 import '../../features/disputes/data/dispute_repository.dart';
 import '../../features/orders/data/order_repository.dart';
 import '../../features/products/data/product_repository.dart';
@@ -13,6 +14,7 @@ class ApiLayer {
   ApiLayer({
     required this.apiClient,
     required this.authRepository,
+    required this.categoryRepository,
     required this.profileRepository,
     required this.productRepository,
     required this.orderRepository,
@@ -22,6 +24,7 @@ class ApiLayer {
 
   final ApiClient apiClient;
   final AuthRepository authRepository;
+  final CategoryRepository categoryRepository;
   final ProfileRepository profileRepository;
   final ProductRepository productRepository;
   final OrderRepository orderRepository;
@@ -48,6 +51,7 @@ ApiLayer buildApiLayer({
   return ApiLayer(
     apiClient: apiClient,
     authRepository: AuthRepository(apiClient: apiClient, tokenStore: tokenStore),
+    categoryRepository: CategoryRepository(apiClient),
     profileRepository: ProfileRepository(apiClient),
     productRepository: ProductRepository(apiClient),
     orderRepository: OrderRepository(apiClient),
