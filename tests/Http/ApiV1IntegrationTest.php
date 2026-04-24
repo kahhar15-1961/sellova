@@ -56,7 +56,7 @@ final class ApiV1IntegrationTest extends TestCase
 
     public function test_auth_session_endpoints_and_opaque_token_middleware_flow(): void
     {
-        $reg = $this->json('POST', '/api/v1/auth/register', [
+        $reg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'buyer',
             'email' => 'auth-buyer@example.test',
             'password' => 'secret1234',
@@ -72,20 +72,20 @@ final class ApiV1IntegrationTest extends TestCase
         $access = (string) $reg['json']['data']['access_token'];
         $refresh = (string) $reg['json']['data']['refresh_token'];
 
-        $me = $this->json('GET', '/api/v1/me', token: $access);
+        $me = $this->legacyApiJson('GET', '/api/v1/me', token: $access);
         self::assertSame(200, $me['status']);
         self::assertArrayHasKey('data', $me['json']);
         self::assertSame('auth-buyer@example.test', $me['json']['data']['email']);
 
-        $logout = $this->json('POST', '/api/v1/auth/logout', token: $access);
+        $logout = $this->legacyApiJson('POST', '/api/v1/auth/logout', token: $access);
         self::assertSame(200, $logout['status']);
         self::assertSame(['ok' => true], $logout['json']['data']);
 
-        $meAfterLogout = $this->json('GET', '/api/v1/me', token: $access);
+        $meAfterLogout = $this->legacyApiJson('GET', '/api/v1/me', token: $access);
         self::assertSame(401, $meAfterLogout['status']);
         self::assertSame('unauthenticated', $meAfterLogout['json']['error']);
 
-        $login = $this->json('POST', '/api/v1/auth/login', [
+        $login = $this->legacyApiJson('POST', '/api/v1/auth/login', [
             'email' => 'auth-buyer@example.test',
             'password' => 'secret1234',
         ]);
@@ -93,16 +93,16 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertArrayHasKey('access_token', $login['json']['data']);
         self::assertArrayHasKey('refresh_token', $login['json']['data']);
 
-        $staleRefresh = $this->json('POST', '/api/v1/auth/refresh', ['refresh_token' => $refresh]);
+        $staleRefresh = $this->legacyApiJson('POST', '/api/v1/auth/refresh', ['refresh_token' => $refresh]);
         self::assertSame(401, $staleRefresh['status']);
 
         // Logout revokes the registration refresh token; login issues a new pair.
         $refreshAfterLogin = (string) $login['json']['data']['refresh_token'];
-        $refreshRes = $this->json('POST', '/api/v1/auth/refresh', ['refresh_token' => $refreshAfterLogin]);
+        $refreshRes = $this->legacyApiJson('POST', '/api/v1/auth/refresh', ['refresh_token' => $refreshAfterLogin]);
         self::assertSame(200, $refreshRes['status']);
         self::assertArrayHasKey('access_token', $refreshRes['json']['data']);
 
-        $badRefresh = $this->json('POST', '/api/v1/auth/refresh', ['refresh_token' => 'rt_invalid']);
+        $badRefresh = $this->legacyApiJson('POST', '/api/v1/auth/refresh', ['refresh_token' => 'rt_invalid']);
         self::assertSame(401, $badRefresh['status']);
         self::assertSame('unauthenticated', $badRefresh['json']['error']);
         self::assertSame('invalid_refresh_token', $badRefresh['json']['reason_code']);
@@ -110,7 +110,7 @@ final class ApiV1IntegrationTest extends TestCase
 
     public function test_me_and_me_seller_endpoints_with_success_and_error_envelopes(): void
     {
-        $sellerReg = $this->json('POST', '/api/v1/auth/register', [
+        $sellerReg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'seller',
             'email' => 'seller-profile@example.test',
             'password' => 'secret1234',
@@ -121,28 +121,28 @@ final class ApiV1IntegrationTest extends TestCase
         ]);
         $sellerToken = (string) $sellerReg['json']['data']['access_token'];
 
-        $getMe = $this->json('GET', '/api/v1/me', token: $sellerToken);
+        $getMe = $this->legacyApiJson('GET', '/api/v1/me', token: $sellerToken);
         self::assertSame(200, $getMe['status']);
         self::assertSame('seller-profile@example.test', $getMe['json']['data']['email']);
 
-        $patchMe = $this->json('PATCH', '/api/v1/me', [
+        $patchMe = $this->legacyApiJson('PATCH', '/api/v1/me', [
             'phone' => '+15550001111',
         ], $sellerToken);
         self::assertSame(200, $patchMe['status']);
         self::assertSame('+15550001111', $patchMe['json']['data']['phone']);
 
-        $getSeller = $this->json('GET', '/api/v1/me/seller', token: $sellerToken);
+        $getSeller = $this->legacyApiJson('GET', '/api/v1/me/seller', token: $sellerToken);
         self::assertSame(200, $getSeller['status']);
         self::assertSame('Seller Display', $getSeller['json']['data']['display_name']);
 
-        $patchSeller = $this->json('PATCH', '/api/v1/me/seller', [
+        $patchSeller = $this->legacyApiJson('PATCH', '/api/v1/me/seller', [
             'display_name' => 'Seller Updated',
             'legal_name' => 'Seller Updated LLC',
         ], $sellerToken);
         self::assertSame(200, $patchSeller['status']);
         self::assertSame('Seller Updated', $patchSeller['json']['data']['display_name']);
 
-        $buyerReg = $this->json('POST', '/api/v1/auth/register', [
+        $buyerReg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'buyer',
             'email' => 'buyer-no-seller@example.test',
             'password' => 'secret1234',
@@ -151,7 +151,7 @@ final class ApiV1IntegrationTest extends TestCase
             'default_currency' => 'USD',
         ]);
         $buyerToken = (string) $buyerReg['json']['data']['access_token'];
-        $missingSeller = $this->json('GET', '/api/v1/me/seller', token: $buyerToken);
+        $missingSeller = $this->legacyApiJson('GET', '/api/v1/me/seller', token: $buyerToken);
         self::assertSame(404, $missingSeller['status']);
         self::assertSame('not_found', $missingSeller['json']['error']);
         self::assertSame('seller_profile_not_found', $missingSeller['json']['reason_code']);
@@ -164,27 +164,27 @@ final class ApiV1IntegrationTest extends TestCase
         $publishedB = $this->seedProduct($seller, $storefront, $category, 'Widget B', 'published', now());
         $this->seedProduct($seller, $storefront, $category, 'Hidden Draft', 'draft', null);
 
-        $list = $this->json('GET', '/api/v1/products?page=1&per_page=1');
+        $list = $this->legacyApiJson('GET', '/api/v1/products?page=1&per_page=1');
         self::assertSame(200, $list['status']);
         self::assertCount(1, $list['json']['data']);
         self::assertSame(1, $list['json']['meta']['page']);
         self::assertSame(1, $list['json']['meta']['per_page']);
         self::assertSame(2, $list['json']['meta']['total']);
 
-        $search = $this->json('GET', '/api/v1/products/search?search=Widget');
+        $search = $this->legacyApiJson('GET', '/api/v1/products/search?search=Widget');
         self::assertSame(200, $search['status']);
         self::assertGreaterThanOrEqual(2, count($search['json']['data']));
 
-        $emptySearch = $this->json('GET', '/api/v1/products/search');
+        $emptySearch = $this->legacyApiJson('GET', '/api/v1/products/search');
         self::assertSame(422, $emptySearch['status']);
         self::assertSame('validation_failed', $emptySearch['json']['error']);
         self::assertSame('search_query_required', $emptySearch['json']['reason_code']);
 
-        $show = $this->json('GET', '/api/v1/products/'.$publishedA->id);
+        $show = $this->legacyApiJson('GET', '/api/v1/products/'.$publishedA->id);
         self::assertSame(200, $show['status']);
         self::assertSame($publishedA->id, $show['json']['data']['id']);
 
-        $notFound = $this->json('GET', '/api/v1/products/999999');
+        $notFound = $this->legacyApiJson('GET', '/api/v1/products/999999');
         self::assertSame(404, $notFound['status']);
         self::assertSame('not_found', $notFound['json']['error']);
         self::assertSame('product_not_found', $notFound['json']['reason_code']);
@@ -199,35 +199,35 @@ final class ApiV1IntegrationTest extends TestCase
         [, , $order2] = $this->seedOrder(OrderStatus::Draft, '20.0000', $buyer, $sellerProfile);
         $buyerToken = $this->issueAccessTokenForUser($buyer);
 
-        $list = $this->json('GET', '/api/v1/orders?page=1&per_page=1', token: $buyerToken);
+        $list = $this->legacyApiJson('GET', '/api/v1/orders?page=1&per_page=1', token: $buyerToken);
         self::assertSame(200, $list['status']);
         self::assertCount(1, $list['json']['data']);
         self::assertSame(1, $list['json']['meta']['per_page']);
         self::assertGreaterThanOrEqual(2, $list['json']['meta']['total']);
 
-        $show = $this->json('GET', '/api/v1/orders/'.$order->id, token: $buyerToken);
+        $show = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id, token: $buyerToken);
         self::assertSame(200, $show['status']);
         self::assertSame($order->id, $show['json']['data']['id']);
 
         $stranger = $this->createUser('stranger-orders@example.test');
         $strangerToken = $this->issueAccessTokenForUser($stranger);
-        $forbidden = $this->json('GET', '/api/v1/orders/'.$order->id, token: $strangerToken);
+        $forbidden = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id, token: $strangerToken);
         self::assertSame(403, $forbidden['status']);
         self::assertSame('forbidden', $forbidden['json']['error']);
 
-        $pending = $this->json('POST', '/api/v1/orders/'.$order->id.'/mark-pending-payment', [], $buyerToken);
+        $pending = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/mark-pending-payment', [], $buyerToken);
         self::assertSame(200, $pending['status']);
         self::assertSame('pending_payment', $pending['json']['data']['status']);
 
         [$intent, $txn] = $this->seedCapturedPayment($order, '35.0000');
-        $paid = $this->json('POST', '/api/v1/orders/'.$order->id.'/mark-paid', [
+        $paid = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/mark-paid', [
             'payment_transaction_id' => $txn->id,
         ], $buyerToken);
         self::assertSame(200, $paid['status']);
         self::assertSame('paid_in_escrow', $paid['json']['data']['status']);
 
         $sellerToken = $this->issueAccessTokenForUser($sellerProfile->user);
-        $sellerDenied = $this->json('POST', '/api/v1/orders/'.$order2->id.'/mark-pending-payment', [], $sellerToken);
+        $sellerDenied = $this->legacyApiJson('POST', '/api/v1/orders/'.$order2->id.'/mark-pending-payment', [], $sellerToken);
         self::assertSame(403, $sellerDenied['status']);
         self::assertSame('forbidden', $sellerDenied['json']['error']);
 
@@ -242,23 +242,23 @@ final class ApiV1IntegrationTest extends TestCase
         $this->assignRole($admin, RoleCodes::Admin);
         $adminToken = $this->issueAccessTokenForUser($admin);
 
-        $open = $this->json('POST', '/api/v1/orders/'.$order1->id.'/disputes', [
+        $open = $this->legacyApiJson('POST', '/api/v1/orders/'.$order1->id.'/disputes', [
             'reason_code' => 'item_not_received',
             'idempotency_key' => 'd-open-'.Str::random(8),
         ], $buyerToken);
         self::assertSame(201, $open['status']);
         $caseId = (int) $open['json']['data']['dispute_case_id'];
 
-        $list = $this->json('GET', '/api/v1/disputes?page=1&per_page=10', token: $buyerToken);
+        $list = $this->legacyApiJson('GET', '/api/v1/disputes?page=1&per_page=10', token: $buyerToken);
         self::assertSame(200, $list['status']);
         self::assertNotEmpty($list['json']['data']);
         self::assertArrayHasKey('meta', $list['json']);
 
-        $show = $this->json('GET', '/api/v1/disputes/'.$caseId, token: $buyerToken);
+        $show = $this->legacyApiJson('GET', '/api/v1/disputes/'.$caseId, token: $buyerToken);
         self::assertSame(200, $show['status']);
         self::assertSame($caseId, $show['json']['data']['id']);
 
-        $evidence = $this->json('POST', '/api/v1/disputes/'.$caseId.'/evidence', [
+        $evidence = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/evidence', [
             'evidence' => [[
                 'evidence_type' => 'text',
                 'content_text' => 'Package never arrived',
@@ -267,15 +267,15 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame(200, $evidence['status']);
         self::assertSame('evidence_collection', $evidence['json']['data']['status']);
 
-        $toReview = $this->json('POST', '/api/v1/disputes/'.$caseId.'/move-to-review', [], $buyerToken);
+        $toReview = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/move-to-review', [], $buyerToken);
         self::assertSame(200, $toReview['status']);
         self::assertSame('under_review', $toReview['json']['data']['status']);
 
-        $escalate = $this->json('POST', '/api/v1/disputes/'.$caseId.'/escalate', [], $buyerToken);
+        $escalate = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/escalate', [], $buyerToken);
         self::assertSame(200, $escalate['status']);
         self::assertSame('escalated', $escalate['json']['data']['status']);
 
-        $resolveDenied = $this->json('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
+        $resolveDenied = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
             'currency' => 'USD',
             'reason_code' => 'deny',
             'notes' => 'deny',
@@ -283,7 +283,7 @@ final class ApiV1IntegrationTest extends TestCase
         ], $buyerToken);
         self::assertSame(403, $resolveDenied['status']);
 
-        $resolveRefund = $this->json('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
+        $resolveRefund = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
             'currency' => 'USD',
             'reason_code' => 'buyer_wins',
             'notes' => 'full refund',
@@ -293,12 +293,12 @@ final class ApiV1IntegrationTest extends TestCase
 
         [$order2, $buyer2] = $this->seedPaidEscrowOrderForDisputes('35.0000');
         $buyer2Token = $this->issueAccessTokenForUser($buyer2);
-        $case2 = (int) $this->json('POST', '/api/v1/orders/'.$order2->id.'/disputes', [
+        $case2 = (int) $this->legacyApiJson('POST', '/api/v1/orders/'.$order2->id.'/disputes', [
             'reason_code' => 'seller_should_win',
             'idempotency_key' => 'd-open-2-'.Str::random(6),
         ], $buyer2Token)['json']['data']['dispute_case_id'];
-        $this->json('POST', '/api/v1/disputes/'.$case2.'/move-to-review', [], $buyer2Token);
-        $resolveRelease = $this->json('POST', '/api/v1/disputes/'.$case2.'/resolve/release', [
+        $this->legacyApiJson('POST', '/api/v1/disputes/'.$case2.'/move-to-review', [], $buyer2Token);
+        $resolveRelease = $this->legacyApiJson('POST', '/api/v1/disputes/'.$case2.'/resolve/release', [
             'currency' => 'USD',
             'reason_code' => 'seller_wins',
             'notes' => 'release escrow',
@@ -308,12 +308,12 @@ final class ApiV1IntegrationTest extends TestCase
 
         [$order3, $buyer3] = $this->seedPaidEscrowOrderForDisputes('60.0000');
         $buyer3Token = $this->issueAccessTokenForUser($buyer3);
-        $case3 = (int) $this->json('POST', '/api/v1/orders/'.$order3->id.'/disputes', [
+        $case3 = (int) $this->legacyApiJson('POST', '/api/v1/orders/'.$order3->id.'/disputes', [
             'reason_code' => 'split_case',
             'idempotency_key' => 'd-open-3-'.Str::random(6),
         ], $buyer3Token)['json']['data']['dispute_case_id'];
-        $this->json('POST', '/api/v1/disputes/'.$case3.'/move-to-review', [], $buyer3Token);
-        $resolveSplit = $this->json('POST', '/api/v1/disputes/'.$case3.'/resolve/split', [
+        $this->legacyApiJson('POST', '/api/v1/disputes/'.$case3.'/move-to-review', [], $buyer3Token);
+        $resolveSplit = $this->legacyApiJson('POST', '/api/v1/disputes/'.$case3.'/resolve/split', [
             'buyer_refund_amount' => '20.0000',
             'currency' => 'USD',
             'reason_code' => 'split',
@@ -331,7 +331,7 @@ final class ApiV1IntegrationTest extends TestCase
         $this->assignRole($admin, RoleCodes::Admin);
         $adminToken = $this->issueAccessTokenForUser($admin);
 
-        $requestA = $this->json('POST', '/api/v1/withdrawals', [
+        $requestA = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfile->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '50.0000',
@@ -341,29 +341,29 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame(201, $requestA['status']);
         $wrA = (int) $requestA['json']['data']['withdrawal_request_id'];
 
-        $list = $this->json('GET', '/api/v1/withdrawals?page=1&per_page=10', token: $sellerToken);
+        $list = $this->legacyApiJson('GET', '/api/v1/withdrawals?page=1&per_page=10', token: $sellerToken);
         self::assertSame(200, $list['status']);
         self::assertArrayHasKey('meta', $list['json']);
         self::assertNotEmpty($list['json']['data']);
 
-        $show = $this->json('GET', '/api/v1/withdrawals/'.$wrA, token: $sellerToken);
+        $show = $this->legacyApiJson('GET', '/api/v1/withdrawals/'.$wrA, token: $sellerToken);
         self::assertSame(200, $show['status']);
         self::assertSame($wrA, $show['json']['data']['id']);
 
-        $approveDenied = $this->json('POST', '/api/v1/withdrawals/'.$wrA.'/approve', [
+        $approveDenied = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrA.'/approve', [
             'idempotency_key' => 'wd-denied-'.Str::random(6),
         ], $sellerToken);
         self::assertSame(403, $approveDenied['status']);
         self::assertSame('forbidden', $approveDenied['json']['error']);
 
-        $review = $this->json('POST', '/api/v1/withdrawals/'.$wrA.'/review', [
+        $review = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrA.'/review', [
             'decision' => 'approved',
             'idempotency_key' => 'wd-review-'.Str::random(8),
         ], $adminToken);
         self::assertSame(200, $review['status']);
         self::assertSame('paid_out', $review['json']['data']['status']);
 
-        $requestB = $this->json('POST', '/api/v1/withdrawals', [
+        $requestB = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfile->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '25.0000',
@@ -372,13 +372,13 @@ final class ApiV1IntegrationTest extends TestCase
         ], $sellerToken);
         self::assertSame(201, $requestB['status']);
         $wrB = (int) $requestB['json']['data']['withdrawal_request_id'];
-        $approve = $this->json('POST', '/api/v1/withdrawals/'.$wrB.'/approve', [
+        $approve = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrB.'/approve', [
             'idempotency_key' => 'wd-approve-'.Str::random(8),
         ], $adminToken);
         self::assertSame(200, $approve['status']);
         self::assertSame('paid_out', $approve['json']['data']['status']);
 
-        $requestC = $this->json('POST', '/api/v1/withdrawals', [
+        $requestC = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfile->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '10.0000',
@@ -386,7 +386,7 @@ final class ApiV1IntegrationTest extends TestCase
             'idempotency_key' => 'wd-c-'.Str::random(8),
         ], $sellerToken);
         $wrC = (int) $requestC['json']['data']['withdrawal_request_id'];
-        $reject = $this->json('POST', '/api/v1/withdrawals/'.$wrC.'/reject', [
+        $reject = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrC.'/reject', [
             'idempotency_key' => 'wd-reject-'.Str::random(8),
             'reason' => 'manual review reject',
         ], $adminToken);
@@ -397,7 +397,7 @@ final class ApiV1IntegrationTest extends TestCase
     /**
      * @return array{status: int, json: array<string, mixed>}
      */
-    private function json(string $method, string $path, array $body = [], ?string $token = null): array
+    private function legacyApiJson(string $method, string $path, array $body = [], ?string $token = null): array
     {
         $server = [
             'CONTENT_TYPE' => 'application/json',

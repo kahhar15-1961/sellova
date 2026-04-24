@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Support\Facades\DB;
 
 final class DatabaseSchema
 {
@@ -16,7 +16,7 @@ final class DatabaseSchema
         }
 
         foreach (self::splitSqlStatements($sql) as $statement) {
-            Capsule::connection()->unprepared($statement);
+            DB::connection()->unprepared($statement);
         }
     }
 

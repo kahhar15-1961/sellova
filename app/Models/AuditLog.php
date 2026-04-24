@@ -29,6 +29,8 @@ class AuditLog extends Model
 {
     use TransactionSensitive;
 
+    public $timestamps = false;
+
     protected $table = 'audit_logs';
 
     protected $fillable = [
@@ -43,6 +45,7 @@ class AuditLog extends Model
         'ip_address',
         'user_agent',
         'correlation_id',
+        'created_at',
     ];
 
     protected $casts = [

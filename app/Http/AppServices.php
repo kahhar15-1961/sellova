@@ -60,7 +60,7 @@ final class AppServices
 
     public function userSellerService(): UserSellerService
     {
-        return $this->userSellerService ??= new UserSellerService();
+        return $this->userSellerService ??= app(UserSellerService::class);
     }
 
     public function productService(): ProductService

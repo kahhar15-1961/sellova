@@ -57,7 +57,7 @@ final class ApiV1ContractTest extends TestCase
     public function test_live_api_contracts_and_envelopes_are_stable(): void
     {
         // auth: register/login/refresh/logout
-        $register = $this->json('POST', '/api/v1/auth/register', [
+        $register = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'buyer',
             'email' => 'contract-buyer@example.test',
             'password' => 'secret1234',
@@ -69,21 +69,21 @@ final class ApiV1ContractTest extends TestCase
         $access = (string) $register['json']['data']['access_token'];
         $refresh = (string) $register['json']['data']['refresh_token'];
 
-        $login = $this->json('POST', '/api/v1/auth/login', [
+        $login = $this->legacyApiJson('POST', '/api/v1/auth/login', [
             'email' => 'contract-buyer@example.test',
             'password' => 'secret1234',
         ]);
         $this->assertSuccessEnvelope($login, 200, ['access_token', 'refresh_token', 'token_type', 'expires_in', 'user_id']);
         $loginAccess = (string) $login['json']['data']['access_token'];
 
-        $refreshRes = $this->json('POST', '/api/v1/auth/refresh', ['refresh_token' => $refresh]);
+        $refreshRes = $this->legacyApiJson('POST', '/api/v1/auth/refresh', ['refresh_token' => $refresh]);
         $this->assertSuccessEnvelope($refreshRes, 200, ['access_token', 'refresh_token', 'token_type', 'expires_in', 'user_id']);
 
-        $logout = $this->json('POST', '/api/v1/auth/logout', token: $loginAccess);
+        $logout = $this->legacyApiJson('POST', '/api/v1/auth/logout', token: $loginAccess);
         $this->assertSuccessEnvelope($logout, 200, ['ok']);
 
         // me / me-seller GET/PATCH
-        $sellerReg = $this->json('POST', '/api/v1/auth/register', [
+        $sellerReg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'seller',
             'email' => 'contract-seller@example.test',
             'password' => 'secret1234',
@@ -94,16 +94,16 @@ final class ApiV1ContractTest extends TestCase
         ]);
         $sellerToken = (string) $sellerReg['json']['data']['access_token'];
 
-        $me = $this->json('GET', '/api/v1/me', token: $sellerToken);
+        $me = $this->legacyApiJson('GET', '/api/v1/me', token: $sellerToken);
         $this->assertSuccessEnvelope($me, 200, ['id', 'email', 'phone', 'status']);
 
-        $mePatch = $this->json('PATCH', '/api/v1/me', ['phone' => '+15550002222'], $sellerToken);
+        $mePatch = $this->legacyApiJson('PATCH', '/api/v1/me', ['phone' => '+15550002222'], $sellerToken);
         $this->assertSuccessEnvelope($mePatch, 200, ['id', 'email', 'phone', 'status']);
 
-        $meSeller = $this->json('GET', '/api/v1/me/seller', token: $sellerToken);
+        $meSeller = $this->legacyApiJson('GET', '/api/v1/me/seller', token: $sellerToken);
         $this->assertSuccessEnvelope($meSeller, 200, ['id', 'user_id', 'display_name', 'legal_name', 'country_code', 'default_currency']);
 
-        $meSellerPatch = $this->json('PATCH', '/api/v1/me/seller', [
+        $meSellerPatch = $this->legacyApiJson('PATCH', '/api/v1/me/seller', [
             'display_name' => 'Seller Updated',
             'legal_name' => 'Seller Updated LLC',
         ], $sellerToken);
@@ -113,30 +113,30 @@ final class ApiV1ContractTest extends TestCase
         [$seller, $storefront, $category] = $this->seedCatalogOwner();
         $product = $this->seedProduct($seller, $storefront, $category, 'Contract Widget', 'published', now());
 
-        $products = $this->json('GET', '/api/v1/products?page=1&per_page=5');
+        $products = $this->legacyApiJson('GET', '/api/v1/products?page=1&per_page=5');
         $this->assertPaginatedEnvelope($products, 200);
 
-        $search = $this->json('GET', '/api/v1/products/search?search=Contract');
+        $search = $this->legacyApiJson('GET', '/api/v1/products/search?search=Contract');
         $this->assertPaginatedEnvelope($search, 200);
 
-        $productShow = $this->json('GET', '/api/v1/products/'.$product->id);
+        $productShow = $this->legacyApiJson('GET', '/api/v1/products/'.$product->id);
         $this->assertSuccessEnvelope($productShow, 200, ['id', 'title', 'status', 'currency', 'base_price']);
 
         // orders: list/detail/mark-pending-payment/mark-paid
         [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Draft, '35.0000');
         $buyerToken = $this->issueAccessTokenForUser($buyer);
 
-        $orders = $this->json('GET', '/api/v1/orders?page=1&per_page=10', token: $buyerToken);
+        $orders = $this->legacyApiJson('GET', '/api/v1/orders?page=1&per_page=10', token: $buyerToken);
         $this->assertPaginatedEnvelope($orders, 200);
 
-        $orderShow = $this->json('GET', '/api/v1/orders/'.$order->id, token: $buyerToken);
+        $orderShow = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id, token: $buyerToken);
         $this->assertSuccessEnvelope($orderShow, 200, ['id', 'status', 'currency', 'net_amount']);
 
-        $pending = $this->json('POST', '/api/v1/orders/'.$order->id.'/mark-pending-payment', [], $buyerToken);
+        $pending = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/mark-pending-payment', [], $buyerToken);
         $this->assertSuccessEnvelope($pending, 200, ['order_id', 'status']);
 
         [, $txn] = $this->seedCapturedPayment($order, '35.0000');
-        $paid = $this->json('POST', '/api/v1/orders/'.$order->id.'/mark-paid', [
+        $paid = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/mark-paid', [
             'payment_transaction_id' => $txn->id,
         ], $buyerToken);
         $this->assertSuccessEnvelope($paid, 200, ['order_id', 'status', 'escrow_account_id', 'escrow_state']);
@@ -148,20 +148,20 @@ final class ApiV1ContractTest extends TestCase
         $this->assignRole($admin, RoleCodes::Admin);
         $adminToken = $this->issueAccessTokenForUser($admin);
 
-        $open = $this->json('POST', '/api/v1/orders/'.$order1->id.'/disputes', [
+        $open = $this->legacyApiJson('POST', '/api/v1/orders/'.$order1->id.'/disputes', [
             'reason_code' => 'item_not_received',
             'idempotency_key' => 'contract-open-'.Str::random(6),
         ], $buyer1Token);
         $this->assertSuccessEnvelope($open, 201, ['dispute_case_id', 'order_id', 'escrow_account_id', 'status']);
         $caseId = (int) $open['json']['data']['dispute_case_id'];
 
-        $disputeList = $this->json('GET', '/api/v1/disputes?page=1&per_page=10', token: $buyer1Token);
+        $disputeList = $this->legacyApiJson('GET', '/api/v1/disputes?page=1&per_page=10', token: $buyer1Token);
         $this->assertPaginatedEnvelope($disputeList, 200);
 
-        $disputeShow = $this->json('GET', '/api/v1/disputes/'.$caseId, token: $buyer1Token);
+        $disputeShow = $this->legacyApiJson('GET', '/api/v1/disputes/'.$caseId, token: $buyer1Token);
         $this->assertSuccessEnvelope($disputeShow, 200, ['id', 'order_id', 'status']);
 
-        $evidence = $this->json('POST', '/api/v1/disputes/'.$caseId.'/evidence', [
+        $evidence = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/evidence', [
             'evidence' => [[
                 'evidence_type' => 'text',
                 'content_text' => 'Evidence',
@@ -169,13 +169,13 @@ final class ApiV1ContractTest extends TestCase
         ], $buyer1Token);
         $this->assertSuccessEnvelope($evidence, 200, ['dispute_case_id', 'status', 'evidence_rows_inserted']);
 
-        $toReview = $this->json('POST', '/api/v1/disputes/'.$caseId.'/move-to-review', [], $buyer1Token);
+        $toReview = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/move-to-review', [], $buyer1Token);
         $this->assertSuccessEnvelope($toReview, 200, ['dispute_case_id', 'status']);
 
-        $escalate = $this->json('POST', '/api/v1/disputes/'.$caseId.'/escalate', [], $buyer1Token);
+        $escalate = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/escalate', [], $buyer1Token);
         $this->assertSuccessEnvelope($escalate, 200, ['dispute_case_id', 'status']);
 
-        $resolveRefund = $this->json('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
+        $resolveRefund = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
             'currency' => 'USD',
             'reason_code' => 'buyer_wins',
             'notes' => 'refund',
@@ -187,12 +187,12 @@ final class ApiV1ContractTest extends TestCase
 
         [$order2, $buyer2] = $this->seedPaidEscrowOrderForDisputes('25.0000');
         $buyer2Token = $this->issueAccessTokenForUser($buyer2);
-        $case2 = (int) $this->json('POST', '/api/v1/orders/'.$order2->id.'/disputes', [
+        $case2 = (int) $this->legacyApiJson('POST', '/api/v1/orders/'.$order2->id.'/disputes', [
             'reason_code' => 'seller_win_case',
             'idempotency_key' => 'contract-open-2-'.Str::random(6),
         ], $buyer2Token)['json']['data']['dispute_case_id'];
-        $this->json('POST', '/api/v1/disputes/'.$case2.'/move-to-review', [], $buyer2Token);
-        $resolveRelease = $this->json('POST', '/api/v1/disputes/'.$case2.'/resolve/release', [
+        $this->legacyApiJson('POST', '/api/v1/disputes/'.$case2.'/move-to-review', [], $buyer2Token);
+        $resolveRelease = $this->legacyApiJson('POST', '/api/v1/disputes/'.$case2.'/resolve/release', [
             'currency' => 'USD',
             'reason_code' => 'seller_wins',
             'notes' => 'release',
@@ -204,12 +204,12 @@ final class ApiV1ContractTest extends TestCase
 
         [$order3, $buyer3] = $this->seedPaidEscrowOrderForDisputes('30.0000');
         $buyer3Token = $this->issueAccessTokenForUser($buyer3);
-        $case3 = (int) $this->json('POST', '/api/v1/orders/'.$order3->id.'/disputes', [
+        $case3 = (int) $this->legacyApiJson('POST', '/api/v1/orders/'.$order3->id.'/disputes', [
             'reason_code' => 'split_case',
             'idempotency_key' => 'contract-open-3-'.Str::random(6),
         ], $buyer3Token)['json']['data']['dispute_case_id'];
-        $this->json('POST', '/api/v1/disputes/'.$case3.'/move-to-review', [], $buyer3Token);
-        $resolveSplit = $this->json('POST', '/api/v1/disputes/'.$case3.'/resolve/split', [
+        $this->legacyApiJson('POST', '/api/v1/disputes/'.$case3.'/move-to-review', [], $buyer3Token);
+        $resolveSplit = $this->legacyApiJson('POST', '/api/v1/disputes/'.$case3.'/resolve/split', [
             'buyer_refund_amount' => '10.0000',
             'currency' => 'USD',
             'reason_code' => 'split',
@@ -227,7 +227,7 @@ final class ApiV1ContractTest extends TestCase
         $this->assignRole($adminWd, RoleCodes::Admin);
         $adminWdToken = $this->issueAccessTokenForUser($adminWd);
 
-        $wdReqA = $this->json('POST', '/api/v1/withdrawals', [
+        $wdReqA = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfileWd->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '40.0000',
@@ -237,19 +237,19 @@ final class ApiV1ContractTest extends TestCase
         $this->assertSuccessEnvelope($wdReqA, 201, ['withdrawal_request_id', 'status', 'requested_amount', 'fee_amount', 'net_payout_amount']);
         $wrA = (int) $wdReqA['json']['data']['withdrawal_request_id'];
 
-        $wdList = $this->json('GET', '/api/v1/withdrawals?page=1&per_page=10', token: $sellerWdToken);
+        $wdList = $this->legacyApiJson('GET', '/api/v1/withdrawals?page=1&per_page=10', token: $sellerWdToken);
         $this->assertPaginatedEnvelope($wdList, 200);
 
-        $wdShow = $this->json('GET', '/api/v1/withdrawals/'.$wrA, token: $sellerWdToken);
+        $wdShow = $this->legacyApiJson('GET', '/api/v1/withdrawals/'.$wrA, token: $sellerWdToken);
         $this->assertSuccessEnvelope($wdShow, 200, ['id', 'seller_profile_id', 'wallet_id', 'status', 'requested_amount', 'currency']);
 
-        $wdReview = $this->json('POST', '/api/v1/withdrawals/'.$wrA.'/review', [
+        $wdReview = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrA.'/review', [
             'decision' => 'approved',
             'idempotency_key' => 'contract-wd-review-'.Str::random(6),
         ], $adminWdToken);
         $this->assertSuccessEnvelope($wdReview, 200, ['withdrawal_request_id', 'status']);
 
-        $wdReqB = $this->json('POST', '/api/v1/withdrawals', [
+        $wdReqB = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfileWd->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '15.0000',
@@ -257,12 +257,12 @@ final class ApiV1ContractTest extends TestCase
             'idempotency_key' => 'contract-wd-b-'.Str::random(6),
         ], $sellerWdToken);
         $wrB = (int) $wdReqB['json']['data']['withdrawal_request_id'];
-        $wdApprove = $this->json('POST', '/api/v1/withdrawals/'.$wrB.'/approve', [
+        $wdApprove = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrB.'/approve', [
             'idempotency_key' => 'contract-wd-approve-'.Str::random(6),
         ], $adminWdToken);
         $this->assertSuccessEnvelope($wdApprove, 200, ['withdrawal_request_id', 'status']);
 
-        $wdReqC = $this->json('POST', '/api/v1/withdrawals', [
+        $wdReqC = $this->legacyApiJson('POST', '/api/v1/withdrawals', [
             'seller_profile_id' => $sellerProfileWd->id,
             'wallet_id' => $sellerWalletId,
             'amount' => '10.0000',
@@ -270,25 +270,25 @@ final class ApiV1ContractTest extends TestCase
             'idempotency_key' => 'contract-wd-c-'.Str::random(6),
         ], $sellerWdToken);
         $wrC = (int) $wdReqC['json']['data']['withdrawal_request_id'];
-        $wdReject = $this->json('POST', '/api/v1/withdrawals/'.$wrC.'/reject', [
+        $wdReject = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrC.'/reject', [
             'idempotency_key' => 'contract-wd-reject-'.Str::random(6),
             'reason' => 'manual reject',
         ], $adminWdToken);
         $this->assertSuccessEnvelope($wdReject, 200, ['withdrawal_request_id', 'status']);
 
         // error envelopes: validation/authorization/not_found/conflict/domain/internal
-        $validation = $this->json('GET', '/api/v1/products/search');
+        $validation = $this->legacyApiJson('GET', '/api/v1/products/search');
         $this->assertErrorEnvelope($validation, 422, 'validation_failed', ['reason_code', 'violations']);
 
-        $forbidden = $this->json('POST', '/api/v1/withdrawals/'.$wrA.'/approve', [
+        $forbidden = $this->legacyApiJson('POST', '/api/v1/withdrawals/'.$wrA.'/approve', [
             'idempotency_key' => 'contract-wd-forbidden-'.Str::random(6),
         ], $sellerWdToken);
         $this->assertErrorEnvelope($forbidden, 403, 'forbidden', ['action', 'actor_user_id']);
 
-        $notFound = $this->json('GET', '/api/v1/products/999999');
+        $notFound = $this->legacyApiJson('GET', '/api/v1/products/999999');
         $this->assertErrorEnvelope($notFound, 404, 'not_found', ['reason_code']);
 
-        $conflict = $this->json('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
+        $conflict = $this->legacyApiJson('POST', '/api/v1/disputes/'.$caseId.'/resolve/refund', [
             'currency' => 'USD',
             'reason_code' => 'buyer_wins',
             'notes' => 'different payload for same key',
@@ -304,7 +304,7 @@ final class ApiV1ContractTest extends TestCase
     /**
      * @return array{status: int, json: array<string, mixed>}
      */
-    private function json(string $method, string $path, array $body = [], ?string $token = null): array
+    private function legacyApiJson(string $method, string $path, array $body = [], ?string $token = null): array
     {
         $server = [
             'CONTENT_TYPE' => 'application/json',

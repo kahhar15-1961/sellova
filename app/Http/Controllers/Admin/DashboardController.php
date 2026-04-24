@@ -4,27 +4,34 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Models\User;
+use App\Services\Admin\AdminDashboardService;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 final class DashboardController extends AdminPageController
 {
-    public function __invoke(): Response
+    public function __construct(
+        private readonly AdminDashboardService $dashboard,
+    ) {}
+
+    public function __invoke(Request $request): Response
     {
+        /** @var User $user */
+        $user = $request->user();
+
+        $page = $this->dashboard->buildPage($user);
+
         return Inertia::render('Admin/Dashboard', [
             'header' => $this->pageHeader(
                 'Dashboard',
-                'Operational overview for marketplace, escrow, and wallet health.',
+                'Marketplace health, queues, and financial aggregates at a glance.',
                 [
                     ['label' => 'Overview'],
                 ],
             ),
-            'stats' => [
-                ['key' => 'orders_open', 'label' => 'Open orders', 'value' => '—', 'hint' => 'Wire to OrderService'],
-                ['key' => 'escrow_held', 'label' => 'Escrow held', 'value' => '—', 'hint' => 'Wire to EscrowService'],
-                ['key' => 'disputes_open', 'label' => 'Open disputes', 'value' => '—', 'hint' => 'Wire to DisputeService'],
-                ['key' => 'withdrawals_pending', 'label' => 'Pending withdrawals', 'value' => '—', 'hint' => 'Wire to WithdrawalService'],
-            ],
+            ...$page,
         ]);
     }
 }

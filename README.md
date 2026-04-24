@@ -43,6 +43,17 @@ This platform focuses on **trust-first commerce**, ensuring safe transactions fo
 
 ---
 
+## ⚙️ Environment & operations
+
+1. Copy **`.env.example`** to **`.env`**, then run **`php artisan key:generate`**.
+2. Set **`DB_*`**, run **`php artisan migrate`** (see **`docs/MIGRATIONS.md`** — `composer migrate` runs the same).
+3. Front-end: **`npm ci`** then **`npm run build`** (or **`npm run dev`** while developing the admin UI).
+4. **`php artisan serve`** (or configure nginx/Apache with `public/` as the web root).
+
+Production checklist: **`docs/PRODUCTION.md`**.
+
+---
+
 ## 🧩 Core Modules
 
 - Authentication (Buyer/Seller)

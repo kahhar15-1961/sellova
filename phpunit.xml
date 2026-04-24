@@ -15,7 +15,13 @@
     </testsuites>
 
     <php>
-        <!-- Primary: TEST_DB_* (read by tests/bootstrap.php). Mirror DB_* for parity with runtime env. -->
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:2fl+KtvkdPHuc94jCLLyCFFNtfEOC3DvEXKDuCljvX8="/>
+        <env name="APP_URL" value="http://localhost"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- Primary: TEST_DB_* (mirror DB_* for parity with runtime env). -->
         <env name="TEST_DB_CONNECTION" value="mysql"/>
         <env name="TEST_DB_HOST" value="127.0.0.1"/>
         <env name="TEST_DB_PORT" value="3306"/>

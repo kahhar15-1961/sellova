@@ -10,7 +10,7 @@ use App\Http\Controllers\Admin\DisputesController;
 use App\Http\Controllers\Admin\EscrowsController;
 use App\Http\Controllers\Admin\OrdersController;
 use App\Http\Controllers\Admin\ProductsController;
-use App\Http\Controllers\Admin\SellersController;
+use App\Http\Controllers\Admin\SellerVerificationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UsersController;
 use App\Http\Controllers\Admin\WalletsController;
@@ -22,7 +22,9 @@ Route::get('/', static fn () => redirect('/admin/dashboard'));
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::middleware('guest')->group(function (): void {
         Route::get('login', [AdminAuthController::class, 'create'])->name('login');
-        Route::post('login', [AdminAuthController::class, 'store'])->name('login.store');
+        Route::post('login', [AdminAuthController::class, 'store'])
+            ->middleware('throttle:admin-login')
+            ->name('login.store');
     });
 
     Route::post('logout', [AdminAuthController::class, 'destroy'])->middleware('auth')->name('logout');
@@ -35,7 +37,23 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             ->name('users.index')
             ->middleware('admin.permission:'.AdminPermission::USERS_VIEW);
 
-        Route::get('sellers', SellersController::class)
+        Route::get('sellers/kyc/documents/{document}/download', [SellerVerificationController::class, 'downloadDocument'])
+            ->name('sellers.kyc.documents.download')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+
+        Route::post('sellers/kyc/{kyc}/claim', [SellerVerificationController::class, 'claim'])
+            ->name('sellers.kyc.claim')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
+
+        Route::post('sellers/kyc/{kyc}/review', [SellerVerificationController::class, 'review'])
+            ->name('sellers.kyc.review')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
+
+        Route::get('sellers/kyc/{kyc}', [SellerVerificationController::class, 'show'])
+            ->name('sellers.kyc.show')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+
+        Route::get('sellers', [SellerVerificationController::class, 'index'])
             ->name('sellers.index')
             ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
 

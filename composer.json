@@ -7,8 +7,10 @@
     "firebase/php-jwt": "^7.0",
     "inertiajs/inertia-laravel": "^2.0",
     "laravel/framework": "^11.31",
+    "laravel/horizon": "^5.0",
     "laravel/sanctum": "^4.0",
-    "ramsey/uuid": "^4.7"
+    "ramsey/uuid": "^4.7",
+    "symfony/validator": "^7.0"
   },
   "require-dev": {
     "laravel/pint": "^1.18",
@@ -34,7 +36,7 @@
     ],
     "seed:dev": "@php scripts/seed_dev_data.php",
     "seed:local": "@php scripts/seed_local_full.php",
-    "migrate": "@php scripts/migrate.php"
+    "migrate": "@php artisan migrate --ansi"
   },
   "config": {
     "optimize-autoloader": true,
