@@ -74,6 +74,7 @@ class ComposerStaticInit4810e39580d879236d16ac3e1a306037
         array (
             'Doctrine\\Inflector\\' => 19,
             'DeepCopy\\' => 9,
+            'Database\\' => 9,
         ),
         'C' =>
         array (
@@ -201,6 +202,10 @@ class ComposerStaticInit4810e39580d879236d16ac3e1a306037
         'DeepCopy\\' =>
         array (
             0 => __DIR__ . '/..' . '/myclabs/deep-copy/src/DeepCopy',
+        ),
+        'Database\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/database',
         ),
         'Carbon\\Doctrine\\' =>
         array (
