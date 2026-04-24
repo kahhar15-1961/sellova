@@ -16,7 +16,11 @@ use App\Services\UserSeller\UserSellerService;
 use App\Services\Withdrawal\WithdrawalService;
 use Symfony\Component\HttpFoundation\Request;
 
-final class Application
+/**
+ * Service locator for legacy JSON API controllers (mobile).
+ * Not to be confused with {@see \Illuminate\Foundation\Application}.
+ */
+final class AppServices
 {
     private ?OrderService $orderService = null;
 

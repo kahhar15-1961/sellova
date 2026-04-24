@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 210 20% 98%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --primary: 222 47% 18%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 214 32% 96%;
+        --secondary-foreground: 222 47% 18%;
+        --muted: 214 32% 94%;
+        --muted-foreground: 215 16% 42%;
+        --accent: 214 95% 96%;
+        --accent-foreground: 222 47% 18%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 222 47% 18%;
+        --radius: 0.65rem;
+    }
+
+    body {
+        @apply bg-background text-foreground font-sans;
+    }
+}

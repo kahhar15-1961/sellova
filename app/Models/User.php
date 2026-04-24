@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Admin\AdminPermission;
 use App\Auth\RoleCodes;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -85,9 +86,60 @@ class User extends Model
         return $this->roles()->where('roles.code', $code)->exists();
     }
 
+    /**
+     * Whether the user holds a given admin permission (via roles), or is super-admin.
+     */
+    public function hasPermissionCode(string $code): bool
+    {
+        if ($this->hasRoleCode(RoleCodes::SuperAdmin)) {
+            return true;
+        }
+
+        $this->loadMissing('roles.permissions');
+
+        foreach ($this->roles as $role) {
+            foreach ($role->permissions as $permission) {
+                if ($permission->code === $code) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $codes
+     */
+    public function hasAnyPermissionCode(array $codes): bool
+    {
+        foreach ($codes as $code) {
+            if ($this->hasPermissionCode($code)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function isPlatformStaff(): bool
     {
-        return $this->hasRoleCode(RoleCodes::Admin) || $this->hasRoleCode(RoleCodes::Adjudicator);
+        $staffRoleCodes = [
+            RoleCodes::SuperAdmin,
+            RoleCodes::Admin,
+            RoleCodes::Adjudicator,
+            RoleCodes::FinanceAdmin,
+            RoleCodes::DisputeOfficer,
+            RoleCodes::KycReviewer,
+            RoleCodes::SupportAgent,
+        ];
+        foreach ($staffRoleCodes as $code) {
+            if ($this->hasRoleCode($code)) {
+                return true;
+            }
+        }
+
+        return $this->hasPermissionCode(AdminPermission::ACCESS);
     }
 
     public function sellerProfile(): HasOne

@@ -10,7 +10,7 @@ use App\Domain\Commands\Auth\RefreshTokenCommand;
 use App\Domain\Commands\Auth\RegisterBuyerCommand;
 use App\Domain\Commands\Auth\RegisterSellerCommand;
 use App\Domain\Exceptions\AuthValidationFailedException;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Requests\V1\LoginRequest;
 use App\Http\Requests\V1\RefreshSessionRequest;
 use App\Http\Requests\V1\RegisterRequest;
@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class AuthController
 {
-    public function __construct(private readonly Application $app)
+    public function __construct(private readonly AppServices $app)
     {
     }
 

@@ -18,7 +18,7 @@ use Symfony\Component\Routing\RouteCollection;
 final class HttpKernel
 {
     public function __construct(
-        private readonly Application $app,
+        private readonly AppServices $app,
         private readonly RouteCollection $routes,
     ) {
     }

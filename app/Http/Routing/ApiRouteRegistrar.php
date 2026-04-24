@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Routing;
 
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DisputeController;
@@ -18,7 +18,7 @@ use Symfony\Component\Routing\RouteCollection;
 
 final class ApiRouteRegistrar
 {
-    public static function register(RouteCollection $routes, Application $app): void
+    public static function register(RouteCollection $routes, AppServices $app): void
     {
         $routes->add('health', new Route(
             '/health',
@@ -46,7 +46,7 @@ final class ApiRouteRegistrar
         self::withdrawalRoutes($routes, $app);
     }
 
-    private static function authRoutes(RouteCollection $routes, Application $app): void
+    private static function authRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new AuthController($app);
         $routes->add('api.v1.auth.register', new Route(
@@ -105,7 +105,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function profileRoutes(RouteCollection $routes, Application $app): void
+    private static function profileRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new UserProfileController($app);
         $routes->add('api.v1.me', new Route(
@@ -146,7 +146,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function productRoutes(RouteCollection $routes, Application $app): void
+    private static function productRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new ProductController($app);
         $routes->add('api.v1.products.index', new Route(
@@ -205,7 +205,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function categoryRoutes(RouteCollection $routes, Application $app): void
+    private static function categoryRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new CategoryController($app);
         $routes->add('api.v1.categories.index', new Route(
@@ -219,7 +219,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function orderRoutes(RouteCollection $routes, Application $app): void
+    private static function orderRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new OrderController($app);
         $routes->add('api.v1.orders.index', new Route(
@@ -287,7 +287,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function disputeRoutes(RouteCollection $routes, Application $app): void
+    private static function disputeRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new DisputeController($app);
         $routes->add('api.v1.disputes.index', new Route(
@@ -373,7 +373,7 @@ final class ApiRouteRegistrar
         ));
     }
 
-    private static function withdrawalRoutes(RouteCollection $routes, Application $app): void
+    private static function withdrawalRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new WithdrawalController($app);
         $routes->add('api.v1.withdrawals.index', new Route(

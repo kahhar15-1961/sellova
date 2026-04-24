@@ -13,7 +13,7 @@ use App\Domain\Enums\WalletLedgerEntrySide;
 use App\Domain\Enums\WalletLedgerEntryType;
 use App\Domain\Enums\WalletType;
 use App\Domain\Value\LedgerPostingLine;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\HttpKernel;
 use App\Models\Category;
 use App\Models\DisputeCase;
@@ -251,7 +251,7 @@ function run_dev_demo_content(): void
         // Replay-safe: idempotency may already have consumed this key.
     }
 
-    $app = new Application();
+    $app = new AppServices();
     $routes = (require __DIR__.'/../routes/api.php')($app);
     $kernel = new HttpKernel($app, $routes);
 

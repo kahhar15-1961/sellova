@@ -41,6 +41,16 @@ final class WalletLedgerServiceTest extends TestCase
     {
         parent::setUp();
         $this->svc = new WalletLedgerService();
+        if (! User::query()->whereKey(1)->exists()) {
+            User::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'email' => 'wallet-ledger-test-user-1@example.test',
+                'phone' => null,
+                'password_hash' => password_hash('secret', PASSWORD_DEFAULT),
+                'status' => 'active',
+                'risk_level' => 'low',
+            ]);
+        }
     }
 
     public function test_success_deposit_posting_creates_batch_entries_and_idempotency(): void

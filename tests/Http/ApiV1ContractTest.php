@@ -14,7 +14,7 @@ use App\Domain\Enums\OrderStatus;
 use App\Domain\Enums\WalletLedgerEntrySide;
 use App\Domain\Enums\WalletLedgerEntryType;
 use App\Domain\Enums\WalletType;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\HttpKernel;
 use App\Models\Category;
 use App\Models\Order;
@@ -46,7 +46,7 @@ final class ApiV1ContractTest extends TestCase
     {
         parent::setUp();
 
-        $app = new Application();
+        $app = new AppServices();
         $routeFactory = require __DIR__.'/../../routes/api.php';
         $routes = $routeFactory($app);
         $this->kernel = new HttpKernel($app, $routes);

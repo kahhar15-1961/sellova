@@ -1,0 +1,259 @@
+{
+  "_DataTableShell-BuJtbUGl.js": {
+    "file": "assets/DataTableShell-BuJtbUGl.js",
+    "name": "DataTableShell",
+    "imports": [
+      "resources/js/app.jsx",
+      "_input-D2m2gcpg.js",
+      "_card-kzjy7nPY.js",
+      "_PageHeader-BDrtCWwj.js"
+    ]
+  },
+  "_DetailSection-Ci-eDW7x.js": {
+    "file": "assets/DetailSection-Ci-eDW7x.js",
+    "name": "DetailSection",
+    "imports": [
+      "resources/js/app.jsx",
+      "_card-kzjy7nPY.js"
+    ]
+  },
+  "_PageHeader-BDrtCWwj.js": {
+    "file": "assets/PageHeader-BDrtCWwj.js",
+    "name": "PageHeader",
+    "imports": [
+      "resources/js/app.jsx",
+      "_card-kzjy7nPY.js"
+    ]
+  },
+  "_card-kzjy7nPY.js": {
+    "file": "assets/card-kzjy7nPY.js",
+    "name": "card",
+    "imports": [
+      "resources/js/app.jsx"
+    ]
+  },
+  "_input-D2m2gcpg.js": {
+    "file": "assets/input-D2m2gcpg.js",
+    "name": "input",
+    "imports": [
+      "resources/js/app.jsx",
+      "_card-kzjy7nPY.js"
+    ]
+  },
+  "resources/css/app.css": {
+    "file": "assets/app-44egTm47.css",
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/Pages/Admin/AuditLogs/Index.jsx": {
+    "file": "assets/Index-YNgbinRL.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/AuditLogs/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Auth/Login.jsx": {
+    "file": "assets/Login-C0OrHCCZ.js",
+    "name": "Login",
+    "src": "resources/js/Pages/Admin/Auth/Login.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Dashboard.jsx": {
+    "file": "assets/Dashboard-DjTzmwb5.js",
+    "name": "Dashboard",
+    "src": "resources/js/Pages/Admin/Dashboard.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_card-kzjy7nPY.js",
+      "_DetailSection-Ci-eDW7x.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Disputes/Index.jsx": {
+    "file": "assets/Index-DBvmzXK1.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Disputes/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Escrows/Index.jsx": {
+    "file": "assets/Index-Pa5XLzAZ.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Escrows/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Orders/Index.jsx": {
+    "file": "assets/Index-IJphN7ga.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Orders/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Products/Index.jsx": {
+    "file": "assets/Index-B9kRdN-u.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Products/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Sellers/Index.jsx": {
+    "file": "assets/Index-B48pNw4s.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Sellers/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Settings/Index.jsx": {
+    "file": "assets/Index-CO-ADTFy.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Settings/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DetailSection-Ci-eDW7x.js",
+      "_card-kzjy7nPY.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Users/Index.jsx": {
+    "file": "assets/Index-BlBvwmFV.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Users/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Wallets/Index.jsx": {
+    "file": "assets/Index-m2l7kz1J.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Wallets/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/Pages/Admin/Withdrawals/Index.jsx": {
+    "file": "assets/Index-BXXLOP5B.js",
+    "name": "Index",
+    "src": "resources/js/Pages/Admin/Withdrawals/Index.jsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.jsx",
+      "_PageHeader-BDrtCWwj.js",
+      "_DataTableShell-BuJtbUGl.js",
+      "_card-kzjy7nPY.js",
+      "_input-D2m2gcpg.js"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  },
+  "resources/js/app.jsx": {
+    "file": "assets/app-CCgoR0ao.js",
+    "name": "app",
+    "src": "resources/js/app.jsx",
+    "isEntry": true,
+    "dynamicImports": [
+      "resources/js/Pages/Admin/AuditLogs/Index.jsx",
+      "resources/js/Pages/Admin/Auth/Login.jsx",
+      "resources/js/Pages/Admin/Dashboard.jsx",
+      "resources/js/Pages/Admin/Disputes/Index.jsx",
+      "resources/js/Pages/Admin/Escrows/Index.jsx",
+      "resources/js/Pages/Admin/Orders/Index.jsx",
+      "resources/js/Pages/Admin/Products/Index.jsx",
+      "resources/js/Pages/Admin/Sellers/Index.jsx",
+      "resources/js/Pages/Admin/Settings/Index.jsx",
+      "resources/js/Pages/Admin/Users/Index.jsx",
+      "resources/js/Pages/Admin/Wallets/Index.jsx",
+      "resources/js/Pages/Admin/Withdrawals/Index.jsx"
+    ],
+    "css": [
+      "assets/app-44egTm47.css"
+    ]
+  }
+}

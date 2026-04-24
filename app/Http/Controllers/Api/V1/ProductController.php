@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Queries\Catalog\ProductCatalogListQuery;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Requests\V1\CorrelationIdOptionalRequest;
 use App\Http\Requests\V1\StoreProductRequest;
 use App\Http\Requests\V1\UpdateProductRequest;
@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class ProductController
 {
-    public function __construct(private readonly Application $app)
+    public function __construct(private readonly AppServices $app)
     {
     }
 

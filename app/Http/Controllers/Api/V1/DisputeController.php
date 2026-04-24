@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Auth\Ability;
 use App\Domain\Queries\Disputes\DisputeListQuery;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Requests\V1\DisputeResolveRefundFormRequest;
 use App\Http\Requests\V1\DisputeResolveReleaseFormRequest;
 use App\Http\Requests\V1\DisputeResolveSplitFormRequest;
@@ -23,7 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class DisputeController
 {
-    public function __construct(private readonly Application $app)
+    public function __construct(private readonly AppServices $app)
     {
     }
 

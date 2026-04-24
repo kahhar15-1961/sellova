@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Auth\Ability;
 use App\Domain\Enums\WithdrawalReviewDecision;
 use App\Domain\Queries\Withdrawals\WithdrawalListQuery;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Requests\V1\ApproveWithdrawalFormRequest;
 use App\Http\Requests\V1\PayoutTransitionRequest;
 use App\Http\Requests\V1\RejectWithdrawalFormRequest;
@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class WithdrawalController
 {
-    public function __construct(private readonly Application $app)
+    public function __construct(private readonly AppServices $app)
     {
     }
 

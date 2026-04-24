@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Auth\Ability;
 use App\Domain\Queries\Orders\OrderListQuery;
-use App\Http\Application;
+use App\Http\AppServices;
 use App\Http\Requests\V1\CorrelationIdOptionalRequest;
 use App\Http\Requests\V1\CreateOrderRequest;
 use App\Http\Requests\V1\MarkOrderPaidRequest;
@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class OrderController
 {
-    public function __construct(private readonly Application $app)
+    public function __construct(private readonly AppServices $app)
     {
     }
 
