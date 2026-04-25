@@ -55,6 +55,7 @@ abstract class TestCase extends BaseTestCase
     private function truncateAllTables(): void
     {
         $tables = [
+            'cache', 'cache_locks', 'sessions',
             'outbox_events', 'audit_logs', 'notifications', 'reviews', 'dispute_decisions', 'dispute_evidences',
             'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
             'withdrawal_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',

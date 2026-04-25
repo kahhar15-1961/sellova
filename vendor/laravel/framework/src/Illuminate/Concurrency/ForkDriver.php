@@ -17,8 +17,17 @@ class ForkDriver implements Driver
      */
     public function run(Closure|array $tasks): array
     {
-        /** @phpstan-ignore class.notFound */
-        return Fork::new()->run(...Arr::wrap($tasks));
+        $tasks = Arr::wrap($tasks);
+
+        $keys = array_keys($tasks);
+        $values = array_values($tasks);
+
+        /** @phpstan-ignore class.notFound (spatie/fork is not installed as it is practically incompatible with Windows) */
+        $results = Fork::new()->run(...$values);
+
+        ksort($results);
+
+        return array_combine($keys, $results);
     }
 
     /**

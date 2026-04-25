@@ -26,11 +26,14 @@ require __DIR__.'/../vendor/autoload.php';
 require __DIR__.'/../app/Http/Foundation/global_helpers.php';
 
 use App\Auth\RoleCodes;
+use App\Admin\AdminPermission;
 use App\Http\Foundation\EloquentBootstrap;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SellerProfile;
 use App\Models\User;
 use App\Models\UserRole;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 if (! EloquentBootstrap::bootFromEnvironment()) {
@@ -81,6 +84,32 @@ Role::query()->firstOrCreate(
     ['code' => RoleCodes::Adjudicator],
     ['name' => 'Adjudicator'],
 );
+
+$adminRole = Role::query()->where('code', RoleCodes::Admin)->first();
+$adjudicatorRole = Role::query()->where('code', RoleCodes::Adjudicator)->first();
+foreach (AdminPermission::all() as $code) {
+    $perm = Permission::query()->firstOrCreate(
+        ['code' => $code],
+        ['name' => ucfirst(str_replace(['admin.', '.'], ['', ' '], $code))],
+    );
+    if ($adminRole !== null) {
+        DB::table('role_permissions')->insertOrIgnore([
+            'role_id' => $adminRole->id,
+            'permission_id' => $perm->id,
+            'created_at' => now(),
+        ]);
+    }
+}
+foreach ([AdminPermission::ACCESS, AdminPermission::DISPUTES_VIEW, AdminPermission::DISPUTES_RESOLVE] as $code) {
+    $perm = Permission::query()->where('code', $code)->first();
+    if ($adjudicatorRole !== null && $perm !== null) {
+        DB::table('role_permissions')->insertOrIgnore([
+            'role_id' => $adjudicatorRole->id,
+            'permission_id' => $perm->id,
+            'created_at' => now(),
+        ]);
+    }
+}
 
 $admin = $ensureUser('dev-admin@sellova.local');
 $assignRole($admin, RoleCodes::Admin);

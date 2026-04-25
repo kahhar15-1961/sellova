@@ -26,7 +26,6 @@ class ConnectionFactory
      * Create a new connection factory instance.
      *
      * @param  \Illuminate\Contracts\Container\Container  $container
-     * @return void
      */
     public function __construct(Container $container)
     {
@@ -88,7 +87,9 @@ class ConnectionFactory
     {
         $connection = $this->createSingleConnection($this->getWriteConfig($config));
 
-        return $connection->setReadPdo($this->createReadPdo($config));
+        return $connection
+            ->setReadPdo($this->createReadPdo($config))
+            ->setReadPdoConfig($this->getReadConfig($config));
     }
 
     /**
@@ -138,8 +139,8 @@ class ConnectionFactory
     protected function getReadWriteConfig(array $config, $type)
     {
         return isset($config[$type][0])
-                        ? Arr::random($config[$type])
-                        : $config[$type];
+            ? Arr::random($config[$type])
+            : $config[$type];
     }
 
     /**
@@ -163,8 +164,8 @@ class ConnectionFactory
     protected function createPdoResolver(array $config)
     {
         return array_key_exists('host', $config)
-                            ? $this->createPdoResolverWithHosts($config)
-                            : $this->createPdoResolverWithoutHosts($config);
+            ? $this->createPdoResolverWithHosts($config)
+            : $this->createPdoResolverWithoutHosts($config);
     }
 
     /**
@@ -178,18 +179,20 @@ class ConnectionFactory
     protected function createPdoResolverWithHosts(array $config)
     {
         return function () use ($config) {
+            $exception = null;
+
             foreach (Arr::shuffle($this->parseHosts($config)) as $host) {
                 $config['host'] = $host;
 
                 try {
                     return $this->createConnector($config)->connect($config);
                 } catch (PDOException $e) {
-                    continue;
+                    $exception = $e;
                 }
             }
 
-            if (isset($e)) {
-                throw $e;
+            if ($exception !== null) {
+                throw $exception;
             }
         };
     }

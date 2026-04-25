@@ -396,7 +396,7 @@ class Vite implements Htmlable
                 $manifest,
             ]);
 
-            foreach ($chunk['imports'] ?? [] as $import) {
+            foreach ($this->resolveImports($manifest, $chunk) as $import) {
                 $preloads->push([
                     $import,
                     $this->assetPath("{$buildDirectory}/{$manifest[$import]['file']}"),
@@ -693,6 +693,7 @@ class Vite implements Htmlable
             'crossorigin' => $this->resolveStylesheetTagAttributes($src, $url, $chunk, $manifest)['crossorigin'] ?? false,
         ] : [
             'rel' => 'modulepreload',
+            'as' => 'script',
             'href' => $url,
             'nonce' => $this->nonce ?? false,
             'crossorigin' => $this->resolveScriptTagAttributes($src, $url, $chunk, $manifest)['crossorigin'] ?? false,
@@ -896,7 +897,7 @@ class Vite implements Htmlable
 
         $chunk = $this->chunk($this->manifest($buildDirectory), $asset);
 
-        $path = public_path($buildDirectory.'/'.$chunk['file']);
+        $path = $this->publicPath($buildDirectory.'/'.$chunk['file']);
 
         if (! is_file($path) || ! file_exists($path)) {
             throw new ViteException("Unable to locate file from Vite manifest: {$path}.");
@@ -915,6 +916,17 @@ class Vite implements Htmlable
     protected function assetPath($path, $secure = null)
     {
         return ($this->assetPathResolver ?? asset(...))($path, $secure);
+    }
+
+    /**
+     * Generate a public path for an asset.
+     *
+     * @param  string  $path
+     * @return string
+     */
+    protected function publicPath($path)
+    {
+        return public_path($path);
     }
 
     /**
@@ -973,6 +985,35 @@ class Vite implements Htmlable
     }
 
     /**
+     * Recursively resolve all imports for the given chunk.
+     *
+     * @param  array  $manifest
+     * @param  array  $chunk
+     * @param  array  $seen
+     * @return array
+     */
+    protected function resolveImports($manifest, $chunk, $seen = [])
+    {
+        $imports = [];
+
+        foreach ($chunk['imports'] ?? [] as $import) {
+            if (isset($seen[$import])) {
+                continue;
+            }
+
+            $seen[$import] = true;
+
+            $imports[] = $import;
+
+            if (isset($manifest[$import])) {
+                $imports = array_merge($imports, $this->resolveImports($manifest, $manifest[$import], $seen));
+            }
+        }
+
+        return $imports;
+    }
+
+    /**
      * Get the chunk for the given entry point / asset.
      *
      * @param  array  $manifest
@@ -1022,5 +1063,15 @@ class Vite implements Htmlable
     public function toHtml()
     {
         return $this->__invoke($this->entryPoints)->toHtml();
+    }
+
+    /**
+     * Flush state.
+     *
+     * @return void
+     */
+    public function flush()
+    {
+        $this->preloadedAssets = [];
     }
 }

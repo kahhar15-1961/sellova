@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Foundation;
 
+use Dotenv\Dotenv;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
@@ -23,24 +24,26 @@ final class EloquentBootstrap
 {
     public static function bootFromEnvironment(): bool
     {
-        $driver = getenv('DB_CONNECTION') ?: getenv('TEST_DB_CONNECTION') ?: 'mysql';
+        self::loadEnvironmentFileIfPresent();
+
+        $driver = self::env('DB_CONNECTION') ?? self::env('TEST_DB_CONNECTION') ?? 'mysql';
         if ($driver !== 'mysql') {
             return false;
         }
 
-        $host = getenv('DB_HOST') ?: getenv('TEST_DB_HOST') ?: null;
-        $database = getenv('DB_DATABASE') ?: getenv('TEST_DB_DATABASE') ?: null;
-        $username = getenv('DB_USERNAME') ?: getenv('TEST_DB_USERNAME') ?: null;
-        $port = getenv('DB_PORT') ?: getenv('TEST_DB_PORT') ?: '3306';
-        $password = getenv('DB_PASSWORD') ?: getenv('TEST_DB_PASSWORD') ?: '';
+        $host = self::env('DB_HOST') ?? self::env('TEST_DB_HOST');
+        $database = self::env('DB_DATABASE') ?? self::env('TEST_DB_DATABASE');
+        $username = self::env('DB_USERNAME') ?? self::env('TEST_DB_USERNAME');
+        $port = self::env('DB_PORT') ?? self::env('TEST_DB_PORT') ?? '3306';
+        $password = self::env('DB_PASSWORD') ?? self::env('TEST_DB_PASSWORD') ?? '';
 
         if ($host === null || $database === null || $username === null) {
             return false;
         }
 
-        $app = new Container();
+        $app = new Container;
 
-        $capsule = new Capsule();
+        $capsule = new Capsule;
         $capsule->addConnection([
             'driver' => 'mysql',
             'host' => $host,
@@ -59,12 +62,51 @@ final class EloquentBootstrap
         $capsule->bootEloquent();
 
         $app->instance('db', $capsule->getDatabaseManager());
-        $app->singleton('files', static fn (): Filesystem => new Filesystem());
+        $app->singleton('files', static fn (): Filesystem => new Filesystem);
         $app->bind('db.schema', static function () use ($capsule) {
             return $capsule->getConnection()->getSchemaBuilder();
         });
         Facade::setFacadeApplication($app);
 
         return true;
+    }
+
+    private static function projectRoot(): string
+    {
+        return dirname(__DIR__, 3);
+    }
+
+    /**
+     * CLI scripts do not load .env automatically; mirror {@code artisan} behaviour.
+     */
+    private static function loadEnvironmentFileIfPresent(): void
+    {
+        $root = self::projectRoot();
+        $path = $root.DIRECTORY_SEPARATOR.'.env';
+        if (! is_file($path) || ! class_exists(Dotenv::class)) {
+            return;
+        }
+
+        Dotenv::createImmutable($root)->safeLoad();
+    }
+
+    /**
+     * Reads a variable from the environment (Dotenv populates {@code $_ENV} / {@code $_SERVER}).
+     */
+    private static function env(string $key): ?string
+    {
+        if (array_key_exists($key, $_ENV)) {
+            $v = $_ENV[$key];
+
+            return $v === null ? null : (string) $v;
+        }
+        if (array_key_exists($key, $_SERVER)) {
+            $v = $_SERVER[$key];
+
+            return $v === null ? null : (string) $v;
+        }
+        $g = getenv($key);
+
+        return $g === false ? null : (string) $g;
     }
 }

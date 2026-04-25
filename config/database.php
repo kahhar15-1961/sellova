@@ -1,6 +1,16 @@
 <?php
 
 use Illuminate\Support\Str;
+use Pdo\Mysql;
+
+/**
+ * @return int PDO driver attribute for MySQL SSL CA path (avoids deprecated PDO::MYSQL_ATTR_SSL_CA on PHP 8.5+).
+ */
+$pdoMysqlSslCaAttribute = match (true) {
+    PHP_VERSION_ID >= 80500 && class_exists(Mysql::class) => Mysql::ATTR_SSL_CA,
+    PHP_VERSION_ID >= 80500 => 1009, // MYSQL_ATTR_SSL_CA (PDO::MYSQL_ATTR_SSL_CA is deprecated on 8.5+)
+    default => PDO::MYSQL_ATTR_SSL_CA,
+};
 
 return [
 
@@ -58,7 +68,7 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                $pdoMysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
 
@@ -78,7 +88,7 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                $pdoMysqlSslCaAttribute => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
 

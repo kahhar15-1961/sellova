@@ -35,8 +35,13 @@ final class AdminDashboardService
      *   links: array<string, string>
      * }
      */
-    public function buildPage(User $user): array
+    public function buildPage(User $user, string $range = '7d'): array
     {
+        $days = match ($range) {
+            '24h' => 1,
+            '30d' => 30,
+            default => 7,
+        };
         $summaryRow = $this->fetchSummaryScalars();
         $summary = $this->mapSummaryForPermissions($user, $summaryRow);
 
@@ -65,6 +70,8 @@ final class AdminDashboardService
                 : [],
             'product_moderation' => $sectionAccess['product_moderation'] ? $this->productModerationQueue() : [],
             'system_alerts' => $this->systemAlertsFromRow($summaryRow),
+            'trend_range' => $range,
+            'trends' => $this->buildTrends($days),
             'section_access' => $sectionAccess,
             'links' => [
                 'orders' => route('admin.orders.index'),
@@ -75,6 +82,63 @@ final class AdminDashboardService
                 'escrows' => route('admin.escrows.index'),
                 'audit_logs' => route('admin.audit-logs.index'),
             ],
+        ];
+    }
+
+    /**
+     * @return array{orders: list<array{label: string, value: int}>, disputes: list<array{label: string, value: int}>, withdrawals: list<array{label: string, value: int}>}
+     */
+    private function buildTrends(int $days): array
+    {
+        $windowStart = now()->subDays(max(0, $days - 1))->startOfDay();
+        $labels = [];
+        for ($i = 0; $i < $days; $i++) {
+            $d = (clone $windowStart)->addDays($i);
+            $labels[$d->format('Y-m-d')] = $d->format('M j');
+        }
+
+        $buildSeries = static function (array $rows, array $labels): array {
+            $map = [];
+            foreach ($rows as $row) {
+                $map[(string) $row->day] = (int) $row->count;
+            }
+
+            $series = [];
+            foreach ($labels as $day => $label) {
+                $series[] = ['label' => $label, 'value' => $map[$day] ?? 0];
+            }
+
+            return $series;
+        };
+
+        $orders = DB::table('orders')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as count')
+            ->where('created_at', '>=', $windowStart)
+            ->groupByRaw('DATE(created_at)')
+            ->orderByRaw('DATE(created_at)')
+            ->get()
+            ->all();
+
+        $disputes = DB::table('dispute_cases')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as count')
+            ->where('created_at', '>=', $windowStart)
+            ->groupByRaw('DATE(created_at)')
+            ->orderByRaw('DATE(created_at)')
+            ->get()
+            ->all();
+
+        $withdrawals = DB::table('withdrawal_requests')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as count')
+            ->where('created_at', '>=', $windowStart)
+            ->groupByRaw('DATE(created_at)')
+            ->orderByRaw('DATE(created_at)')
+            ->get()
+            ->all();
+
+        return [
+            'orders' => $buildSeries($orders, $labels),
+            'disputes' => $buildSeries($disputes, $labels),
+            'withdrawals' => $buildSeries($withdrawals, $labels),
         ];
     }
 
@@ -173,7 +237,6 @@ final class AdminDashboardService
     }
 
     /**
-     * @param  object  $row
      * @return array<string, array{value: string|null, hint: string|null}>
      */
     private function mapSummaryForPermissions(User $user, object $row): array
@@ -447,4 +510,3 @@ final class AdminDashboardService
         return $alerts;
     }
 }
-

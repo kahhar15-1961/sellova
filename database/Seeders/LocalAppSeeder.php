@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Admin\AdminPermission;
 use App\Auth\RoleCodes;
 use App\Domain\Commands\Escrow\CreateEscrowForOrderCommand;
 use App\Domain\Commands\Escrow\HoldEscrowCommand;
@@ -23,6 +24,7 @@ use App\Models\DisputeCase;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SellerProfile;
 use App\Models\Storefront;
@@ -110,6 +112,7 @@ final class LocalAppSeeder
             ['code' => RoleCodes::Adjudicator],
             ['name' => 'Adjudicator'],
         );
+        self::ensureAdminPermissionMatrix();
 
         $admin = self::makeUser('admin@example.test', $passwordHash);
         self::ensureRole($admin, RoleCodes::Admin, 'Administrator');
@@ -477,6 +480,41 @@ final class LocalAppSeeder
             ['user_id' => $user->id, 'role_id' => $role->id],
             ['assigned_by' => null],
         );
+    }
+
+    private static function ensureAdminPermissionMatrix(): void
+    {
+        $adminRole = Role::query()->firstOrCreate(
+            ['code' => RoleCodes::Admin],
+            ['name' => 'Administrator'],
+        );
+        $adjudicatorRole = Role::query()->firstOrCreate(
+            ['code' => RoleCodes::Adjudicator],
+            ['name' => 'Adjudicator'],
+        );
+
+        foreach (AdminPermission::all() as $code) {
+            $permission = Permission::query()->firstOrCreate(
+                ['code' => $code],
+                ['name' => ucfirst(str_replace(['admin.', '.'], ['', ' '], $code))],
+            );
+            DB::table('role_permissions')->insertOrIgnore([
+                'role_id' => $adminRole->id,
+                'permission_id' => $permission->id,
+                'created_at' => now(),
+            ]);
+        }
+
+        foreach ([AdminPermission::ACCESS, AdminPermission::DISPUTES_VIEW, AdminPermission::DISPUTES_RESOLVE] as $code) {
+            $permission = Permission::query()->where('code', $code)->first();
+            if ($permission !== null) {
+                DB::table('role_permissions')->insertOrIgnore([
+                    'role_id' => $adjudicatorRole->id,
+                    'permission_id' => $permission->id,
+                    'created_at' => now(),
+                ]);
+            }
+        }
     }
 
     /**

@@ -21,7 +21,12 @@ final class DashboardController extends AdminPageController
         /** @var User $user */
         $user = $request->user();
 
-        $page = $this->dashboard->buildPage($user);
+        $range = (string) $request->query('range', '7d');
+        if (! in_array($range, ['24h', '7d', '30d'], true)) {
+            $range = '7d';
+        }
+
+        $page = $this->dashboard->buildPage($user, $range);
 
         return Inertia::render('Admin/Dashboard', [
             'header' => $this->pageHeader(
