@@ -116,6 +116,75 @@ class MyReviewItem {
   }
 }
 
+class UserNotificationItem {
+  const UserNotificationItem({
+    required this.id,
+    required this.title,
+    required this.body,
+    required this.channel,
+    required this.isRead,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String title;
+  final String body;
+  final String channel;
+  final bool isRead;
+  final String createdAt;
+
+  factory UserNotificationItem.fromJson(Map<String, dynamic> json) {
+    return UserNotificationItem(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      title: (json['title'] ?? 'Notification').toString(),
+      body: (json['body'] ?? '').toString(),
+      channel: (json['channel'] ?? 'in_app').toString(),
+      isRead: json['is_read'] == true || json['is_read']?.toString() == '1',
+      createdAt: (json['created_at'] ?? '').toString(),
+    );
+  }
+}
+
+class NotificationPreference {
+  const NotificationPreference({
+    required this.inAppEnabled,
+    required this.emailEnabled,
+    required this.orderUpdatesEnabled,
+    required this.promotionEnabled,
+  });
+
+  final bool inAppEnabled;
+  final bool emailEnabled;
+  final bool orderUpdatesEnabled;
+  final bool promotionEnabled;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'in_app_enabled': inAppEnabled,
+        'email_enabled': emailEnabled,
+        'order_updates_enabled': orderUpdatesEnabled,
+        'promotion_enabled': promotionEnabled,
+      };
+
+  factory NotificationPreference.fromJson(Map<String, dynamic> json) {
+    return NotificationPreference(
+      inAppEnabled: json['in_app_enabled'] != false,
+      emailEnabled: json['email_enabled'] != false,
+      orderUpdatesEnabled: json['order_updates_enabled'] != false,
+      promotionEnabled: json['promotion_enabled'] != false,
+    );
+  }
+}
+
+class NotificationListResult {
+  const NotificationListResult({
+    required this.items,
+    required this.unreadCount,
+  });
+
+  final List<UserNotificationItem> items;
+  final int unreadCount;
+}
+
 class ProfileExtrasRepository {
   ProfileExtrasRepository({
     required ApiClient apiClient,
@@ -128,6 +197,7 @@ class ProfileExtrasRepository {
 
   static const String _paymentMethodsKey = 'profile_extras.v1.payment_methods';
   static const String _wishlistKey = 'profile_extras.v1.wishlist';
+  static const String _notificationPrefsKey = 'profile_extras.v1.notification_prefs';
 
   Future<List<PaymentMethodItem>> loadPaymentMethods() async {
     try {
@@ -288,6 +358,93 @@ class ProfileExtrasRepository {
       if (e is ApiException &&
           (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
         return _loadMyReviewsFromOrders();
+      }
+      rethrow;
+    }
+  }
+
+  Future<NotificationListResult> loadNotifications() async {
+    try {
+      final json = await _apiClient.get('/api/v1/me/notifications');
+      final envelope = parseObjectEnvelope(json);
+      final data = envelope.data;
+      final rawItems = (data['items'] as List?) ?? const <dynamic>[];
+      final items = rawItems.whereType<Map>().map((e) => UserNotificationItem.fromJson(Map<String, dynamic>.from(e))).toList();
+      final unreadCount = (data['unread_count'] as num?)?.toInt() ?? 0;
+      return NotificationListResult(items: items, unreadCount: unreadCount);
+    } catch (e) {
+      if (e is ApiException &&
+          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+        return const NotificationListResult(items: <UserNotificationItem>[], unreadCount: 0);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> markNotificationRead(int id) async {
+    try {
+      await _apiClient.patch('/api/v1/me/notifications/$id/read');
+    } catch (e) {
+      if (e is ApiException &&
+          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    try {
+      await _apiClient.post('/api/v1/me/notifications/read-all');
+    } catch (e) {
+      if (e is ApiException &&
+          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  Future<NotificationPreference> loadNotificationPreferences() async {
+    try {
+      final json = await _apiClient.get('/api/v1/me/notifications/preferences');
+      final pref = NotificationPreference.fromJson(parseObjectEnvelope(json).data);
+      await _preferences.setString(_notificationPrefsKey, jsonEncode(pref.toJson()));
+      return pref;
+    } catch (e) {
+      if (e is ApiException &&
+          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+        final raw = _preferences.getString(_notificationPrefsKey);
+        if (raw != null && raw.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(raw);
+            if (decoded is Map) {
+              return NotificationPreference.fromJson(Map<String, dynamic>.from(decoded));
+            }
+          } catch (_) {}
+        }
+        return const NotificationPreference(
+          inAppEnabled: true,
+          emailEnabled: true,
+          orderUpdatesEnabled: true,
+          promotionEnabled: true,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<NotificationPreference> updateNotificationPreferences(NotificationPreference next) async {
+    try {
+      final json = await _apiClient.patch('/api/v1/me/notifications/preferences', data: next.toJson());
+      final pref = NotificationPreference.fromJson(parseObjectEnvelope(json).data);
+      await _preferences.setString(_notificationPrefsKey, jsonEncode(pref.toJson()));
+      return pref;
+    } catch (e) {
+      if (e is ApiException &&
+          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+        await _preferences.setString(_notificationPrefsKey, jsonEncode(next.toJson()));
+        return next;
       }
       rethrow;
     }

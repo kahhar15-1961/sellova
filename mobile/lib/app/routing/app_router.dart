@@ -18,11 +18,14 @@ import '../../features/orders/presentation/order_list_screen.dart';
 import '../../features/orders/presentation/rate_review_screen.dart';
 import '../../features/orders/presentation/confirm_delivery_screen.dart';
 import '../../features/orders/presentation/contact_seller_chat_screen.dart';
+import '../../features/orders/presentation/chat_inbox_screen.dart';
+import '../../features/orders/presentation/chat_thread_screen.dart';
 import '../../features/orders/presentation/track_order_screen.dart';
 import '../../features/profile/presentation/admin_profile_screen.dart';
 import '../../features/profile/presentation/help_support_screen.dart';
 import '../../features/profile/presentation/my_profile_screen.dart';
 import '../../features/profile/presentation/my_reviews_screen.dart';
+import '../../features/profile/presentation/notifications_screen.dart';
 import '../../features/profile/presentation/personal_information_screen.dart';
 import '../../features/profile/presentation/payment_methods_screen.dart';
 import '../../features/profile/presentation/seller_profile_screen.dart';
@@ -160,6 +163,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile/reviews',
             builder: (_, __) => const MyReviewsScreen(),
+          ),
+          GoRoute(
+            path: '/profile/notifications',
+            builder: (_, __) => const NotificationsScreen(),
           ),
           GoRoute(
             path: '/profile/wishlist',
@@ -561,6 +568,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 return const Scaffold(body: Center(child: Text('Invalid order ID')));
               }
               return ContactSellerChatScreen(orderId: id);
+            },
+          ),
+          GoRoute(
+            path: '/chats',
+            builder: (_, __) => const ChatInboxScreen(),
+          ),
+          GoRoute(
+            path: '/chats/thread/:threadId',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['threadId'] ?? '');
+              if (id == null) {
+                return const Scaffold(body: Center(child: Text('Invalid thread ID')));
+              }
+              final title = state.uri.queryParameters['title'] ?? 'Chat';
+              return ChatThreadScreen(threadId: id, title: title);
             },
           ),
           GoRoute(

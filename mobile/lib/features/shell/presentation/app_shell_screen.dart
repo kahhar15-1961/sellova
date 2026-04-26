@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/providers/app_providers.dart';
 import '../../../features/auth/application/auth_session_controller.dart';
+import '../../../features/orders/application/chat_unread_provider.dart';
+import '../../../features/profile/application/notifications_controller.dart';
 
 class AppShellScreen extends ConsumerWidget {
   const AppShellScreen({
@@ -27,14 +29,18 @@ class AppShellScreen extends ConsumerWidget {
     final selectedIndex = _selectedIndex(location);
     final inSellerArea = location.startsWith('/seller/');
     final session = ref.watch(authSessionControllerProvider).session;
+    final unreadNotifications = ref.watch(notificationsControllerProvider).unreadCount;
+    final chatUnread = ref.watch(chatUnreadCountProvider).valueOrNull ?? 0;
     final hideShellAppBar = inSellerArea ||
         location.startsWith('/profile/admin') ||
         location == '/profile' ||
         location.startsWith('/profile/help') ||
         location.startsWith('/profile/personal') ||
+        location.startsWith('/profile/notifications') ||
         location.startsWith('/profile/wishlist') ||
         location.startsWith('/profile/reviews') ||
         location.startsWith('/profile/payment-methods') ||
+        location.startsWith('/chats') ||
         location.startsWith('/home') ||
         location.startsWith('/products') ||
         location.startsWith('/cart') ||
@@ -49,9 +55,11 @@ class AppShellScreen extends ConsumerWidget {
     final hideBottomNav = inSellerArea ||
         location.startsWith('/profile/help') ||
         location.startsWith('/profile/personal') ||
+        location.startsWith('/profile/notifications') ||
         location.startsWith('/profile/wishlist') ||
         location.startsWith('/profile/reviews') ||
         location.startsWith('/profile/payment-methods') ||
+        location.startsWith('/chats') ||
         location.startsWith('/profile/admin') ||
         location.startsWith('/checkout/') ||
         location.startsWith('/addresses') ||
@@ -81,6 +89,46 @@ class AppShellScreen extends ConsumerWidget {
                     onPressed: () => context.push('/profile/admin'),
                     icon: const Icon(Icons.admin_panel_settings_outlined),
                   ),
+                IconButton(
+                  tooltip: 'Messages',
+                  onPressed: () => go('/chats'),
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      const Icon(Icons.chat_bubble_outline_rounded),
+                      if (chatUnread > 0)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(color: Color(0xFFEA580C), shape: BoxShape.circle),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Notifications',
+                  onPressed: () => go('/profile/notifications'),
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      const Icon(Icons.notifications_none_rounded),
+                      if (unreadNotifications > 0)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(color: Color(0xFFDC2626), shape: BoxShape.circle),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
                 IconButton(
                   tooltip: 'Seller Profile',
                   onPressed: () => go('/profile/seller'),

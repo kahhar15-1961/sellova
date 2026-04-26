@@ -5,7 +5,7 @@ import { DataTableShell } from '@/components/admin/DataTableShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-export default function EscalationPoliciesIndex({ header, policies, rotations, users, comms_integrations: commsIntegrations, policy_store_url, rotation_store_url }) {
+export default function EscalationPoliciesIndex({ header, policies, rotations, users, comms_integrations: commsIntegrations, coverage, policy_store_url, rotation_store_url }) {
     return (
         <AdminLayout>
             <Head title={header.title} />
@@ -68,6 +68,24 @@ export default function EscalationPoliciesIndex({ header, policies, rotations, u
             </div>
 
             <div className="mt-6 space-y-6">
+                <Card>
+                    <CardHeader><CardTitle>On-call coverage health</CardTitle></CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                        <p><strong>Roles checked:</strong> {coverage?.roles_checked ?? 0}</p>
+                        <p><strong>Uncovered hours:</strong> {coverage?.uncovered_hours ?? 0}</p>
+                        {(coverage?.gaps || []).length === 0 ? (
+                            <p className="text-muted-foreground">No coverage gaps detected.</p>
+                        ) : (
+                            <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-2">
+                                {(coverage.gaps || []).slice(0, 60).map((g, idx) => (
+                                    <p key={`${g.role_code}-${g.weekday}-${idx}`} className="text-xs text-muted-foreground">
+                                        {g.role_code} · weekday {g.weekday} · missing hours: {g.hours.join(', ')}
+                                    </p>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
                 <DataTableShell columns={['queue_code', 'default_severity', 'on_call_role_code', 'ack_sla_minutes', 'resolve_sla_minutes', 'is_enabled']} rows={policies || []} emptyTitle="No policies" />
                 <DataTableShell columns={['role_code', 'user_email', 'weekday', 'window', 'priority', 'is_active']} rows={rotations || []} emptyTitle="No rotations" />
             </div>

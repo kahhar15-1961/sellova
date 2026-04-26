@@ -20,6 +20,7 @@ final class AdminEscalationPoliciesController extends AdminPageController
     {
         $policies = AdminEscalationPolicy::query()->orderBy('queue_code')->get();
         $rotations = AdminOnCallRotation::query()->with('user:id,email')->orderBy('role_code')->orderBy('priority')->get();
+        $coverage = $this->coverageGaps($policies, $rotations);
 
         return Inertia::render('Admin/EscalationPolicies/Index', [
             'header' => $this->pageHeader(
@@ -66,6 +67,7 @@ final class AdminEscalationPoliciesController extends AdminPageController
                     'name' => $i->name,
                     'channel' => $i->channel,
                 ])->values()->all(),
+            'coverage' => $coverage,
         ]);
     }
 
@@ -95,5 +97,53 @@ final class AdminEscalationPoliciesController extends AdminPageController
         AdminOnCallRotation::query()->create($request->validated());
 
         return back()->with('success', 'On-call rotation added.');
+    }
+
+    /**
+     * @return array{roles_checked: int, uncovered_hours: int, gaps: list<array{role_code: string, weekday: int, hours: list<int>}>}
+     */
+    private function coverageGaps($policies, $rotations): array
+    {
+        $requiredRoles = $policies
+            ->filter(static fn (AdminEscalationPolicy $p): bool => $p->is_enabled && $p->auto_assign_on_call && $p->on_call_role_code !== null && $p->on_call_role_code !== '')
+            ->pluck('on_call_role_code')
+            ->map(static fn ($r): string => (string) $r)
+            ->unique()
+            ->values();
+
+        $map = [];
+        foreach ($rotations as $r) {
+            if (! $r->is_active) {
+                continue;
+            }
+            for ($h = (int) $r->start_hour; $h <= (int) $r->end_hour; $h++) {
+                $map[(string) $r->role_code][(int) $r->weekday][$h] = true;
+            }
+        }
+
+        $gaps = [];
+        foreach ($requiredRoles as $roleCode) {
+            for ($weekday = 0; $weekday <= 6; $weekday++) {
+                $missing = [];
+                for ($hour = 0; $hour <= 23; $hour++) {
+                    if (! (($map[$roleCode][$weekday][$hour] ?? false) === true)) {
+                        $missing[] = $hour;
+                    }
+                }
+                if ($missing !== []) {
+                    $gaps[] = [
+                        'role_code' => $roleCode,
+                        'weekday' => $weekday,
+                        'hours' => $missing,
+                    ];
+                }
+            }
+        }
+
+        return [
+            'roles_checked' => $requiredRoles->count(),
+            'uncovered_hours' => array_sum(array_map(static fn (array $g): int => count($g['hours']), $gaps)),
+            'gaps' => $gaps,
+        ];
     }
 }

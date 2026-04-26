@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\UpdateAdminEscalationIncidentRequest;
 use App\Models\AdminEscalationIncident;
 use App\Models\User;
 use App\Services\Admin\EscalationOperationsService;
+use App\Services\Admin\RunbookExecutionService;
 use App\Services\Audit\AuditLogWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Str;
@@ -17,6 +18,7 @@ final class AdminEscalationIncidentActionController
     public function __invoke(
         UpdateAdminEscalationIncidentRequest $request,
         EscalationOperationsService $ops,
+        RunbookExecutionService $runbooks,
     ): RedirectResponse {
         /** @var User $actor */
         $actor = $request->user();
@@ -33,6 +35,9 @@ final class AdminEscalationIncidentActionController
         if ($action === 'acknowledge') {
             $ops->acknowledge($incident, $actor->id);
         } elseif ($action === 'resolve') {
+            if (! $runbooks->canResolve($incident)) {
+                return back()->with('error', 'Complete all required runbook steps before resolving this incident.');
+            }
             $ops->resolve($incident, $actor->id, (string) ($request->validated('resolution_reason') ?? 'resolved'));
         } else {
             $assigneeId = (int) $request->validated('assignee_user_id');

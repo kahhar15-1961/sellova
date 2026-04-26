@@ -7,6 +7,7 @@ namespace App\Http\Routing;
 use App\Http\AppServices;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DisputeController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -39,6 +40,7 @@ final class ApiRouteRegistrar
 
         self::authRoutes($routes, $app);
         self::profileRoutes($routes, $app);
+        self::chatRoutes($routes, $app);
         self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
@@ -210,6 +212,137 @@ final class ApiRouteRegistrar
         $routes->add('api.v1.me.reviews.index', new Route(
             '/api/v1/me/reviews',
             ['_controller' => $c->listMyReviews(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.notifications.index', new Route(
+            '/api/v1/me/notifications',
+            ['_controller' => $c->listNotifications(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.notifications.mark_read', new Route(
+            '/api/v1/me/notifications/{notificationId}/read',
+            ['_controller' => $c->markNotificationRead(...), '_auth' => true],
+            ['notificationId' => '\d+'],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.me.notifications.mark_all_read', new Route(
+            '/api/v1/me/notifications/read-all',
+            ['_controller' => $c->markAllNotificationsRead(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.me.notifications.preferences.show', new Route(
+            '/api/v1/me/notifications/preferences',
+            ['_controller' => $c->getNotificationPreferences(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.notifications.preferences.update', new Route(
+            '/api/v1/me/notifications/preferences',
+            ['_controller' => $c->updateNotificationPreferences(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+    }
+
+    private static function chatRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new ChatController($app);
+        $routes->add('api.v1.chat.threads.index', new Route(
+            '/api/v1/chat/threads',
+            ['_controller' => $c->listThreads(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.chat.threads.order', new Route(
+            '/api/v1/orders/{orderId}/chat-thread',
+            ['_controller' => $c->getOrCreateOrderThread(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.chat.messages.index', new Route(
+            '/api/v1/chat/threads/{threadId}/messages',
+            ['_controller' => $c->listMessages(...), '_auth' => true],
+            ['threadId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.chat.messages.store', new Route(
+            '/api/v1/chat/threads/{threadId}/messages',
+            ['_controller' => $c->sendMessage(...), '_auth' => true],
+            ['threadId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.chat.threads.read', new Route(
+            '/api/v1/chat/threads/{threadId}/read',
+            ['_controller' => $c->markThreadRead(...), '_auth' => true],
+            ['threadId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.chat.threads.typing', new Route(
+            '/api/v1/chat/threads/{threadId}/typing',
+            ['_controller' => $c->setTyping(...), '_auth' => true],
+            ['threadId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.chat.threads.typing_status', new Route(
+            '/api/v1/chat/threads/{threadId}/typing',
+            ['_controller' => $c->typingStatus(...), '_auth' => true],
+            ['threadId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.chat.support_tickets.store', new Route(
+            '/api/v1/chat/support-tickets',
+            ['_controller' => $c->createSupportTicket(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.chat.support_inbox.index', new Route(
+            '/api/v1/chat/support-inbox',
+            ['_controller' => $c->listSupportInbox(...), '_auth' => true],
             [],
             [],
             '',

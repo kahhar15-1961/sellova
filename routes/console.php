@@ -15,6 +15,16 @@ Schedule::command('admin:sla-escalations')
     ->withoutOverlapping()
     ->onOneServer();
 
+Schedule::command('admin:escalation-ladders')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('admin:comms-retries')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 /*
 | Production: cron `* * * * * cd /path/to/app && php artisan schedule:run`
 | Then use `Illuminate\Support\Facades\Schedule` in this file (see Laravel docs).

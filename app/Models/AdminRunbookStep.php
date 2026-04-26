@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AdminRunbookStep extends Model
 {
@@ -31,5 +32,10 @@ class AdminRunbookStep extends Model
     public function runbook(): BelongsTo
     {
         return $this->belongsTo(AdminRunbook::class, 'runbook_id');
+    }
+
+    public function executions(): HasMany
+    {
+        return $this->hasMany(AdminRunbookStepExecution::class, 'runbook_step_id');
     }
 }

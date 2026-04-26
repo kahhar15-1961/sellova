@@ -133,4 +133,49 @@ final class UserProfileController
 
         return ApiEnvelope::data($data);
     }
+
+    public function listNotifications(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $data = $this->app->userSellerService()->listBuyerNotifications((int) $actor->id);
+
+        return ApiEnvelope::data($data);
+    }
+
+    public function markNotificationRead(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $notificationId = (int) $request->attributes->get('notificationId');
+        $data = $this->app->userSellerService()->markBuyerNotificationRead((int) $actor->id, $notificationId);
+
+        return ApiEnvelope::data($data);
+    }
+
+    public function markAllNotificationsRead(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $updated = $this->app->userSellerService()->markAllBuyerNotificationsRead((int) $actor->id);
+
+        return ApiEnvelope::data(['updated' => $updated]);
+    }
+
+    public function getNotificationPreferences(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $data = $this->app->userSellerService()->getBuyerNotificationPreferences((int) $actor->id);
+
+        return ApiEnvelope::data($data);
+    }
+
+    public function updateNotificationPreferences(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $body = json_decode($request->getContent(), true);
+        if (! is_array($body)) {
+            $body = [];
+        }
+        $data = $this->app->userSellerService()->updateBuyerNotificationPreferences((int) $actor->id, $body);
+
+        return ApiEnvelope::data($data);
+    }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\AdminOnCallRotation;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class StoreAdminOnCallRotationRequest extends FormRequest
@@ -33,6 +34,19 @@ final class StoreAdminOnCallRotationRequest extends FormRequest
             $end = (int) $this->input('end_hour');
             if ($end < $start) {
                 $validator->errors()->add('end_hour', 'End hour must be greater than or equal to start hour.');
+                return;
+            }
+
+            $overlap = AdminOnCallRotation::query()
+                ->where('role_code', (string) $this->input('role_code'))
+                ->where('weekday', (int) $this->input('weekday'))
+                ->where('is_active', true)
+                ->where('start_hour', '<=', $end)
+                ->where('end_hour', '>=', $start)
+                ->exists();
+
+            if ($overlap) {
+                $validator->errors()->add('start_hour', 'Active rotation overlaps with an existing on-call window for this role/day.');
             }
         });
     }

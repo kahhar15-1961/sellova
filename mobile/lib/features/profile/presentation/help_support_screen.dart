@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/providers/app_providers.dart';
+import '../../../app/providers/repository_providers.dart';
 import '../../auth/presentation/auth_ui_constants.dart';
 
 const String _kSupportEmail = 'support@sellova.com';
@@ -69,11 +70,56 @@ class HelpSupportScreen extends ConsumerWidget {
             icon: Icons.headset_mic_outlined,
             title: 'Contact Support',
             onTap: () async {
-              await Clipboard.setData(const ClipboardData(text: _kSupportEmail));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Support email copied to clipboard.')),
-                );
+              final subjectCtrl = TextEditingController();
+              final messageCtrl = TextEditingController();
+              final submit = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Open support ticket'),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          TextField(
+                            controller: subjectCtrl,
+                            decoration: const InputDecoration(labelText: 'Subject'),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: messageCtrl,
+                            decoration: const InputDecoration(labelText: 'Message'),
+                            minLines: 3,
+                            maxLines: 5,
+                          ),
+                        ],
+                      ),
+                      actions: <Widget>[
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Submit')),
+                      ],
+                    ),
+                  ) ??
+                  false;
+              if (!submit) {
+                return;
+              }
+              try {
+                await ref.read(orderRepositoryProvider).createSupportTicket(
+                      subject: subjectCtrl.text.trim(),
+                      message: messageCtrl.text.trim(),
+                    );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Support ticket created.')),
+                  );
+                  context.push('/chats');
+                }
+              } catch (_) {
+                await Clipboard.setData(const ClipboardData(text: _kSupportEmail));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not create ticket. Support email copied.')),
+                  );
+                }
               }
             },
           ),

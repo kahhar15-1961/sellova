@@ -30,6 +30,7 @@ use App\Models\UserAuthToken;
 use App\Models\UserPaymentMethod;
 use App\Models\UserRole;
 use App\Models\UserWishlistItem;
+use App\Models\Notification;
 use App\Services\Escrow\EscrowService;
 use App\Services\WalletLedger\WalletLedgerService;
 use Illuminate\Support\Str;
@@ -567,6 +568,119 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame(200, $strangerRemove['status']);
         self::assertSame(['ok' => true], $strangerRemove['json']['data']);
         self::assertSame(1, UserWishlistItem::query()->where('user_id', $owner->id)->where('product_id', $product->id)->count());
+    }
+
+    public function test_profile_notification_center_endpoints_cover_list_read_and_preferences(): void
+    {
+        $user = $this->createUser('buyer-notification-'.Str::random(6).'@example.test');
+        $token = $this->issueAccessTokenForUser($user);
+
+        $first = Notification::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'channel' => 'in_app',
+            'template_code' => 'order_update',
+            'payload_json' => ['title' => 'Order shipped', 'body' => 'Your order is on the way'],
+            'status' => 'sent',
+            'sent_at' => now(),
+            'read_at' => null,
+        ]);
+        Notification::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'channel' => 'in_app',
+            'template_code' => 'promo',
+            'payload_json' => ['title' => 'New promo', 'body' => 'Save 20% today'],
+            'status' => 'sent',
+            'sent_at' => now(),
+            'read_at' => null,
+        ]);
+
+        $list = $this->legacyApiJson('GET', '/api/v1/me/notifications', token: $token);
+        self::assertSame(200, $list['status']);
+        self::assertSame(2, $list['json']['data']['unread_count']);
+        self::assertCount(2, $list['json']['data']['items']);
+
+        $markOne = $this->legacyApiJson('PATCH', '/api/v1/me/notifications/'.$first->id.'/read', [], $token);
+        self::assertSame(200, $markOne['status']);
+        self::assertTrue((bool) $markOne['json']['data']['is_read']);
+
+        $markAll = $this->legacyApiJson('POST', '/api/v1/me/notifications/read-all', [], $token);
+        self::assertSame(200, $markAll['status']);
+        self::assertSame(1, (int) $markAll['json']['data']['updated']);
+
+        $after = $this->legacyApiJson('GET', '/api/v1/me/notifications', token: $token);
+        self::assertSame(200, $after['status']);
+        self::assertSame(0, $after['json']['data']['unread_count']);
+
+        $prefGet = $this->legacyApiJson('GET', '/api/v1/me/notifications/preferences', token: $token);
+        self::assertSame(200, $prefGet['status']);
+        self::assertTrue((bool) $prefGet['json']['data']['in_app_enabled']);
+
+        $prefPatch = $this->legacyApiJson('PATCH', '/api/v1/me/notifications/preferences', [
+            'email_enabled' => false,
+            'promotion_enabled' => false,
+        ], $token);
+        self::assertSame(200, $prefPatch['status']);
+        self::assertFalse((bool) $prefPatch['json']['data']['email_enabled']);
+        self::assertFalse((bool) $prefPatch['json']['data']['promotion_enabled']);
+
+    }
+
+    public function test_chat_endpoints_cover_order_thread_messages_and_support_ticket(): void
+    {
+        [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Draft, '35.0000');
+        $buyerToken = $this->issueAccessTokenForUser($buyer);
+        $sellerToken = $this->issueAccessTokenForUser($sellerProfile->user);
+
+        $thread = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/chat-thread', [], $buyerToken);
+        self::assertSame(200, $thread['status']);
+        $threadId = (int) $thread['json']['data']['thread_id'];
+        self::assertGreaterThan(0, $threadId);
+
+        $sendBuyer = $this->legacyApiJson('POST', '/api/v1/chat/threads/'.$threadId.'/messages', [
+            'body' => 'Hello seller',
+        ], $buyerToken);
+        self::assertSame(201, $sendBuyer['status']);
+        self::assertTrue((bool) $sendBuyer['json']['data']['from_me']);
+
+        $sellerList = $this->legacyApiJson('GET', '/api/v1/chat/threads', token: $sellerToken);
+        self::assertSame(200, $sellerList['status']);
+        self::assertNotEmpty($sellerList['json']['data']['items']);
+        self::assertSame(1, $sellerList['json']['data']['unread_count']);
+
+        $sellerMessages = $this->legacyApiJson('GET', '/api/v1/chat/threads/'.$threadId.'/messages', token: $sellerToken);
+        self::assertSame(200, $sellerMessages['status']);
+        self::assertNotEmpty($sellerMessages['json']['data']);
+        self::assertSame('sent', $sellerMessages['json']['data'][0]['delivery_status']);
+
+        $typingOn = $this->legacyApiJson('POST', '/api/v1/chat/threads/'.$threadId.'/typing', ['typing' => true], $buyerToken);
+        self::assertSame(200, $typingOn['status']);
+        $typingStatus = $this->legacyApiJson('GET', '/api/v1/chat/threads/'.$threadId.'/typing', token: $sellerToken);
+        self::assertSame(200, $typingStatus['status']);
+        self::assertNotEmpty($typingStatus['json']['data']);
+
+        $markRead = $this->legacyApiJson('POST', '/api/v1/chat/threads/'.$threadId.'/read', [], $sellerToken);
+        self::assertSame(200, $markRead['status']);
+        self::assertSame(['ok' => true], $markRead['json']['data']);
+
+        $sellerListAfterRead = $this->legacyApiJson('GET', '/api/v1/chat/threads', token: $sellerToken);
+        self::assertSame(200, $sellerListAfterRead['status']);
+        self::assertSame(0, $sellerListAfterRead['json']['data']['unread_count']);
+
+        $support = $this->legacyApiJson('POST', '/api/v1/chat/support-tickets', [
+            'subject' => 'Need help',
+            'message' => 'Please check my order issue',
+        ], $buyerToken);
+        self::assertSame(201, $support['status']);
+        self::assertGreaterThan(0, (int) $support['json']['data']['thread_id']);
+
+        $supportAgent = $this->createUser('support-agent-'.Str::random(6).'@example.test');
+        $this->assignRole($supportAgent, RoleCodes::SupportAgent);
+        $supportToken = $this->issueAccessTokenForUser($supportAgent);
+        $supportInbox = $this->legacyApiJson('GET', '/api/v1/chat/support-inbox', token: $supportToken);
+        self::assertSame(200, $supportInbox['status']);
+        self::assertNotEmpty($supportInbox['json']['data']);
     }
 
     /**

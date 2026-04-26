@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../auth/application/auth_session_controller.dart';
 import '../../auth/presentation/auth_ui_constants.dart';
+import '../application/notifications_controller.dart';
 import '../application/my_profile_controller.dart';
 import '../data/profile_repository.dart';
 
@@ -91,6 +92,7 @@ class _MyProfileScreenState extends ConsumerState<MyProfileScreen> {
     final state = ref.watch(myProfileControllerProvider);
     final profile = state.profile;
     final staff = ref.watch(authSessionControllerProvider).session?.isPlatformStaff ?? false;
+    final unreadNotifications = ref.watch(notificationsControllerProvider).unreadCount;
     final theme = Theme.of(context);
 
     if (state.isLoading && profile == null) {
@@ -210,6 +212,17 @@ class _MyProfileScreenState extends ConsumerState<MyProfileScreen> {
               icon: Icons.favorite_border_rounded,
               title: 'Wishlist',
               onTap: () => context.push('/profile/wishlist'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.notifications_none_rounded,
+              title: 'Notifications',
+              subtitle: unreadNotifications > 0 ? '$unreadNotifications unread' : null,
+              onTap: () => context.push('/profile/notifications'),
+            ),
+            _ProfileMenuTile(
+              icon: Icons.chat_bubble_outline_rounded,
+              title: 'Messages',
+              onTap: () => context.push('/chats'),
             ),
             _ProfileMenuTile(
               icon: Icons.help_outline_rounded,

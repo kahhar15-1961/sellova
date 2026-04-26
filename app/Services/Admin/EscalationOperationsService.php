@@ -10,14 +10,16 @@ use App\Models\AdminEscalationIncident;
 use App\Models\AdminEscalationPolicy;
 use App\Models\AdminOnCallRotation;
 use App\Models\Notification;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Throwable;
 
 final class EscalationOperationsService
 {
+    public function __construct(
+        private readonly CommsDeliveryService $commsDelivery,
+        private readonly RunbookExecutionService $runbookExecution,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $meta
      */
@@ -37,13 +39,23 @@ final class EscalationOperationsService
         ]);
 
         $isNew = ! $incident->exists;
+        $now = now();
+        $ackDueAt = $now->copy()->addMinutes((int) ($policy?->ack_sla_minutes ?? 30));
+        $resolveDueAt = $now->copy()->addMinutes((int) ($policy?->resolve_sla_minutes ?? 240));
+        $nextLadderAt = $this->nextLadderAt($policy, $now, 1);
+
         $incident->forceFill([
             'uuid' => $incident->uuid ?: (string) Str::uuid(),
             'status' => 'open',
             'severity' => (string) ($policy?->default_severity ?: 'high'),
             'reason_code' => $reasonCode,
             'sla_breached_at' => $breachedAt,
-            'opened_at' => $incident->opened_at ?? now(),
+            'opened_at' => $incident->opened_at ?? $now,
+            'ack_due_at' => $incident->ack_due_at ?? $ackDueAt,
+            'resolve_due_at' => $incident->resolve_due_at ?? $resolveDueAt,
+            'next_ladder_at' => $nextLadderAt,
+            'last_ladder_triggered_at' => null,
+            'current_ladder_level' => max(1, (int) $incident->current_ladder_level),
             'resolved_at' => null,
             'meta_json' => $meta,
         ]);
@@ -56,6 +68,7 @@ final class EscalationOperationsService
         }
 
         $incident->save();
+        $this->runbookExecution->ensureExecution($incident);
 
         $this->event($incident, null, $isNew ? 'incident.opened' : 'incident.reopened', [
             'reason_code' => $reasonCode,
@@ -74,6 +87,7 @@ final class EscalationOperationsService
         $incident->forceFill([
             'status' => 'acknowledged',
             'acknowledged_at' => now(),
+            'next_ladder_at' => null,
         ])->save();
 
         $this->event($incident, $actorUserId, 'incident.acknowledged', []);
@@ -84,6 +98,7 @@ final class EscalationOperationsService
         $incident->forceFill([
             'status' => 'resolved',
             'resolved_at' => now(),
+            'next_ladder_at' => null,
         ])->save();
 
         $this->event($incident, $actorUserId, 'incident.resolved', ['reason' => $reason]);
@@ -128,6 +143,96 @@ final class EscalationOperationsService
         return $rotation?->user_id;
     }
 
+    public function advanceLadder(AdminEscalationIncident $incident): bool
+    {
+        if ($incident->status !== 'open') {
+            return false;
+        }
+
+        $policy = $this->policyForQueue($incident->queue_code);
+        if ($policy === null) {
+            return false;
+        }
+
+        $ladder = $this->normalizedLadder($policy);
+        if ($ladder === []) {
+            return false;
+        }
+
+        $currentLevel = max(1, (int) $incident->current_ladder_level);
+        $nextLevel = $currentLevel + 1;
+        if ($nextLevel > count($ladder)) {
+            return false;
+        }
+
+        $stage = $ladder[$nextLevel - 1];
+        if (! empty($stage['severity'])) {
+            $incident->severity = (string) $stage['severity'];
+        }
+        if (! empty($stage['role_code'])) {
+            $assigneeId = $this->resolveOnCallAssigneeId((string) $stage['role_code']);
+            if ($assigneeId !== null) {
+                $incident->assigned_user_id = $assigneeId;
+            }
+        }
+        $incident->current_ladder_level = $nextLevel;
+        $incident->last_ladder_triggered_at = now();
+        $incident->next_ladder_at = $this->nextLadderAt($policy, now(), $nextLevel);
+        $incident->save();
+
+        $this->event($incident, null, 'incident.ladder.advanced', [
+            'new_level' => $nextLevel,
+            'severity' => $incident->severity,
+            'assigned_user_id' => $incident->assigned_user_id,
+        ]);
+        $this->notifyInApp($incident);
+        $this->notifyComms($incident, $policy->comms_integration_id, 'admin.escalation.incident.ladder_advanced');
+
+        return true;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function normalizedLadder(AdminEscalationPolicy $policy): array
+    {
+        $raw = $policy->escalation_ladder_json;
+        if (! is_array($raw) || $raw === []) {
+            return [
+                ['after_minutes' => (int) max(5, min(1440, (int) floor($policy->ack_sla_minutes / 2))), 'severity' => 'critical', 'role_code' => $policy->on_call_role_code],
+                ['after_minutes' => (int) max(10, (int) $policy->ack_sla_minutes), 'severity' => 'critical', 'role_code' => $policy->on_call_role_code],
+            ];
+        }
+
+        return array_values(array_filter(array_map(static function ($stage): ?array {
+            if (! is_array($stage)) {
+                return null;
+            }
+            $after = max(1, (int) ($stage['after_minutes'] ?? 0));
+
+            return [
+                'after_minutes' => $after,
+                'severity' => (string) ($stage['severity'] ?? 'critical'),
+                'role_code' => isset($stage['role_code']) ? (string) $stage['role_code'] : null,
+            ];
+        }, $raw)));
+    }
+
+    private function nextLadderAt(?AdminEscalationPolicy $policy, \DateTimeInterface $anchor, int $level): ?\DateTimeInterface
+    {
+        if ($policy === null) {
+            return null;
+        }
+
+        $ladder = $this->normalizedLadder($policy);
+        $index = $level - 1;
+        if (! isset($ladder[$index])) {
+            return null;
+        }
+
+        return now()->setTimestamp($anchor->getTimestamp())->addMinutes((int) Arr::get($ladder[$index], 'after_minutes', 15));
+    }
+
     private function notifyInApp(AdminEscalationIncident $incident): void
     {
         if ($incident->assigned_user_id === null) {
@@ -154,7 +259,7 @@ final class EscalationOperationsService
         $incident->forceFill(['last_notified_at' => now()])->save();
     }
 
-    private function notifyComms(AdminEscalationIncident $incident, ?int $integrationId): void
+    private function notifyComms(AdminEscalationIncident $incident, ?int $integrationId, string $eventType = 'admin.escalation.incident.opened'): void
     {
         if ($integrationId === null) {
             return;
@@ -168,46 +273,32 @@ final class EscalationOperationsService
             return;
         }
 
-        try {
-            if ($integration->channel === 'webhook' && $integration->webhook_url) {
-                Http::timeout(5)->post($integration->webhook_url, [
-                    'event' => 'admin.escalation.incident.opened',
-                    'incident' => [
-                        'id' => $incident->id,
-                        'queue_code' => $incident->queue_code,
-                        'target_type' => $incident->target_type,
-                        'target_id' => $incident->target_id,
-                        'severity' => $incident->severity,
-                        'status' => $incident->status,
-                    ],
-                ])->throw();
-            } elseif ($integration->channel === 'email' && $integration->email_to) {
-                Mail::raw(
-                    sprintf(
-                        'Escalation incident #%d (%s %s #%d) opened with severity %s.',
-                        $incident->id,
-                        $incident->queue_code,
-                        $incident->target_type,
-                        $incident->target_id,
-                        $incident->severity,
-                    ),
-                    static function ($msg) use ($integration): void {
-                        $msg->to((string) $integration->email_to)
-                            ->subject('Sellova escalation incident opened');
-                    },
-                );
-            } else {
-                return;
-            }
-
-            $integration->forceFill(['last_tested_at' => now()])->save();
-        } catch (Throwable $e) {
-            Log::warning('Escalation comms delivery failed.', [
-                'integration_id' => $integration->id,
-                'incident_id' => $incident->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->commsDelivery->queueDelivery(
+            incident: $incident,
+            integration: $integration,
+            eventType: $eventType,
+            payload: [
+                'event' => $eventType,
+                'message' => sprintf(
+                    'Escalation incident #%d (%s %s #%d) status=%s severity=%s',
+                    $incident->id,
+                    $incident->queue_code,
+                    $incident->target_type,
+                    $incident->target_id,
+                    $incident->status,
+                    $incident->severity,
+                ),
+                'incident' => [
+                    'id' => $incident->id,
+                    'queue_code' => $incident->queue_code,
+                    'target_type' => $incident->target_type,
+                    'target_id' => $incident->target_id,
+                    'severity' => $incident->severity,
+                    'status' => $incident->status,
+                    'current_ladder_level' => $incident->current_ladder_level,
+                ],
+            ],
+        );
     }
 
     /**

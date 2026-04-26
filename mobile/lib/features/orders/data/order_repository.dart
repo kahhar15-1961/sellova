@@ -1,6 +1,7 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/network/repository_helpers.dart';
 import '../../../core/pagination/pagination_meta.dart';
+import 'package:dio/dio.dart';
 
 class OrderDto {
   const OrderDto(this.raw);
@@ -135,4 +136,108 @@ class OrderRepository {
     final json = await _apiClient.post('/api/v1/orders/$orderId/mark-paid', data: body);
     return OrderDto(parseObjectEnvelope(json).data);
   }
+
+  Future<int> getOrCreateChatThread(int orderId) async {
+    final json = await _apiClient.post('/api/v1/orders/$orderId/chat-thread');
+    final data = parseObjectEnvelope(json).data;
+    return (data['thread_id'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<List<ChatThreadDto>> listChatThreads() async {
+    final json = await _apiClient.get('/api/v1/chat/threads');
+    final data = parseObjectEnvelope(json).data;
+    final items = (data['items'] as List?) ?? const <dynamic>[];
+    return items.whereType<Map>().map((e) => ChatThreadDto(Map<String, dynamic>.from(e))).toList();
+  }
+
+  Future<int> loadChatUnreadCount() async {
+    final json = await _apiClient.get('/api/v1/chat/threads');
+    final data = parseObjectEnvelope(json).data;
+    return (data['unread_count'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<List<ChatMessageDto>> listChatMessages(int threadId) async {
+    final json = await _apiClient.get('/api/v1/chat/threads/$threadId/messages');
+    final envelope = parseListEnvelope(json);
+    return envelope.data.map(ChatMessageDto.new).toList();
+  }
+
+  Future<ChatMessageDto> sendChatMessage(int threadId, String body) async {
+    final json = await _apiClient.post(
+      '/api/v1/chat/threads/$threadId/messages',
+      data: <String, dynamic>{'body': body},
+    );
+    return ChatMessageDto(parseObjectEnvelope(json).data);
+  }
+
+  Future<ChatMessageDto> sendChatAttachment({
+    required int threadId,
+    required String filePath,
+    required String fileName,
+    String? body,
+  }) async {
+    final form = FormData.fromMap(<String, dynamic>{
+      if (body != null && body.trim().isNotEmpty) 'body': body.trim(),
+      'attachment': await MultipartFile.fromFile(filePath, filename: fileName),
+    });
+    final json = await _apiClient.postMultipart('/api/v1/chat/threads/$threadId/messages', data: form);
+    return ChatMessageDto(parseObjectEnvelope(json).data);
+  }
+
+  Future<void> markChatThreadRead(int threadId) async {
+    await _apiClient.post('/api/v1/chat/threads/$threadId/read');
+  }
+
+  Future<void> setTyping(int threadId, {required bool typing}) async {
+    await _apiClient.post(
+      '/api/v1/chat/threads/$threadId/typing',
+      data: <String, dynamic>{'typing': typing},
+    );
+  }
+
+  Future<List<String>> loadTypingUsers(int threadId) async {
+    final json = await _apiClient.get('/api/v1/chat/threads/$threadId/typing');
+    final envelope = parseListEnvelope(json);
+    return envelope.data
+        .map((row) => (row['name'] ?? '').toString())
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
+  Future<int> createSupportTicket({
+    required String subject,
+    required String message,
+  }) async {
+    final json = await _apiClient.post(
+      '/api/v1/chat/support-tickets',
+      data: <String, dynamic>{'subject': subject, 'message': message},
+    );
+    final data = parseObjectEnvelope(json).data;
+    return (data['thread_id'] as num?)?.toInt() ?? 0;
+  }
+}
+
+class ChatThreadDto {
+  const ChatThreadDto(this.raw);
+  final Map<String, dynamic> raw;
+
+  int get id => (raw['id'] as num?)?.toInt() ?? 0;
+  String get kind => (raw['kind'] ?? 'order').toString();
+  String get subject => (raw['subject'] ?? 'Chat').toString();
+  String get preview => (raw['last_message_preview'] ?? '').toString();
+  bool get hasUnread => raw['has_unread'] == true || raw['has_unread']?.toString() == '1';
+  String get counterparty => (raw['counterparty_label'] ?? '').toString();
+}
+
+class ChatMessageDto {
+  const ChatMessageDto(this.raw);
+  final Map<String, dynamic> raw;
+
+  int get id => (raw['id'] as num?)?.toInt() ?? 0;
+  bool get fromMe => raw['from_me'] == true || raw['from_me']?.toString() == '1';
+  String get body => (raw['body'] ?? '').toString();
+  String get createdAt => (raw['created_at'] ?? '').toString();
+  String? get attachmentUrl => raw['attachment_url']?.toString();
+  String? get attachmentName => raw['attachment_name']?.toString();
+  String get deliveryStatus => (raw['delivery_status'] ?? 'sent').toString();
 }

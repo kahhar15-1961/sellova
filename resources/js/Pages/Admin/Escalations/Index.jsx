@@ -13,7 +13,7 @@ function fmtDate(iso) {
     try { return new Date(iso).toLocaleString(); } catch { return String(iso); }
 }
 
-export default function EscalationsIndex({ header, rows, summary, filters, index_url, action_url, staff_users: staffUsers = [] }) {
+export default function EscalationsIndex({ header, rows, summary, filters, index_url, action_url, slo_export_url: sloExportUrl, staff_users: staffUsers = [] }) {
     const f = filters || {};
     const queueFilter = f.queue || 'all';
     const statusFilter = f.status || 'open';
@@ -63,6 +63,16 @@ export default function EscalationsIndex({ header, rows, summary, filters, index
                     <StatCard label="Resolved" value={String(summary?.resolved ?? 0)} />
                     <StatCard label="Critical active" value={String(summary?.critical ?? 0)} />
                 </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <StatCard label="MTTA (30d, min)" value={String(summary?.mtta_minutes ?? 0)} />
+                    <StatCard label="MTTR (30d, min)" value={String(summary?.mttr_minutes ?? 0)} />
+                    <StatCard label="Reopened (30d)" value={String(summary?.reopened_30d ?? 0)} />
+                </div>
+                <div className="flex justify-end">
+                    <a href={sloExportUrl} className="inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium hover:bg-muted">
+                        Export SLO CSV
+                    </a>
+                </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                     <div className="flex-1">
@@ -99,6 +109,9 @@ export default function EscalationsIndex({ header, rows, summary, filters, index
                     renderers={{
                         severity: (v) => <StatusBadge status={String(v)} />,
                         status: (v) => <StatusBadge status={String(v)} />,
+                        target: (_v, row) => (
+                            row.href ? <a href={row.href} className="text-primary hover:underline">{row.target}</a> : row.target
+                        ),
                         opened_at: (v) => <span className="text-muted-foreground">{fmtDate(v)}</span>,
                         actions: (_v, row) => (
                             <div className="flex gap-2">

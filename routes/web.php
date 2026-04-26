@@ -9,7 +9,9 @@ use App\Http\Controllers\Admin\AdminApprovalRealtimeController;
 use App\Http\Controllers\Admin\AdminApprovalsInboxController;
 use App\Http\Controllers\Admin\AdminCommsIntegrationsController;
 use App\Http\Controllers\Admin\AdminEscalationIncidentActionController;
+use App\Http\Controllers\Admin\AdminEscalationIncidentDetailController;
 use App\Http\Controllers\Admin\AdminEscalationPoliciesController;
+use App\Http\Controllers\Admin\AdminEscalationSloExportController;
 use App\Http\Controllers\Admin\AdminEscalationsInboxController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminRunbooksController;
@@ -85,8 +87,20 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('escalations', AdminEscalationsInboxController::class)
             ->name('escalations.index')
             ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('escalations/{incident}', [AdminEscalationIncidentDetailController::class, 'show'])
+            ->name('escalations.show')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
         Route::post('escalations/action', AdminEscalationIncidentActionController::class)
             ->name('escalations.action')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('escalations/slo-export', AdminEscalationSloExportController::class)
+            ->name('escalations.slo-export')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('escalations/{incident}/runbook-steps/{stepExecution}/complete', [AdminEscalationIncidentDetailController::class, 'completeRunbookStep'])
+            ->name('escalations.steps.complete')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('escalations/{incident}/comms-deliveries/{deliveryLog}/retry', [AdminEscalationIncidentDetailController::class, 'retryCommsDelivery'])
+            ->name('escalations.comms.retry')
             ->middleware('admin.permission:'.AdminPermission::ACCESS);
         Route::get('escalation-policies', [AdminEscalationPoliciesController::class, 'index'])
             ->name('escalation-policies.index')

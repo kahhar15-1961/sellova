@@ -19,9 +19,11 @@ use App\Models\Product;
 use App\Models\Review;
 use App\Models\SellerProfile;
 use App\Models\User;
+use App\Models\UserNotificationPreference;
 use App\Models\UserPaymentMethod;
 use App\Models\UserWishlistItem;
 use App\Services\Audit\AuditLogWriter;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -294,6 +296,128 @@ class UserSellerService
             ->map(fn (Review $r): array => $this->buyerReviewToArray($r))
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array{items: list<array<string, mixed>>, unread_count: int}
+     */
+    public function listBuyerNotifications(int $userId): array
+    {
+        $items = \App\Models\Notification::query()
+            ->where('user_id', $userId)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (\App\Models\Notification $n): array => $this->notificationToArray($n))
+            ->values()
+            ->all();
+
+        $unreadCount = \App\Models\Notification::query()
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->count();
+
+        return ['items' => $items, 'unread_count' => $unreadCount];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function markBuyerNotificationRead(int $userId, int $notificationId): array
+    {
+        /** @var \App\Models\Notification|null $notification */
+        $notification = \App\Models\Notification::query()
+            ->where('user_id', $userId)
+            ->where('id', $notificationId)
+            ->first();
+        if ($notification === null) {
+            throw new AuthValidationFailedException('not_found', ['notification_id' => $notificationId]);
+        }
+        if ($notification->read_at === null) {
+            $notification->read_at = now();
+            $notification->status = 'read';
+            $notification->save();
+        }
+
+        return $this->notificationToArray($notification);
+    }
+
+    public function markAllBuyerNotificationsRead(int $userId): int
+    {
+        return \App\Models\Notification::query()
+            ->where('user_id', $userId)
+            ->whereNull('read_at')
+            ->update([
+                'read_at' => now(),
+                'status' => 'read',
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getBuyerNotificationPreferences(int $userId): array
+    {
+        try {
+            /** @var UserNotificationPreference $pref */
+            $pref = UserNotificationPreference::query()->firstOrCreate(
+                ['user_id' => $userId],
+                [
+                    'in_app_enabled' => true,
+                    'email_enabled' => true,
+                    'order_updates_enabled' => true,
+                    'promotion_enabled' => true,
+                ]
+            );
+
+            return $this->notificationPreferenceToArray($pref);
+        } catch (QueryException) {
+            return [
+                'in_app_enabled' => true,
+                'email_enabled' => true,
+                'order_updates_enabled' => true,
+                'promotion_enabled' => true,
+                'updated_at' => null,
+            ];
+        }
+    }
+
+    /**
+     * @param  array{in_app_enabled?: bool, email_enabled?: bool, order_updates_enabled?: bool, promotion_enabled?: bool}  $payload
+     * @return array<string, mixed>
+     */
+    public function updateBuyerNotificationPreferences(int $userId, array $payload): array
+    {
+        try {
+            /** @var UserNotificationPreference $pref */
+            $pref = UserNotificationPreference::query()->firstOrCreate(
+                ['user_id' => $userId],
+                [
+                    'in_app_enabled' => true,
+                    'email_enabled' => true,
+                    'order_updates_enabled' => true,
+                    'promotion_enabled' => true,
+                ]
+            );
+
+            foreach (['in_app_enabled', 'email_enabled', 'order_updates_enabled', 'promotion_enabled'] as $field) {
+                if (array_key_exists($field, $payload)) {
+                    $pref->{$field} = (bool) $payload[$field];
+                }
+            }
+            $pref->save();
+
+            return $this->notificationPreferenceToArray($pref);
+        } catch (QueryException) {
+            return [
+                'in_app_enabled' => (bool) ($payload['in_app_enabled'] ?? true),
+                'email_enabled' => (bool) ($payload['email_enabled'] ?? true),
+                'order_updates_enabled' => (bool) ($payload['order_updates_enabled'] ?? true),
+                'promotion_enabled' => (bool) ($payload['promotion_enabled'] ?? true),
+                'updated_at' => null,
+            ];
+        }
     }
 
     public function createSellerProfile(CreateSellerProfileCommand $command): array
@@ -572,6 +696,41 @@ class UserSellerService
             'status' => (string) $r->status,
             'created_at' => $createdAt?->toIso8601String(),
             'created_at_label' => $createdAt?->format('d M Y') ?? '',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function notificationToArray(\App\Models\Notification $notification): array
+    {
+        $payload = is_array($notification->payload_json) ? $notification->payload_json : [];
+
+        return [
+            'id' => (int) $notification->id,
+            'uuid' => $notification->uuid,
+            'channel' => (string) $notification->channel,
+            'template_code' => $notification->template_code,
+            'title' => (string) ($payload['title'] ?? $notification->template_code ?? 'Notification'),
+            'body' => (string) ($payload['body'] ?? ''),
+            'payload' => $payload,
+            'is_read' => $notification->read_at !== null,
+            'read_at' => $notification->read_at?->toIso8601String(),
+            'created_at' => $notification->created_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function notificationPreferenceToArray(UserNotificationPreference $pref): array
+    {
+        return [
+            'in_app_enabled' => (bool) $pref->in_app_enabled,
+            'email_enabled' => (bool) $pref->email_enabled,
+            'order_updates_enabled' => (bool) $pref->order_updates_enabled,
+            'promotion_enabled' => (bool) $pref->promotion_enabled,
+            'updated_at' => $pref->updated_at?->toIso8601String(),
         ];
     }
 }

@@ -28,4 +28,9 @@ class AdminRunbook extends Model
     {
         return $this->hasMany(AdminRunbookStep::class, 'runbook_id')->orderBy('step_order');
     }
+
+    public function executions(): HasMany
+    {
+        return $this->hasMany(AdminRunbookExecution::class, 'runbook_id');
+    }
 }
