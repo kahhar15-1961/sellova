@@ -81,6 +81,21 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> delete(
+    String path, {
+    Map<String, dynamic>? data,
+  }) async {
+    try {
+      final response = await _dio.delete<Map<String, dynamic>>(
+        path,
+        data: data,
+      );
+      return response.data ?? <String, dynamic>{};
+    } catch (error) {
+      throw _errorMapper.map(error);
+    }
+  }
+
   Future<Map<String, dynamic>> postMultipart(
     String path, {
     required FormData data,

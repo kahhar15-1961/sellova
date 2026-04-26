@@ -32,6 +32,9 @@ class AppShellScreen extends ConsumerWidget {
         location == '/profile' ||
         location.startsWith('/profile/help') ||
         location.startsWith('/profile/personal') ||
+        location.startsWith('/profile/wishlist') ||
+        location.startsWith('/profile/reviews') ||
+        location.startsWith('/profile/payment-methods') ||
         location.startsWith('/home') ||
         location.startsWith('/products') ||
         location.startsWith('/cart') ||
@@ -46,6 +49,9 @@ class AppShellScreen extends ConsumerWidget {
     final hideBottomNav = inSellerArea ||
         location.startsWith('/profile/help') ||
         location.startsWith('/profile/personal') ||
+        location.startsWith('/profile/wishlist') ||
+        location.startsWith('/profile/reviews') ||
+        location.startsWith('/profile/payment-methods') ||
         location.startsWith('/profile/admin') ||
         location.startsWith('/checkout/') ||
         location.startsWith('/addresses') ||

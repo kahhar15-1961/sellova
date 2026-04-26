@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -14,9 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $token_family
  * @property string $token_hash
  * @property string $kind
- * @property \Illuminate\Support\Carbon $expires_at
- * @property \Illuminate\Support\Carbon|null $revoked_at
- * @property \Illuminate\Support\Carbon $created_at
+ * @property Carbon $expires_at
+ * @property Carbon|null $revoked_at
+ * @property Carbon $created_at
  * @property-read User|null $user
  */
 class UserAuthToken extends Model

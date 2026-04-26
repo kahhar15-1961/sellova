@@ -15,10 +15,15 @@ use App\Domain\Exceptions\AuthValidationFailedException;
 use App\Domain\Exceptions\InvalidDomainStateTransitionException;
 use App\Models\KycDocument;
 use App\Models\KycVerification;
+use App\Models\Product;
+use App\Models\Review;
 use App\Models\SellerProfile;
 use App\Models\User;
+use App\Models\UserPaymentMethod;
+use App\Models\UserWishlistItem;
 use App\Services\Audit\AuditLogWriter;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class UserSellerService
 {
@@ -107,6 +112,188 @@ class UserSellerService
 
             return $this->sellerProfileToArray($profile);
         });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listBuyerPaymentMethods(int $userId): array
+    {
+        return UserPaymentMethod::query()
+            ->where('user_id', $userId)
+            ->orderByDesc('is_default')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (UserPaymentMethod $m): array => $this->paymentMethodToArray($m))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{kind?: string, label?: string, subtitle?: string, is_default?: bool}  $payload
+     * @return array<string, mixed>
+     */
+    public function createBuyerPaymentMethod(int $userId, array $payload): array
+    {
+        return DB::transaction(function () use ($userId, $payload): array {
+            $kind = strtolower(trim((string) ($payload['kind'] ?? 'card')));
+            $label = trim((string) ($payload['label'] ?? ''));
+            $subtitle = trim((string) ($payload['subtitle'] ?? ''));
+            $isDefault = (bool) ($payload['is_default'] ?? false);
+
+            if ($label === '') {
+                throw new AuthValidationFailedException('validation_failed', ['label' => 'required']);
+            }
+
+            if (! in_array($kind, ['card', 'bkash', 'nagad', 'bank'], true)) {
+                $kind = 'card';
+            }
+
+            $exists = UserPaymentMethod::query()->where('user_id', $userId)->exists();
+            if (! $exists) {
+                $isDefault = true;
+            }
+
+            if ($isDefault) {
+                UserPaymentMethod::query()->where('user_id', $userId)->update(['is_default' => false]);
+            }
+
+            $method = UserPaymentMethod::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'user_id' => $userId,
+                'kind' => $kind,
+                'label' => $label,
+                'subtitle' => $subtitle !== '' ? $subtitle : null,
+                'is_default' => $isDefault,
+            ]);
+
+            return $this->paymentMethodToArray($method);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function setDefaultBuyerPaymentMethod(int $userId, int $paymentMethodId): array
+    {
+        return DB::transaction(function () use ($userId, $paymentMethodId): array {
+            /** @var UserPaymentMethod|null $method */
+            $method = UserPaymentMethod::query()
+                ->where('user_id', $userId)
+                ->where('id', $paymentMethodId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($method === null) {
+                throw new AuthValidationFailedException('not_found', ['payment_method_id' => $paymentMethodId]);
+            }
+
+            UserPaymentMethod::query()->where('user_id', $userId)->update(['is_default' => false]);
+            $method->is_default = true;
+            $method->save();
+
+            return $this->paymentMethodToArray($method);
+        });
+    }
+
+    public function deleteBuyerPaymentMethod(int $userId, int $paymentMethodId): void
+    {
+        DB::transaction(function () use ($userId, $paymentMethodId): void {
+            /** @var UserPaymentMethod|null $method */
+            $method = UserPaymentMethod::query()
+                ->where('user_id', $userId)
+                ->where('id', $paymentMethodId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($method === null) {
+                return;
+            }
+
+            $wasDefault = (bool) $method->is_default;
+            $method->delete();
+
+            if ($wasDefault) {
+                /** @var UserPaymentMethod|null $next */
+                $next = UserPaymentMethod::query()->where('user_id', $userId)->orderByDesc('id')->first();
+                if ($next !== null) {
+                    $next->is_default = true;
+                    $next->save();
+                }
+            }
+        });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listBuyerWishlist(int $userId): array
+    {
+        return UserWishlistItem::query()
+            ->with('product')
+            ->where('user_id', $userId)
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (UserWishlistItem $i): array => $this->wishlistToArray($i))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function addBuyerWishlistItem(int $userId, int $productId): array
+    {
+        return DB::transaction(function () use ($userId, $productId): array {
+            /** @var Product|null $product */
+            $product = Product::query()->whereKey($productId)->first();
+            if ($product === null) {
+                throw new AuthValidationFailedException('product_not_found', ['product_id' => $productId]);
+            }
+
+            /** @var UserWishlistItem|null $existing */
+            $existing = UserWishlistItem::query()
+                ->with('product')
+                ->where('user_id', $userId)
+                ->where('product_id', $productId)
+                ->first();
+
+            if ($existing !== null) {
+                return $this->wishlistToArray($existing);
+            }
+
+            $item = UserWishlistItem::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'user_id' => $userId,
+                'product_id' => $productId,
+            ]);
+            $item->load('product');
+
+            return $this->wishlistToArray($item);
+        });
+    }
+
+    public function removeBuyerWishlistItem(int $userId, int $productId): void
+    {
+        UserWishlistItem::query()
+            ->where('user_id', $userId)
+            ->where('product_id', $productId)
+            ->delete();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listBuyerReviews(int $userId): array
+    {
+        return Review::query()
+            ->with(['product', 'order_item.order'])
+            ->where('buyer_user_id', $userId)
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Review $r): array => $this->buyerReviewToArray($r))
+            ->values()
+            ->all();
     }
 
     public function createSellerProfile(CreateSellerProfileCommand $command): array
@@ -328,6 +515,63 @@ class UserSellerService
             'store_status' => (string) $profile->store_status,
             'created_at' => $profile->created_at?->toIso8601String(),
             'updated_at' => $profile->updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function paymentMethodToArray(UserPaymentMethod $m): array
+    {
+        return [
+            'id' => (int) $m->id,
+            'uuid' => $m->uuid,
+            'kind' => (string) $m->kind,
+            'label' => (string) $m->label,
+            'subtitle' => (string) ($m->subtitle ?? ''),
+            'is_default' => (bool) $m->is_default,
+            'created_at' => $m->created_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function wishlistToArray(UserWishlistItem $item): array
+    {
+        $product = $item->product;
+        $currency = strtoupper((string) ($product?->currency ?? 'USD'));
+        $basePrice = $product?->base_price;
+        $priceLabel = $basePrice !== null ? trim($currency.' '.$basePrice) : $currency;
+
+        return [
+            'id' => (int) $item->id,
+            'uuid' => $item->uuid,
+            'product_id' => (int) $item->product_id,
+            'name' => (string) ($product?->title ?? 'Product'),
+            'price_label' => $priceLabel,
+            'image_url' => null,
+            'created_at' => $item->created_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buyerReviewToArray(Review $r): array
+    {
+        $orderNo = $r->order_item?->order?->order_number ?? '—';
+        $createdAt = $r->created_at;
+        return [
+            'id' => (int) $r->id,
+            'order_no' => (string) $orderNo,
+            'product_id' => (int) $r->product_id,
+            'product_name' => (string) ($r->product?->title ?? $r->order_item?->title_snapshot ?? 'Product'),
+            'rating' => (int) $r->rating,
+            'comment' => (string) ($r->comment ?? ''),
+            'status' => (string) $r->status,
+            'created_at' => $createdAt?->toIso8601String(),
+            'created_at_label' => $createdAt?->format('d M Y') ?? '',
         ];
     }
 }

@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -15,14 +15,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $status
  * @property string|null $provider_ref
  * @property int $reviewed_by
- * @property \Illuminate\Support\Carbon|null $reviewed_at
+ * @property Carbon|null $reviewed_at
  * @property string|null $rejection_reason
- * @property \Illuminate\Support\Carbon|null $submitted_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\SellerProfile|null $seller_profile
- * @property-read \App\Models\User|null $reviewed_by
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\KycDocument> $kycDocuments
+ * @property Carbon|null $submitted_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read SellerProfile|null $seller_profile
+ * @property-read User|null $reviewed_by
+ * @property-read Collection<int, KycDocument> $kycDocuments
  */
 class KycVerification extends Model
 {

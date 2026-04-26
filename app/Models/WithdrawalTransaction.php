@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -20,10 +18,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $amount
  * @property string|null $currency
  * @property string|null $failure_reason
- * @property \Illuminate\Support\Carbon|null $processed_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\WithdrawalRequest|null $withdrawal_request
+ * @property Carbon|null $processed_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read WithdrawalRequest|null $withdrawal_request
  */
 class WithdrawalTransaction extends Model
 {
@@ -58,7 +56,6 @@ class WithdrawalTransaction extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function withdrawal_request(): BelongsTo
     {
         return $this->belongsTo(WithdrawalRequest::class, 'withdrawal_request_id');

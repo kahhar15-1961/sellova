@@ -4,19 +4,17 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $user_id
  * @property int $role_id
  * @property int $assigned_by
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property-read \App\Models\User|null $user
- * @property-read \App\Models\Role|null $role
- * @property-read \App\Models\User|null $assigned_by
+ * @property Carbon|null $created_at
+ * @property-read User|null $user
+ * @property-read Role|null $role
+ * @property-read User|null $assigned_by
  */
 class UserRole extends Model
 {

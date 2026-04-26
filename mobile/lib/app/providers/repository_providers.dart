@@ -6,6 +6,7 @@ import '../../features/disputes/data/dispute_repository.dart';
 import '../../features/orders/data/order_repository.dart';
 import '../../features/products/data/product_repository.dart';
 import '../../features/profile/data/profile_repository.dart';
+import '../../features/profile/data/profile_extras_repository.dart';
 import '../../features/seller/data/seller_business_datasource.dart';
 import '../../features/seller/data/seller_repository.dart';
 import '../../features/withdrawals/data/withdrawal_repository.dart';
@@ -21,6 +22,13 @@ final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
 
 final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return ref.watch(apiLayerProvider).profileRepository;
+});
+
+final profileExtrasRepositoryProvider = Provider<ProfileExtrasRepository>((ref) {
+  return ProfileExtrasRepository(
+    apiClient: ref.watch(apiLayerProvider).apiClient,
+    preferences: ref.watch(sharedPreferencesProvider),
+  );
 });
 
 final productRepositoryProvider = Provider<ProductRepository>((ref) {

@@ -6,9 +6,7 @@ use App\Domain\Enums\DisputeResolutionOutcome;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -23,13 +21,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $notes
  * @property int $escrow_event_id
  * @property int $ledger_batch_id
- * @property \Illuminate\Support\Carbon|null $decided_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\DisputeCase|null $dispute_case
- * @property-read \App\Models\User|null $decided_by_user
- * @property-read \App\Models\EscrowEvent|null $escrow_event
- * @property-read \App\Models\WalletLedgerBatch|null $ledger_batch
+ * @property Carbon|null $decided_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read DisputeCase|null $dispute_case
+ * @property-read User|null $decided_by_user
+ * @property-read EscrowEvent|null $escrow_event
+ * @property-read WalletLedgerBatch|null $ledger_batch
  */
 class DisputeDecision extends Model
 {
@@ -69,7 +67,6 @@ class DisputeDecision extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function dispute_case(): BelongsTo
     {
         return $this->belongsTo(DisputeCase::class, 'dispute_case_id');

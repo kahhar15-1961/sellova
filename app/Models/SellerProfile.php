@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -19,19 +20,19 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $default_currency
  * @property string $verification_status
  * @property string $store_status
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
- * @property-read \App\Models\User|null $user
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\KycVerification> $kycVerifications
- * @property-read \App\Models\Storefront|null $storefront
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Product> $products
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CartItem> $cartItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderItem> $orderItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WithdrawalRequest> $withdrawalRequests
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\PayoutAccount> $payoutAccounts
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\MembershipSubscription> $membershipSubscriptions
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Review> $reviews
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
+ * @property-read User|null $user
+ * @property-read Collection<int, KycVerification> $kycVerifications
+ * @property-read Storefront|null $storefront
+ * @property-read Collection<int, Product> $products
+ * @property-read Collection<int, CartItem> $cartItems
+ * @property-read Collection<int, OrderItem> $orderItems
+ * @property-read Collection<int, WithdrawalRequest> $withdrawalRequests
+ * @property-read Collection<int, PayoutAccount> $payoutAccounts
+ * @property-read Collection<int, MembershipSubscription> $membershipSubscriptions
+ * @property-read Collection<int, Review> $reviews
  */
 class SellerProfile extends Model
 {

@@ -4,21 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $role_id
  * @property int $permission_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property-read \App\Models\Role|null $role
- * @property-read \App\Models\Permission|null $permission
+ * @property Carbon|null $created_at
+ * @property-read Role|null $role
+ * @property-read Permission|null $permission
  */
 class RolePermission extends Model
 {
     protected $table = 'role_permissions';
+
     public $timestamps = false;
 
     protected $fillable = [

@@ -24,6 +24,7 @@ const variantMap = {
     cancelled: 'muted',
     closed: 'muted',
     draft: 'secondary',
+    needs_attention: 'warning',
     default: 'secondary',
 };
 

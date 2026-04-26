@@ -35,6 +35,8 @@ final class DisputesController extends AdminPageController
             ),
             ...$data,
             'index_url' => route('admin.disputes.index'),
+            'claim_url_template' => route('admin.disputes.claim', ['dispute' => '__ID__']),
+            'unclaim_url_template' => route('admin.disputes.unclaim', ['dispute' => '__ID__']),
             'status_options' => collect(DisputeCaseStatus::cases())->map(static fn (DisputeCaseStatus $s): array => [
                 'value' => $s->value,
                 'label' => ucwords(str_replace('_', ' ', $s->value)),

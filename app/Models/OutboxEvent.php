@@ -4,10 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -18,10 +15,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property array $payload_json
  * @property string $status
  * @property int $attempts
- * @property \Illuminate\Support\Carbon|null $available_at
- * @property \Illuminate\Support\Carbon|null $published_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $available_at
+ * @property Carbon|null $published_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class OutboxEvent extends Model
 {

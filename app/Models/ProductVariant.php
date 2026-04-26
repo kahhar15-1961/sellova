@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -17,12 +17,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $price_delta
  * @property array $attributes_json
  * @property bool $is_active
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Product|null $product
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\InventoryRecord> $inventoryRecords
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CartItem> $cartItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderItem> $orderItems
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Product|null $product
+ * @property-read Collection<int, InventoryRecord> $inventoryRecords
+ * @property-read Collection<int, CartItem> $cartItems
+ * @property-read Collection<int, OrderItem> $orderItems
  */
 class ProductVariant extends Model
 {

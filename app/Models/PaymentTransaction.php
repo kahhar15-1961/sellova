@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -19,11 +17,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $status
  * @property string $amount
  * @property array $raw_payload_json
- * @property \Illuminate\Support\Carbon|null $processed_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\PaymentIntent|null $payment_intent
- * @property-read \App\Models\Order|null $order
+ * @property Carbon|null $processed_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read PaymentIntent|null $payment_intent
+ * @property-read Order|null $order
  */
 class PaymentTransaction extends Model
 {
@@ -59,7 +57,6 @@ class PaymentTransaction extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function payment_intent(): BelongsTo
     {
         return $this->belongsTo(PaymentIntent::class, 'payment_intent_id');

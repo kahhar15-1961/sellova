@@ -27,7 +27,9 @@ use App\Models\SellerProfile;
 use App\Models\Storefront;
 use App\Models\User;
 use App\Models\UserAuthToken;
+use App\Models\UserPaymentMethod;
 use App\Models\UserRole;
+use App\Models\UserWishlistItem;
 use App\Services\Escrow\EscrowService;
 use App\Services\WalletLedger\WalletLedgerService;
 use Illuminate\Support\Str;
@@ -392,6 +394,116 @@ final class ApiV1IntegrationTest extends TestCase
         ], $adminToken);
         self::assertSame(200, $reject['status']);
         self::assertSame('rejected', $reject['json']['data']['status']);
+    }
+
+    public function test_profile_extras_endpoints_cover_payment_methods_wishlist_and_reviews(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $product = $this->seedProduct($seller, $storefront, $category, 'Buyer Review Product', 'published', now());
+        $buyer = $this->createUser('buyer-extras-'.Str::random(6).'@example.test');
+
+        $order = Order::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_number' => 'ORD-'.Str::upper(Str::random(10)),
+            'buyer_user_id' => $buyer->id,
+            'status' => OrderStatus::Completed,
+            'currency' => 'USD',
+            'gross_amount' => '20.0000',
+            'discount_amount' => '0.0000',
+            'fee_amount' => '0.0000',
+            'net_amount' => '20.0000',
+            'placed_at' => now(),
+        ]);
+
+        $orderItem = OrderItem::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_id' => $order->id,
+            'seller_profile_id' => $seller->id,
+            'product_id' => $product->id,
+            'product_type_snapshot' => 'physical',
+            'title_snapshot' => 'Buyer Review Product',
+            'sku_snapshot' => 'SKU-'.Str::upper(Str::random(6)),
+            'quantity' => 1,
+            'unit_price_snapshot' => '20.0000',
+            'line_total_snapshot' => '20.0000',
+            'commission_rule_snapshot_json' => [],
+            'delivery_state' => 'delivered',
+        ]);
+
+        \App\Models\Review::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'order_item_id' => $orderItem->id,
+            'buyer_user_id' => $buyer->id,
+            'seller_profile_id' => $seller->id,
+            'product_id' => $product->id,
+            'rating' => 5,
+            'comment' => 'Great product.',
+            'status' => 'visible',
+        ]);
+
+        $buyerToken = $this->issueAccessTokenForUser($buyer);
+
+        $initialMethods = $this->legacyApiJson('GET', '/api/v1/me/payment-methods', token: $buyerToken);
+        self::assertSame(200, $initialMethods['status']);
+        self::assertIsArray($initialMethods['json']['data']);
+
+        $createCard = $this->legacyApiJson('POST', '/api/v1/me/payment-methods', [
+            'kind' => 'card',
+            'label' => 'Visa **** 1111',
+            'subtitle' => 'Expires 08/30',
+            'is_default' => true,
+        ], $buyerToken);
+        self::assertSame(201, $createCard['status']);
+        self::assertSame('card', $createCard['json']['data']['kind']);
+        $createdMethodId = (int) $createCard['json']['data']['id'];
+
+        $createBkash = $this->legacyApiJson('POST', '/api/v1/me/payment-methods', [
+            'kind' => 'bkash',
+            'label' => 'bKash 01XXXXXXXX',
+            'subtitle' => 'Mobile wallet',
+            'is_default' => false,
+        ], $buyerToken);
+        self::assertSame(201, $createBkash['status']);
+        $bkashMethodId = (int) $createBkash['json']['data']['id'];
+
+        $setDefault = $this->legacyApiJson('PATCH', '/api/v1/me/payment-methods/'.$bkashMethodId, [], $buyerToken);
+        self::assertSame(200, $setDefault['status']);
+        self::assertTrue((bool) $setDefault['json']['data']['is_default']);
+
+        $listMethods = $this->legacyApiJson('GET', '/api/v1/me/payment-methods', token: $buyerToken);
+        self::assertSame(200, $listMethods['status']);
+        self::assertGreaterThanOrEqual(2, count($listMethods['json']['data']));
+
+        $deleteMethod = $this->legacyApiJson('DELETE', '/api/v1/me/payment-methods/'.$createdMethodId, token: $buyerToken);
+        self::assertSame(200, $deleteMethod['status']);
+        self::assertSame(['ok' => true], $deleteMethod['json']['data']);
+
+        $wishlistInitial = $this->legacyApiJson('GET', '/api/v1/me/wishlist', token: $buyerToken);
+        self::assertSame(200, $wishlistInitial['status']);
+        self::assertIsArray($wishlistInitial['json']['data']);
+
+        $addWishlist = $this->legacyApiJson('POST', '/api/v1/me/wishlist', [
+            'product_id' => $product->id,
+        ], $buyerToken);
+        self::assertSame(201, $addWishlist['status']);
+        self::assertSame($product->id, $addWishlist['json']['data']['product_id']);
+
+        $wishlistAfterAdd = $this->legacyApiJson('GET', '/api/v1/me/wishlist', token: $buyerToken);
+        self::assertSame(200, $wishlistAfterAdd['status']);
+        self::assertNotEmpty($wishlistAfterAdd['json']['data']);
+
+        $removeWishlist = $this->legacyApiJson('DELETE', '/api/v1/me/wishlist/'.$product->id, token: $buyerToken);
+        self::assertSame(200, $removeWishlist['status']);
+        self::assertSame(['ok' => true], $removeWishlist['json']['data']);
+
+        $reviews = $this->legacyApiJson('GET', '/api/v1/me/reviews', token: $buyerToken);
+        self::assertSame(200, $reviews['status']);
+        self::assertNotEmpty($reviews['json']['data']);
+        self::assertSame(5, $reviews['json']['data'][0]['rating']);
+        self::assertSame('Great product.', $reviews['json']['data'][0]['comment']);
+
+        self::assertSame(0, UserWishlistItem::query()->where('user_id', $buyer->id)->where('product_id', $product->id)->count());
+        self::assertGreaterThanOrEqual(1, UserPaymentMethod::query()->where('user_id', $buyer->id)->count());
     }
 
     /**

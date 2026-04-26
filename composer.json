@@ -8,7 +8,9 @@
     "inertiajs/inertia-laravel": "^2.0",
     "laravel/framework": "^13.0",
     "laravel/horizon": "^5.0",
+    "laravel/reverb": "^1.10",
     "laravel/sanctum": "^4.0",
+    "pusher/pusher-php-server": "^7.2",
     "ramsey/uuid": "^4.7",
     "symfony/validator": "^7.0"
   },

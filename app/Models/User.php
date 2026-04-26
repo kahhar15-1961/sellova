@@ -4,12 +4,13 @@ namespace App\Models;
 
 use App\Admin\AdminPermission;
 use App\Auth\RoleCodes;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -19,28 +20,31 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $password_hash
  * @property string $status
  * @property string $risk_level
- * @property \Illuminate\Support\Carbon|null $last_login_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\UserRole> $userRoles
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\UserRole> $assignedUserRoles
- * @property-read \App\Models\SellerProfile|null $sellerProfile
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\KycVerification> $kycVerifications
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Cart> $carts
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Order> $orders
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderStateTransition> $orderStateTransitions
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\EscrowEvent> $escrowEvents
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Wallet> $wallets
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WalletLedgerBatch> $walletLedgerBatches
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WithdrawalRequest> $withdrawalRequests
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\DisputeCase> $disputeCases
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\DisputeEvidence> $disputeEvidences
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\DisputeDecision> $disputeDecisions
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Review> $reviews
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Notification> $notifications
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\AuditLog> $auditLogs
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Role> $roles
+ * @property bool $restricted_checkout
+ * @property Carbon|null $last_login_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
+ * @property-read Collection<int, UserRole> $userRoles
+ * @property-read Collection<int, UserRole> $assignedUserRoles
+ * @property-read SellerProfile|null $sellerProfile
+ * @property-read Collection<int, KycVerification> $kycVerifications
+ * @property-read Collection<int, Cart> $carts
+ * @property-read Collection<int, Order> $orders
+ * @property-read Collection<int, OrderStateTransition> $orderStateTransitions
+ * @property-read Collection<int, EscrowEvent> $escrowEvents
+ * @property-read Collection<int, Wallet> $wallets
+ * @property-read Collection<int, WalletLedgerBatch> $walletLedgerBatches
+ * @property-read Collection<int, WithdrawalRequest> $withdrawalRequests
+ * @property-read Collection<int, DisputeCase> $disputeCases
+ * @property-read Collection<int, DisputeEvidence> $disputeEvidences
+ * @property-read Collection<int, DisputeDecision> $disputeDecisions
+ * @property-read Collection<int, Review> $reviews
+ * @property-read Collection<int, Notification> $notifications
+ * @property-read Collection<int, AuditLog> $auditLogs
+ * @property-read Collection<int, Role> $roles
+ * @property-read Collection<int, UserPaymentMethod> $paymentMethods
+ * @property-read Collection<int, UserWishlistItem> $wishlistItems
  */
 class User extends Model
 {
@@ -55,6 +59,7 @@ class User extends Model
         'password_hash',
         'status',
         'risk_level',
+        'restricted_checkout',
         'last_login_at',
         'apple_sub',
     ];
@@ -62,6 +67,7 @@ class User extends Model
     protected $casts = [
         'status' => 'string',
         'risk_level' => 'string',
+        'restricted_checkout' => 'boolean',
         'last_login_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -220,5 +226,15 @@ class User extends Model
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'user_roles', 'user_id', 'role_id');
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(UserPaymentMethod::class, 'user_id');
+    }
+
+    public function wishlistItems(): HasMany
+    {
+        return $this->hasMany(UserWishlistItem::class, 'user_id');
     }
 }

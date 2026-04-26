@@ -6,21 +6,25 @@ import { AdminPagination } from '@/components/admin/AdminPagination';
 import { DataTableShell } from '@/components/admin/DataTableShell';
 import { StatCard } from '@/components/admin/StatCard';
 import { StatusBadge } from '@/components/admin/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-export default function DisputesIndex({ header, rows, pagination, filters, index_url, status_options, summary }) {
+export default function DisputesIndex({ header, rows, pagination, filters, index_url, status_options, summary, claim_url_template, unclaim_url_template }) {
     const f = filters || {};
     const status = f.status ?? '';
+
+    const actionUrl = (template, id) => String(template || '').replace('__ID__', String(id));
 
     return (
         <AdminLayout>
             <Head title={header.title} />
             <PageHeader title={header.title} description={header.description} breadcrumbs={header.breadcrumbs} />
             <div className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-4">
                     <StatCard label="Opened" value={String(summary?.opened ?? 0)} />
                     <StatCard label="Under review" value={String(summary?.under_review ?? 0)} />
                     <StatCard label="Resolved" value={String(summary?.resolved ?? 0)} />
+                    <StatCard label="Escalated" value={String(summary?.escalated ?? 0)} />
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -44,21 +48,37 @@ export default function DisputesIndex({ header, rows, pagination, filters, index
                             <SelectContent>
                                 <SelectItem value="all">All statuses</SelectItem>
                                 {(status_options || []).map((o) => (
-                                    <SelectItem key={o.value} value={o.value}>
-                                        {o.label}
-                                    </SelectItem>
+                                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
                     </div>
                 </div>
                 <DataTableShell
-                    columns={['case', 'order', 'stage']}
+                    columns={['case', 'order', 'stage', 'assignee', 'sla', 'action']}
                     rows={rows}
                     emptyTitle="No disputes"
                     linkableFirstColumn
                     renderers={{
                         stage: (value) => <StatusBadge status={String(value)} />,
+                        assignee: (value, row) => (
+                            <span className={row.is_claimed ? 'text-foreground' : 'text-muted-foreground'}>{String(value)}</span>
+                        ),
+                        sla: (value, row) => (
+                            <div className="flex items-center gap-2">
+                                <span className={row.sla_state === 'breach' ? 'text-destructive font-medium' : row.sla_state === 'warning' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>
+                                    {String(value)}
+                                </span>
+                                {row.is_escalated ? <StatusBadge status="escalated" /> : null}
+                            </div>
+                        ),
+                        action: (_value, row) => (
+                            row.is_assigned_to_me ? (
+                                <Button size="sm" variant="outline" onClick={() => router.post(actionUrl(unclaim_url_template, row.id), {}, { preserveScroll: true })}>Release</Button>
+                            ) : (
+                                <Button size="sm" onClick={() => router.post(actionUrl(claim_url_template, row.id), {}, { preserveScroll: true })} disabled={row.is_claimed}>Claim</Button>
+                            )
+                        ),
                     }}
                 />
                 <AdminPagination baseUrl={index_url} pagination={pagination} extraParams={f} />

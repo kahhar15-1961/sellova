@@ -4,9 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -15,9 +13,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $storage_path
  * @property string|null $checksum_sha256
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\KycVerification|null $kyc_verification
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read KycVerification|null $kyc_verification
  */
 class KycDocument extends Model
 {

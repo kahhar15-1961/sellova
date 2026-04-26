@@ -199,26 +199,17 @@ class _MyProfileScreenState extends ConsumerState<MyProfileScreen> {
             _ProfileMenuTile(
               icon: Icons.credit_card_outlined,
               title: 'Payment Methods',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Add or change cards during checkout from your cart.')),
-                );
-                context.push('/cart');
-              },
+              onTap: () => context.push('/profile/payment-methods'),
             ),
             _ProfileMenuTile(
               icon: Icons.star_border_rounded,
               title: 'My Reviews',
-              onTap: () => context.push('/orders'),
+              onTap: () => context.push('/profile/reviews'),
             ),
             _ProfileMenuTile(
               icon: Icons.favorite_border_rounded,
               title: 'Wishlist',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Wishlist is coming soon.')),
-                );
-              },
+              onTap: () => context.push('/profile/wishlist'),
             ),
             _ProfileMenuTile(
               icon: Icons.help_outline_rounded,

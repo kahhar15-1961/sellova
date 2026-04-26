@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -22,8 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $ip_address
  * @property string|null $user_agent
  * @property string|null $correlation_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property-read \App\Models\User|null $actor_user
+ * @property Carbon|null $created_at
+ * @property-read User|null $actor_user
  */
 class AuditLog extends Model
 {
@@ -60,7 +58,6 @@ class AuditLog extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function actor_user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'actor_user_id');

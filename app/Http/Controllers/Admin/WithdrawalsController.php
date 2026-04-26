@@ -35,6 +35,8 @@ final class WithdrawalsController extends AdminPageController
             ),
             ...$data,
             'index_url' => route('admin.withdrawals.index'),
+            'claim_url_template' => route('admin.withdrawals.claim', ['withdrawal' => '__ID__']),
+            'unclaim_url_template' => route('admin.withdrawals.unclaim', ['withdrawal' => '__ID__']),
             'status_options' => collect(WithdrawalRequestStatus::cases())->map(static fn (WithdrawalRequestStatus $s): array => [
                 'value' => $s->value,
                 'label' => ucwords(str_replace('_', ' ', $s->value)),

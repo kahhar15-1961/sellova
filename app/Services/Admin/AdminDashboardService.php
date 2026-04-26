@@ -161,7 +161,9 @@ final class AdminDashboardService
      *   failed_webhooks: int,
      *   stale_webhooks: int,
      *   failed_outbox: int,
-     *   stuck_outbox: int
+     *   stuck_outbox: int,
+     *   escalated_disputes: int,
+     *   escalated_withdrawals: int
      * }
      */
     private function fetchSummaryScalars(): object
@@ -230,7 +232,17 @@ final class AdminDashboardService
                 (
                     SELECT COUNT(*) FROM outbox_events
                     WHERE status = 'pending' AND attempts > 0 AND available_at < UTC_TIMESTAMP(6)
-                ) AS stuck_outbox
+                ) AS stuck_outbox,
+                (
+                    SELECT COUNT(*) FROM dispute_cases
+                    WHERE status <> '".DisputeCaseStatus::Resolved->value."'
+                      AND escalated_at IS NOT NULL
+                ) AS escalated_disputes,
+                (
+                    SELECT COUNT(*) FROM withdrawal_requests
+                    WHERE status IN ('".WithdrawalRequestStatus::Requested->value."','".WithdrawalRequestStatus::UnderReview->value."')
+                      AND escalated_at IS NOT NULL
+                ) AS escalated_withdrawals
         ");
 
         return $row ?? (object) [];
@@ -293,6 +305,11 @@ final class AdminDashboardService
                 $user->hasPermissionCode(AdminPermission::WITHDRAWALS_VIEW),
                 number_format($n($row->pending_withdrawals)),
                 'Requested or under review.',
+            ),
+            'escalated_cases' => $def(
+                $user->hasAnyPermissionCode([AdminPermission::DISPUTES_VIEW, AdminPermission::WITHDRAWALS_VIEW]),
+                number_format($n($row->escalated_disputes) + $n($row->escalated_withdrawals)),
+                'Open items escalated by SLA engine.',
             ),
             'total_gmv' => $def(
                 $user->hasAnyPermissionCode([AdminPermission::ORDERS_VIEW, AdminPermission::ESCROWS_VIEW]),
@@ -496,6 +513,17 @@ final class AdminDashboardService
                 'severity' => 'warning',
                 'title' => 'Outbox retries pending',
                 'detail' => "{$n} outbox event(s) overdue for publish retry.",
+            ];
+        }
+
+        $escalatedDisputes = max(0, (int) ($row->escalated_disputes ?? 0));
+        $escalatedWithdrawals = max(0, (int) ($row->escalated_withdrawals ?? 0));
+        if ($escalatedDisputes > 0 || $escalatedWithdrawals > 0) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'title' => 'SLA escalations active',
+                'detail' => "{$escalatedDisputes} dispute(s) and {$escalatedWithdrawals} withdrawal(s) are escalated for senior attention.",
+                'href' => route('admin.disputes.index'),
             ];
         }
 

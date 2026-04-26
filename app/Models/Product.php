@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -21,18 +21,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $base_price
  * @property string|null $currency
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $published_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
- * @property-read \App\Models\SellerProfile|null $seller_profile
- * @property-read \App\Models\Storefront|null $storefront
- * @property-read \App\Models\Category|null $category
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\ProductVariant> $productVariants
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\InventoryRecord> $inventoryRecords
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CartItem> $cartItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderItem> $orderItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Review> $reviews
+ * @property Carbon|null $published_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
+ * @property-read SellerProfile|null $seller_profile
+ * @property-read Storefront|null $storefront
+ * @property-read Category|null $category
+ * @property-read Collection<int, ProductVariant> $productVariants
+ * @property-read Collection<int, InventoryRecord> $inventoryRecords
+ * @property-read Collection<int, CartItem> $cartItems
+ * @property-read Collection<int, OrderItem> $orderItems
+ * @property-read Collection<int, Review> $reviews
  */
 class Product extends Model
 {

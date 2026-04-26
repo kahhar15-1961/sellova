@@ -4,11 +4,11 @@ namespace App\Models;
 
 use App\Domain\Enums\WithdrawalRequestStatus;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -23,15 +23,20 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $currency
  * @property int $hold_id
  * @property int $reviewed_by
- * @property \Illuminate\Support\Carbon|null $reviewed_at
+ * @property int|null $assigned_to_user_id
+ * @property Carbon|null $reviewed_at
+ * @property Carbon|null $assigned_at
+ * @property Carbon|null $escalated_at
+ * @property string|null $escalation_reason
  * @property string|null $reject_reason
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\SellerProfile|null $seller_profile
- * @property-read \App\Models\Wallet|null $wallet
- * @property-read \App\Models\WalletHold|null $hold
- * @property-read \App\Models\User|null $reviewed_by
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WithdrawalTransaction> $withdrawalTransactions
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read SellerProfile|null $seller_profile
+ * @property-read Wallet|null $wallet
+ * @property-read WalletHold|null $hold
+ * @property-read User|null $reviewed_by
+ * @property-read User|null $assigned_to_user
+ * @property-read Collection<int, WithdrawalTransaction> $withdrawalTransactions
  */
 class WithdrawalRequest extends Model
 {
@@ -51,7 +56,11 @@ class WithdrawalRequest extends Model
         'currency',
         'hold_id',
         'reviewed_by',
+        'assigned_to_user_id',
         'reviewed_at',
+        'assigned_at',
+        'escalated_at',
+        'escalation_reason',
         'reject_reason',
     ];
 
@@ -65,7 +74,10 @@ class WithdrawalRequest extends Model
         'net_payout_amount' => 'decimal:4',
         'hold_id' => 'integer',
         'reviewed_by' => 'integer',
+        'assigned_to_user_id' => 'integer',
         'reviewed_at' => 'datetime',
+        'assigned_at' => 'datetime',
+        'escalated_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -74,7 +86,6 @@ class WithdrawalRequest extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function seller_profile(): BelongsTo
     {
         return $this->belongsTo(SellerProfile::class, 'seller_profile_id');
@@ -93,6 +104,11 @@ class WithdrawalRequest extends Model
     public function reviewed_by(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function assigned_to_user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to_user_id');
     }
 
     public function withdrawalTransactions(): HasMany

@@ -10,6 +10,7 @@ use App\Models\DisputeCase;
 use App\Models\EscrowAccount;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\SellerProfile;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Models\Wallet;
@@ -168,6 +169,7 @@ final class AdminListsService
         $total = (int) $builder->count();
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $product) {
+            $hasMissingMetadata = $product->title === null || $product->description === null || $product->category_id === null;
             $rows[] = [
                 'row_id' => $product->id,
                 'sku' => '#'.$product->id,
@@ -175,6 +177,7 @@ final class AdminListsService
                 'status' => (string) $product->status,
                 'seller' => $product->seller_profile?->display_name ?? '—',
                 'price' => trim(($product->currency ?? '').' '.(string) $product->base_price),
+                'ops' => $hasMissingMetadata ? 'needs_attention' : 'ready',
                 'updated' => $product->updated_at?->toIso8601String() ?? '—',
                 'href' => route('admin.products.show', $product),
             ];
@@ -188,6 +191,13 @@ final class AdminListsService
                 'published' => (int) Product::query()->where('status', 'published')->count(),
                 'draft' => (int) Product::query()->where('status', 'draft')->count(),
                 'inactive' => (int) Product::query()->where('status', 'inactive')->count(),
+                'needs_attention' => (int) Product::query()
+                    ->where(static function ($q): void {
+                        $q->whereNull('title')
+                            ->orWhereNull('description')
+                            ->orWhereNull('category_id');
+                    })
+                    ->count(),
             ],
         ];
     }
@@ -352,9 +362,11 @@ final class AdminListsService
     {
         [$page, $perPage] = $this->pagination($request);
         $status = trim((string) $request->query('status', ''));
+        $warningHours = (int) config('admin_sla.withdrawals.warning_hours', 12);
+        $breachHours = (int) config('admin_sla.withdrawals.breach_hours', 24);
 
         $builder = WithdrawalRequest::query()
-            ->with(['seller_profile:id,display_name'])
+            ->with(['seller_profile:id,display_name', 'assigned_to_user:id,email'])
             ->orderByDesc('id');
 
         if (! $viewer->isPlatformStaff()) {
@@ -369,11 +381,21 @@ final class AdminListsService
         $total = (int) $builder->count();
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $wr) {
+            $createdAt = $wr->created_at;
+            $slaHours = $createdAt?->diffInHours(now()) ?? 0;
+            $isBreach = $slaHours >= $breachHours;
             $rows[] = [
+                'id' => $wr->id,
                 'request' => '#'.$wr->id,
                 'seller' => $wr->seller_profile?->display_name ?? '—',
                 'amount' => trim(($wr->currency ?? '').' '.(string) $wr->requested_amount),
                 'status' => $wr->status->value,
+                'assignee' => $wr->assigned_to_user?->email ?? 'Unassigned',
+                'is_assigned_to_me' => (int) $wr->assigned_to_user_id === (int) $viewer->id,
+                'is_claimed' => $wr->assigned_to_user_id !== null,
+                'sla' => $isBreach ? "Breach ({$slaHours}h)" : "{$slaHours}h",
+                'sla_state' => $isBreach ? 'breach' : ($slaHours >= $warningHours ? 'warning' : 'ok'),
+                'is_escalated' => $wr->escalated_at !== null,
                 'requested' => $wr->created_at?->toIso8601String() ?? '—',
                 'href' => route('admin.withdrawals.show', $wr),
             ];
@@ -387,6 +409,10 @@ final class AdminListsService
                 'requested' => (int) WithdrawalRequest::query()->where('status', 'requested')->count(),
                 'under_review' => (int) WithdrawalRequest::query()->where('status', 'under_review')->count(),
                 'paid_out' => (int) WithdrawalRequest::query()->where('status', 'paid_out')->count(),
+                'escalated' => (int) WithdrawalRequest::query()
+                    ->whereIn('status', ['requested', 'under_review'])
+                    ->whereNotNull('escalated_at')
+                    ->count(),
             ],
         ];
     }
@@ -398,9 +424,11 @@ final class AdminListsService
     {
         [$page, $perPage] = $this->pagination($request);
         $status = trim((string) $request->query('status', ''));
+        $warningHours = (int) config('admin_sla.disputes.warning_hours', 24);
+        $breachHours = (int) config('admin_sla.disputes.breach_hours', 48);
 
         $builder = DisputeCase::query()
-            ->with(['order:id,order_number'])
+            ->with(['order:id,order_number', 'assigned_to_user:id,email'])
             ->orderByDesc('id');
 
         if (! $viewer->isPlatformStaff()) {
@@ -422,10 +450,20 @@ final class AdminListsService
         $total = (int) $builder->count();
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $case) {
+            $openedAt = $case->opened_at ?? $case->created_at;
+            $slaHours = $openedAt?->diffInHours(now()) ?? 0;
+            $isBreach = $slaHours >= $breachHours;
             $rows[] = [
+                'id' => $case->id,
                 'case' => '#'.$case->id,
                 'order' => $case->order?->order_number ?? '#'.$case->order_id,
                 'stage' => $case->status->value,
+                'assignee' => $case->assigned_to_user?->email ?? 'Unassigned',
+                'is_assigned_to_me' => (int) $case->assigned_to_user_id === (int) $viewer->id,
+                'is_claimed' => $case->assigned_to_user_id !== null,
+                'sla' => $isBreach ? "Breach ({$slaHours}h)" : "{$slaHours}h",
+                'sla_state' => $isBreach ? 'breach' : ($slaHours >= $warningHours ? 'warning' : 'ok'),
+                'is_escalated' => $case->escalated_at !== null,
                 'href' => route('admin.disputes.show', ['dispute' => $case->id]),
             ];
         }
@@ -438,6 +476,116 @@ final class AdminListsService
                 'opened' => (int) DisputeCase::query()->where('status', 'opened')->count(),
                 'under_review' => (int) DisputeCase::query()->where('status', 'under_review')->count(),
                 'resolved' => (int) DisputeCase::query()->where('status', 'resolved')->count(),
+                'escalated' => (int) DisputeCase::query()
+                    ->where('status', '!=', 'resolved')
+                    ->whereNotNull('escalated_at')
+                    ->count(),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string}}
+     */
+    public function buyersIndex(Request $request): array
+    {
+        [$page, $perPage] = $this->pagination($request);
+        $q = trim((string) $request->query('q', ''));
+        $status = trim((string) $request->query('status', ''));
+
+        $builder = User::query()
+            ->whereDoesntHave('sellerProfile')
+            ->orderByDesc('id');
+        if ($status !== '') {
+            $builder->where('status', $status);
+        }
+        if ($q !== '') {
+            $builder->where(function ($w) use ($q): void {
+                $w->where('email', 'like', '%'.$q.'%')
+                    ->orWhere('phone', 'like', '%'.$q.'%');
+            });
+        }
+
+        $total = (int) $builder->count();
+        $rows = [];
+        foreach ((clone $builder)->forPage($page, $perPage)->get() as $buyer) {
+            $ordersCount = (int) $buyer->orders()->count();
+            $disputesCount = (int) DisputeCase::query()
+                ->whereHas('order', static fn ($q) => $q->where('buyer_user_id', $buyer->id))
+                ->count();
+            $rows[] = [
+                'buyer' => '#'.$buyer->id,
+                'email' => $buyer->email ?? '—',
+                'status' => $buyer->status,
+                'risk' => $buyer->risk_level,
+                'orders' => (string) $ordersCount,
+                'disputes' => (string) $disputesCount,
+                'href' => route('admin.buyers.show', $buyer),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'pagination' => $this->paginationPayload($page, $perPage, $total),
+            'filters' => array_filter(['q' => $q, 'status' => $status]),
+            'summary' => [
+                'total' => (int) User::query()->whereDoesntHave('sellerProfile')->count(),
+                'active' => (int) User::query()->whereDoesntHave('sellerProfile')->where('status', 'active')->count(),
+                'high_risk' => (int) User::query()->whereDoesntHave('sellerProfile')->where('risk_level', 'high')->count(),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, verification?: string}}
+     */
+    public function sellerProfilesIndex(Request $request): array
+    {
+        [$page, $perPage] = $this->pagination($request);
+        $q = trim((string) $request->query('q', ''));
+        $verification = trim((string) $request->query('verification', ''));
+
+        $builder = SellerProfile::query()
+            ->with(['user:id,email'])
+            ->orderByDesc('id');
+        if ($verification !== '') {
+            $builder->where('verification_status', $verification);
+        }
+        if ($q !== '') {
+            $builder->where(function ($w) use ($q): void {
+                $w->where('display_name', 'like', '%'.$q.'%')
+                    ->orWhereHas('user', static fn ($uq) => $uq->where('email', 'like', '%'.$q.'%'));
+            });
+        }
+
+        $total = (int) $builder->count();
+        $rows = [];
+        foreach ((clone $builder)->forPage($page, $perPage)->get() as $seller) {
+            $productCount = (int) Product::query()->where('seller_profile_id', $seller->id)->count();
+            $pendingWithdrawals = (int) WithdrawalRequest::query()
+                ->where('seller_profile_id', $seller->id)
+                ->whereIn('status', ['requested', 'under_review'])
+                ->count();
+            $rows[] = [
+                'seller' => '#'.$seller->id,
+                'display_name' => $seller->display_name ?? '—',
+                'account' => $seller->user?->email ?? '—',
+                'verification' => (string) $seller->verification_status,
+                'store' => (string) $seller->store_status,
+                'products' => (string) $productCount,
+                'pending_withdrawals' => (string) $pendingWithdrawals,
+                'href' => route('admin.seller-profiles.show', $seller),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'pagination' => $this->paginationPayload($page, $perPage, $total),
+            'filters' => array_filter(['q' => $q, 'verification' => $verification]),
+            'summary' => [
+                'total' => (int) SellerProfile::query()->count(),
+                'verified' => (int) SellerProfile::query()->where('verification_status', 'verified')->count(),
+                'pending' => (int) SellerProfile::query()->whereIn('verification_status', ['pending', 'under_review'])->count(),
             ],
         ];
     }

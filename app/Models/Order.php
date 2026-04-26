@@ -4,11 +4,12 @@ namespace App\Models;
 
 use App\Domain\Enums\OrderStatus;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -21,17 +22,17 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $discount_amount
  * @property string $fee_amount
  * @property string $net_amount
- * @property \Illuminate\Support\Carbon|null $placed_at
- * @property \Illuminate\Support\Carbon|null $completed_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\User|null $buyer
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderItem> $orderItems
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\OrderStateTransition> $orderStateTransitions
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\PaymentIntent> $paymentIntents
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\PaymentTransaction> $paymentTransactions
- * @property-read \App\Models\EscrowAccount|null $escrowAccount
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\DisputeCase> $disputeCases
+ * @property Carbon|null $placed_at
+ * @property Carbon|null $completed_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read User|null $buyer
+ * @property-read Collection<int, OrderItem> $orderItems
+ * @property-read Collection<int, OrderStateTransition> $orderStateTransitions
+ * @property-read Collection<int, PaymentIntent> $paymentIntents
+ * @property-read Collection<int, PaymentTransaction> $paymentTransactions
+ * @property-read EscrowAccount|null $escrowAccount
+ * @property-read Collection<int, DisputeCase> $disputeCases
  */
 class Order extends Model
 {
@@ -70,7 +71,6 @@ class Order extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function buyer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'buyer_user_id');

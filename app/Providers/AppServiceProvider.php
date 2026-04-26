@@ -39,5 +39,6 @@ final class AppServiceProvider extends ServiceProvider
         foreach (AdminPermission::all() as $code) {
             Gate::define($code, static fn (User $user): bool => $user->hasPermissionCode($code));
         }
+
     }
 }

@@ -22,8 +22,11 @@ import '../../features/orders/presentation/track_order_screen.dart';
 import '../../features/profile/presentation/admin_profile_screen.dart';
 import '../../features/profile/presentation/help_support_screen.dart';
 import '../../features/profile/presentation/my_profile_screen.dart';
+import '../../features/profile/presentation/my_reviews_screen.dart';
 import '../../features/profile/presentation/personal_information_screen.dart';
+import '../../features/profile/presentation/payment_methods_screen.dart';
 import '../../features/profile/presentation/seller_profile_screen.dart';
+import '../../features/profile/presentation/wishlist_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/product_list_screen.dart';
 import '../../features/storefronts/presentation/seller_storefront_screen.dart';
@@ -149,6 +152,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile/personal',
             builder: (_, __) => const PersonalInformationScreen(),
+          ),
+          GoRoute(
+            path: '/profile/payment-methods',
+            builder: (_, __) => const PaymentMethodsScreen(),
+          ),
+          GoRoute(
+            path: '/profile/reviews',
+            builder: (_, __) => const MyReviewsScreen(),
+          ),
+          GoRoute(
+            path: '/profile/wishlist',
+            builder: (_, __) => const WishlistScreen(),
           ),
           GoRoute(
             path: '/seller/dashboard',

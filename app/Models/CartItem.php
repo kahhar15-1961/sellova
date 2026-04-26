@@ -4,9 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -18,12 +16,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $unit_price_snapshot
  * @property string|null $currency_snapshot
  * @property array $metadata_snapshot_json
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Cart|null $cart
- * @property-read \App\Models\Product|null $product
- * @property-read \App\Models\ProductVariant|null $product_variant
- * @property-read \App\Models\SellerProfile|null $seller_profile
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Cart|null $cart
+ * @property-read Product|null $product
+ * @property-read ProductVariant|null $product_variant
+ * @property-read SellerProfile|null $seller_profile
  */
 class CartItem extends Model
 {

@@ -5,11 +5,11 @@ namespace App\Models;
 use App\Domain\Enums\WalletLedgerEntrySide;
 use App\Domain\Enums\WalletLedgerEntryType;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -24,17 +24,17 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $reference_type
  * @property int $reference_id
  * @property int $counterparty_wallet_id
- * @property \Illuminate\Support\Carbon|null $occurred_at
+ * @property Carbon|null $occurred_at
  * @property int $reversal_of_entry_id
  * @property bool $is_reversal
  * @property string|null $description
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\WalletLedgerBatch|null $batch
- * @property-read \App\Models\Wallet|null $wallet
- * @property-read \App\Models\Wallet|null $counterparty_wallet
- * @property-read \App\Models\WalletLedgerEntry|null $reversal_of_entry
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WalletLedgerEntry> $walletLedgerEntries
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read WalletLedgerBatch|null $batch
+ * @property-read Wallet|null $wallet
+ * @property-read Wallet|null $counterparty_wallet
+ * @property-read WalletLedgerEntry|null $reversal_of_entry
+ * @property-read Collection<int, WalletLedgerEntry> $walletLedgerEntries
  */
 class WalletLedgerEntry extends Model
 {

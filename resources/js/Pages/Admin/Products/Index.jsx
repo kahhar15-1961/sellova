@@ -77,6 +77,7 @@ export default function ProductsIndex({ header, rows, pagination, filters, index
                     <StatCard label="Published" value={String(summary?.published ?? 0)} />
                     <StatCard label="Draft" value={String(summary?.draft ?? 0)} />
                     <StatCard label="Inactive" value={String(summary?.inactive ?? 0)} />
+                    <StatCard label="Needs attention" value={String(summary?.needs_attention ?? 0)} />
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -136,7 +137,7 @@ export default function ProductsIndex({ header, rows, pagination, filters, index
                 </div>
 
                 <DataTableShell
-                    columns={['select', 'sku', 'title', 'status', 'seller', 'price', 'updated']}
+                    columns={['select', 'sku', 'title', 'status', 'seller', 'price', 'ops', 'updated']}
                     rows={rows.map((r) => ({ ...r, select: String(r.row_id ?? '') }))}
                     emptyTitle="No products"
                     renderers={{
@@ -156,6 +157,7 @@ export default function ProductsIndex({ header, rows, pagination, filters, index
                             </Link>
                         ),
                         status: (value) => <StatusBadge status={String(value)} />,
+                        ops: (value) => <StatusBadge status={String(value)} />,
                         updated: (value) => <span className="text-muted-foreground">{fmtDate(value)}</span>,
                     }}
                 />

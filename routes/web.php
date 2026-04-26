@@ -3,11 +3,24 @@
 declare(strict_types=1);
 
 use App\Admin\AdminPermission;
+use App\Http\Controllers\Admin\AdminActionApprovalController;
+use App\Http\Controllers\Admin\AdminApprovalMessageController;
+use App\Http\Controllers\Admin\AdminApprovalRealtimeController;
+use App\Http\Controllers\Admin\AdminApprovalsInboxController;
+use App\Http\Controllers\Admin\AdminCommsIntegrationsController;
+use App\Http\Controllers\Admin\AdminEscalationIncidentActionController;
+use App\Http\Controllers\Admin\AdminEscalationPoliciesController;
+use App\Http\Controllers\Admin\AdminEscalationsInboxController;
 use App\Http\Controllers\Admin\AdminAuthController;
+use App\Http\Controllers\Admin\AdminRunbooksController;
 use App\Http\Controllers\Admin\AuditLogExportController;
 use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\AuditLogShowController;
+use App\Http\Controllers\Admin\BuyerRiskController;
+use App\Http\Controllers\Admin\BuyersController;
+use App\Http\Controllers\Admin\BuyerShowController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\DisputeAssignmentController;
 use App\Http\Controllers\Admin\DisputeDispositionController;
 use App\Http\Controllers\Admin\DisputesController;
 use App\Http\Controllers\Admin\DisputeShowController;
@@ -18,6 +31,9 @@ use App\Http\Controllers\Admin\ProductBulkModerationController;
 use App\Http\Controllers\Admin\ProductModerationController;
 use App\Http\Controllers\Admin\ProductsController;
 use App\Http\Controllers\Admin\ProductShowController;
+use App\Http\Controllers\Admin\SellerProfilesController;
+use App\Http\Controllers\Admin\SellerProfileShowController;
+use App\Http\Controllers\Admin\SellerStoreStateController;
 use App\Http\Controllers\Admin\SellerVerificationController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserBulkManagementController;
@@ -27,6 +43,7 @@ use App\Http\Controllers\Admin\UserShowController;
 use App\Http\Controllers\Admin\WalletLedgerExportController;
 use App\Http\Controllers\Admin\WalletsController;
 use App\Http\Controllers\Admin\WalletShowController;
+use App\Http\Controllers\Admin\WithdrawalAssignmentController;
 use App\Http\Controllers\Admin\WithdrawalReviewController;
 use App\Http\Controllers\Admin\WithdrawalsController;
 use App\Http\Controllers\Admin\WithdrawalShowController;
@@ -47,10 +64,70 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::middleware(['auth', 'admin.panel'])->group(function (): void {
         Route::get('/', static fn () => redirect()->route('admin.dashboard'));
         Route::get('dashboard', DashboardController::class)->name('dashboard');
+        Route::post('action-approvals/{approval}/decide', [AdminActionApprovalController::class, 'decide'])
+            ->name('action-approvals.decide')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('action-approvals/{approval}/messages', [AdminApprovalMessageController::class, 'store'])
+            ->name('action-approvals.messages.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('action-approvals/{approval}/messages', [AdminApprovalMessageController::class, 'index'])
+            ->name('action-approvals.messages.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('action-approvals/{approval}/typing', [AdminApprovalRealtimeController::class, 'typing'])
+            ->name('action-approvals.realtime.typing')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('action-approvals/{approval}/read', [AdminApprovalRealtimeController::class, 'read'])
+            ->name('action-approvals.realtime.read')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('approvals', AdminApprovalsInboxController::class)
+            ->name('approvals.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('escalations', AdminEscalationsInboxController::class)
+            ->name('escalations.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('escalations/action', AdminEscalationIncidentActionController::class)
+            ->name('escalations.action')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('escalation-policies', [AdminEscalationPoliciesController::class, 'index'])
+            ->name('escalation-policies.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('escalation-policies', [AdminEscalationPoliciesController::class, 'storePolicy'])
+            ->name('escalation-policies.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('escalation-policies/rotations', [AdminEscalationPoliciesController::class, 'storeRotation'])
+            ->name('escalation-policies.rotations.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('runbooks', [AdminRunbooksController::class, 'index'])
+            ->name('runbooks.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('runbooks', [AdminRunbooksController::class, 'store'])
+            ->name('runbooks.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('runbooks/steps', [AdminRunbooksController::class, 'storeStep'])
+            ->name('runbooks.steps.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('comms-integrations', [AdminCommsIntegrationsController::class, 'index'])
+            ->name('comms-integrations.index')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('comms-integrations', [AdminCommsIntegrationsController::class, 'store'])
+            ->name('comms-integrations.store')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::post('comms-integrations/test', [AdminCommsIntegrationsController::class, 'test'])
+            ->name('comms-integrations.test')
+            ->middleware('admin.permission:'.AdminPermission::ACCESS);
 
         Route::get('users', UsersController::class)
             ->name('users.index')
             ->middleware('admin.permission:'.AdminPermission::USERS_VIEW);
+        Route::get('buyers', BuyersController::class)
+            ->name('buyers.index')
+            ->middleware('admin.permission:'.AdminPermission::USERS_VIEW);
+        Route::get('buyers/{buyer}', BuyerShowController::class)
+            ->name('buyers.show')
+            ->middleware('admin.permission:'.AdminPermission::USERS_VIEW);
+        Route::post('buyers/{buyer}/risk', [BuyerRiskController::class, 'update'])
+            ->name('buyers.risk-update')
+            ->middleware('admin.permission:'.AdminPermission::USERS_MANAGE);
         Route::get('users/{user}', UserShowController::class)
             ->name('users.show')
             ->middleware('admin.permission:'.AdminPermission::USERS_VIEW);
@@ -80,6 +157,15 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('sellers', [SellerVerificationController::class, 'index'])
             ->name('sellers.index')
             ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+        Route::get('seller-profiles', SellerProfilesController::class)
+            ->name('seller-profiles.index')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+        Route::get('seller-profiles/{sellerProfile}', SellerProfileShowController::class)
+            ->name('seller-profiles.show')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+        Route::post('seller-profiles/{sellerProfile}/state', [SellerStoreStateController::class, 'update'])
+            ->name('seller-profiles.update-state')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
 
         Route::get('products', ProductsController::class)
             ->name('products.index')
@@ -121,6 +207,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::post('disputes/{dispute}/resolve', [DisputeDispositionController::class, 'resolve'])
             ->name('disputes.resolve')
             ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
+        Route::post('disputes/{dispute}/claim', [DisputeAssignmentController::class, 'claim'])
+            ->name('disputes.claim')
+            ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
+        Route::post('disputes/{dispute}/unclaim', [DisputeAssignmentController::class, 'unclaim'])
+            ->name('disputes.unclaim')
+            ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
 
         Route::get('withdrawals', WithdrawalsController::class)
             ->name('withdrawals.index')
@@ -132,6 +224,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
         Route::post('withdrawals/{withdrawal}/review', [WithdrawalReviewController::class, 'store'])
             ->name('withdrawals.review')
+            ->middleware('admin.permission:'.AdminPermission::WITHDRAWALS_APPROVE);
+        Route::post('withdrawals/{withdrawal}/claim', [WithdrawalAssignmentController::class, 'claim'])
+            ->name('withdrawals.claim')
+            ->middleware('admin.permission:'.AdminPermission::WITHDRAWALS_APPROVE);
+        Route::post('withdrawals/{withdrawal}/unclaim', [WithdrawalAssignmentController::class, 'unclaim'])
+            ->name('withdrawals.unclaim')
             ->middleware('admin.permission:'.AdminPermission::WITHDRAWALS_APPROVE);
 
         Route::get('wallets', WalletsController::class)

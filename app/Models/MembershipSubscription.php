@@ -6,9 +6,7 @@ use App\Domain\Enums\MembershipSubscriptionStatus;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -16,17 +14,17 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $seller_profile_id
  * @property int $membership_plan_id
  * @property MembershipSubscriptionStatus $status
- * @property \Illuminate\Support\Carbon|null $started_at
- * @property \Illuminate\Support\Carbon|null $expires_at
- * @property \Illuminate\Support\Carbon|null $cancelled_at
- * @property \Illuminate\Support\Carbon|null $suspended_at
+ * @property Carbon|null $started_at
+ * @property Carbon|null $expires_at
+ * @property Carbon|null $cancelled_at
+ * @property Carbon|null $suspended_at
  * @property string $renewal_mode
  * @property int $payment_intent_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\SellerProfile|null $seller_profile
- * @property-read \App\Models\MembershipPlan|null $membership_plan
- * @property-read \App\Models\PaymentIntent|null $payment_intent
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read SellerProfile|null $seller_profile
+ * @property-read MembershipPlan|null $membership_plan
+ * @property-read PaymentIntent|null $payment_intent
  */
 class MembershipSubscription extends Model
 {
@@ -65,7 +63,6 @@ class MembershipSubscription extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function seller_profile(): BelongsTo
     {
         return $this->belongsTo(SellerProfile::class, 'seller_profile_id');

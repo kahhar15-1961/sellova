@@ -5,11 +5,11 @@ namespace App\Models;
 use App\Domain\Enums\LedgerPostingEventName;
 use App\Domain\Enums\WalletLedgerBatchStatus;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -19,15 +19,15 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $reference_id
  * @property int $idempotency_key_id
  * @property WalletLedgerBatchStatus $status
- * @property \Illuminate\Support\Carbon|null $posted_at
- * @property \Illuminate\Support\Carbon|null $reversed_at
+ * @property Carbon|null $posted_at
+ * @property Carbon|null $reversed_at
  * @property int $created_by
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\IdempotencyKey|null $idempotency_key
- * @property-read \App\Models\User|null $created_by
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WalletLedgerEntry> $walletLedgerEntries
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\DisputeDecision> $disputeDecisions
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read IdempotencyKey|null $idempotency_key
+ * @property-read User|null $created_by
+ * @property-read Collection<int, WalletLedgerEntry> $walletLedgerEntries
+ * @property-read Collection<int, DisputeDecision> $disputeDecisions
  */
 class WalletLedgerBatch extends Model
 {
@@ -63,7 +63,6 @@ class WalletLedgerBatch extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function idempotency_key(): BelongsTo
     {
         return $this->belongsTo(IdempotencyKey::class, 'idempotency_key_id');

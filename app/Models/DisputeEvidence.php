@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -18,11 +16,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $content_text
  * @property string|null $storage_path
  * @property string|null $checksum_sha256
- * @property \Illuminate\Support\Carbon|null $submitted_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\DisputeCase|null $dispute_case
- * @property-read \App\Models\User|null $submitted_by_user
+ * @property Carbon|null $submitted_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read DisputeCase|null $dispute_case
+ * @property-read User|null $submitted_by_user
  */
 class DisputeEvidence extends Model
 {
@@ -54,7 +52,6 @@ class DisputeEvidence extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function dispute_case(): BelongsTo
     {
         return $this->belongsTo(DisputeCase::class, 'dispute_case_id');

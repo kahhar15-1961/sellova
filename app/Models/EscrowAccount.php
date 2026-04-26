@@ -4,11 +4,11 @@ namespace App\Models;
 
 use App\Domain\Enums\EscrowState;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -19,13 +19,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $held_amount
  * @property string $released_amount
  * @property string $refunded_amount
- * @property \Illuminate\Support\Carbon|null $held_at
- * @property \Illuminate\Support\Carbon|null $closed_at
+ * @property Carbon|null $held_at
+ * @property Carbon|null $closed_at
  * @property int $version
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Order|null $order
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\EscrowEvent> $escrowEvents
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Order|null $order
+ * @property-read Collection<int, EscrowEvent> $escrowEvents
  */
 class EscrowAccount extends Model
 {
@@ -63,7 +63,6 @@ class EscrowAccount extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'order_id');

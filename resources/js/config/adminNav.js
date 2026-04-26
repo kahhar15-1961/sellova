@@ -10,6 +10,10 @@ import {
     Wallet,
     Settings,
     ScrollText,
+    Siren,
+    ShieldCheck,
+    BookOpenCheck,
+    BellRing,
 } from 'lucide-react';
 
 /** @typedef {{ id: string, label: string, href: string, icon: import('lucide-react').LucideIcon, permission?: string }} NavItem */
@@ -26,6 +30,8 @@ export const adminNavGroups = [
         label: 'Marketplace',
         items: [
             { id: 'users', label: 'Users', href: '/admin/users', icon: Users, permission: 'admin.users.view' },
+            { id: 'buyers', label: 'Buyers', href: '/admin/buyers', icon: Users, permission: 'admin.users.view' },
+            { id: 'seller_profiles', label: 'Seller Profiles', href: '/admin/seller-profiles', icon: Store, permission: 'admin.sellers.view' },
             { id: 'sellers', label: 'Sellers / Verification', href: '/admin/sellers', icon: Store, permission: 'admin.sellers.view' },
             { id: 'products', label: 'Products / Moderation', href: '/admin/products', icon: Package, permission: 'admin.products.view' },
         ],
@@ -56,6 +62,11 @@ export const adminNavGroups = [
         label: 'System',
         items: [
             { id: 'settings', label: 'Settings', href: '/admin/settings', icon: Settings, permission: 'admin.settings.view' },
+            { id: 'approvals', label: 'Approvals Inbox', href: '/admin/approvals', icon: ScrollText, permission: 'admin.access' },
+            { id: 'escalations', label: 'Escalations Inbox', href: '/admin/escalations', icon: Siren, permission: 'admin.access' },
+            { id: 'escalation_policies', label: 'Escalation Policies', href: '/admin/escalation-policies', icon: ShieldCheck, permission: 'admin.access' },
+            { id: 'runbooks', label: 'Runbooks / Playbooks', href: '/admin/runbooks', icon: BookOpenCheck, permission: 'admin.access' },
+            { id: 'comms_integrations', label: 'Comms Integrations', href: '/admin/comms-integrations', icon: BellRing, permission: 'admin.access' },
             { id: 'audit', label: 'Audit Logs', href: '/admin/audit-logs', icon: ScrollText, permission: 'admin.audit.view' },
         ],
     },

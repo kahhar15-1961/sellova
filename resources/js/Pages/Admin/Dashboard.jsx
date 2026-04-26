@@ -19,6 +19,7 @@ const STAT_DEFS = [
     { key: 'orders_in_escrow', label: 'Orders in escrow' },
     { key: 'open_disputes', label: 'Open disputes' },
     { key: 'pending_withdrawals', label: 'Pending withdrawals' },
+    { key: 'escalated_cases', label: 'Escalated cases' },
     { key: 'total_gmv', label: 'Total GMV' },
     { key: 'released_funds', label: 'Released funds' },
     { key: 'refunded_funds', label: 'Refunded funds' },

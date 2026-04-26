@@ -13,6 +13,7 @@ class PromoCodesScreen extends ConsumerStatefulWidget {
 
 class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
   final TextEditingController _controller = TextEditingController();
+  String? _inlineMessage;
 
   @override
   void dispose() {
@@ -27,12 +28,19 @@ class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
     final offers = CheckoutDraftController.promoCatalog.entries.toList();
 
     void applyCode(String code) {
-      final ok = ref.read(checkoutDraftProvider.notifier).applyPromoCode(code);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'Promo applied successfully.' : 'Promo is invalid or minimum spend not met.')),
-      );
+      final normalized = code.trim().toUpperCase();
+      if (normalized.isEmpty) {
+        setState(() => _inlineMessage = 'Enter a promo code first.');
+        return;
+      }
+      final ok = ref.read(checkoutDraftProvider.notifier).applyPromoCode(normalized);
+      setState(() {
+        _inlineMessage = ok
+            ? '$normalized applied successfully.'
+            : 'Promo is invalid or minimum spend not met.';
+      });
       if (ok) {
-        _controller.text = code;
+        _controller.text = normalized;
       }
     }
 
@@ -54,6 +62,7 @@ class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
                     child: TextField(
                       controller: _controller,
                       textCapitalization: TextCapitalization.characters,
+                      onSubmitted: applyCode,
                       decoration: const InputDecoration(hintText: 'Enter promo code'),
                     ),
                   ),
@@ -66,6 +75,19 @@ class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
                 ],
               ),
               const SizedBox(height: 20),
+              if (_inlineMessage != null) ...<Widget>[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F3FF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE9D5FF)),
+                  ),
+                  child: Text(_inlineMessage!, style: Theme.of(context).textTheme.bodyMedium),
+                ),
+              ],
               Text('Available Offers', style: cartSectionHeading(Theme.of(context).textTheme)),
               const SizedBox(height: 10),
               for (final entry in offers) ...<Widget>[

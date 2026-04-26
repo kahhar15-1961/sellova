@@ -3,10 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -16,11 +13,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $rule_type
  * @property array $rule_json
  * @property int $priority
- * @property \Illuminate\Support\Carbon|null $effective_from
- * @property \Illuminate\Support\Carbon|null $effective_to
+ * @property Carbon|null $effective_from
+ * @property Carbon|null $effective_to
  * @property bool $is_active
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property string|null $effective_to
  */
 class CommissionRule extends Model

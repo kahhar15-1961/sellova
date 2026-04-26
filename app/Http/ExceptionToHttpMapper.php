@@ -130,7 +130,7 @@ final class ExceptionToHttpMapper
                 'invalid_credentials', 'invalid_refresh_token', 'invalid_social_token' => 'unauthenticated',
                 'email_taken', 'phone_taken' => 'conflict',
                 'account_inactive' => 'forbidden',
-                'user_not_found', 'seller_profile_not_found' => 'not_found',
+                'user_not_found', 'seller_profile_not_found', 'product_not_found', 'not_found' => 'not_found',
                 'social_login_not_configured' => 'service_unavailable',
                 default => $status === Response::HTTP_UNAUTHORIZED ? 'unauthenticated' : 'validation_failed',
             };
@@ -258,7 +258,7 @@ final class ExceptionToHttpMapper
             'invalid_credentials', 'invalid_refresh_token', 'invalid_social_token' => Response::HTTP_UNAUTHORIZED,
             'email_taken', 'phone_taken' => Response::HTTP_CONFLICT,
             'account_inactive' => Response::HTTP_FORBIDDEN,
-            'user_not_found', 'seller_profile_not_found' => Response::HTTP_NOT_FOUND,
+            'user_not_found', 'seller_profile_not_found', 'product_not_found', 'not_found' => Response::HTTP_NOT_FOUND,
             'social_login_not_configured' => Response::HTTP_SERVICE_UNAVAILABLE,
             default => Response::HTTP_UNPROCESSABLE_ENTITY,
         };

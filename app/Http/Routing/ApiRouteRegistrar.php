@@ -144,6 +144,78 @@ final class ApiRouteRegistrar
             [],
             ['PATCH'],
         ));
+        $routes->add('api.v1.me.payment_methods.index', new Route(
+            '/api/v1/me/payment-methods',
+            ['_controller' => $c->listPaymentMethods(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.payment_methods.store', new Route(
+            '/api/v1/me/payment-methods',
+            ['_controller' => $c->createPaymentMethod(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.me.payment_methods.default', new Route(
+            '/api/v1/me/payment-methods/{paymentMethodId}',
+            ['_controller' => $c->setDefaultPaymentMethod(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.me.payment_methods.delete', new Route(
+            '/api/v1/me/payment-methods/{paymentMethodId}',
+            ['_controller' => $c->deletePaymentMethod(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['DELETE'],
+        ));
+        $routes->add('api.v1.me.wishlist.index', new Route(
+            '/api/v1/me/wishlist',
+            ['_controller' => $c->listWishlist(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.wishlist.store', new Route(
+            '/api/v1/me/wishlist',
+            ['_controller' => $c->addWishlist(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.me.wishlist.delete', new Route(
+            '/api/v1/me/wishlist/{productId}',
+            ['_controller' => $c->removeWishlist(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['DELETE'],
+        ));
+        $routes->add('api.v1.me.reviews.index', new Route(
+            '/api/v1/me/reviews',
+            ['_controller' => $c->listMyReviews(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
     }
 
     private static function productRoutes(RouteCollection $routes, AppServices $app): void

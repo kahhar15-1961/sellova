@@ -5,18 +5,16 @@ namespace App\Models;
 use App\Models\Concerns\TransactionSensitive;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $wallet_id
- * @property \Illuminate\Support\Carbon|null $as_of
+ * @property Carbon|null $as_of
  * @property string $available_balance
  * @property string $held_balance
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property-read \App\Models\Wallet|null $wallet
+ * @property Carbon|null $created_at
+ * @property-read Wallet|null $wallet
  */
 class WalletBalanceSnapshot extends Model
 {
@@ -43,7 +41,6 @@ class WalletBalanceSnapshot extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class, 'wallet_id');

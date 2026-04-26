@@ -5,11 +5,11 @@ namespace App\Models;
 use App\Domain\Enums\WalletHoldStatus;
 use App\Domain\Enums\WalletHoldType;
 use App\Models\Concerns\TransactionSensitive;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -21,11 +21,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $amount
  * @property string|null $currency
  * @property WalletHoldStatus $status
- * @property \Illuminate\Support\Carbon|null $expires_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Wallet|null $wallet
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\WithdrawalRequest> $withdrawalRequests
+ * @property Carbon|null $expires_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Wallet|null $wallet
+ * @property-read Collection<int, WithdrawalRequest> $withdrawalRequests
  */
 class WalletHold extends Model
 {
@@ -60,7 +60,6 @@ class WalletHold extends Model
      * Transaction-sensitive model: use explicit DB transactions and row-level locks
      * for state transitions and financial mutations.
      */
-
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class, 'wallet_id');
