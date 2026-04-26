@@ -506,6 +506,69 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertGreaterThanOrEqual(1, UserPaymentMethod::query()->where('user_id', $buyer->id)->count());
     }
 
+    public function test_profile_extras_endpoints_cover_auth_and_edge_cases(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $product = $this->seedProduct($seller, $storefront, $category, 'Edge Product', 'published', now());
+
+        $owner = $this->createUser('buyer-extras-owner-'.Str::random(6).'@example.test');
+        $stranger = $this->createUser('buyer-extras-stranger-'.Str::random(6).'@example.test');
+        $ownerToken = $this->issueAccessTokenForUser($owner);
+        $strangerToken = $this->issueAccessTokenForUser($stranger);
+
+        $unauthPaymentMethods = $this->legacyApiJson('GET', '/api/v1/me/payment-methods');
+        self::assertSame(401, $unauthPaymentMethods['status']);
+        self::assertSame('unauthenticated', $unauthPaymentMethods['json']['error']);
+
+        $unauthReviews = $this->legacyApiJson('GET', '/api/v1/me/reviews');
+        self::assertSame(401, $unauthReviews['status']);
+        self::assertSame('unauthenticated', $unauthReviews['json']['error']);
+
+        $ownerMethod = $this->legacyApiJson('POST', '/api/v1/me/payment-methods', [
+            'kind' => 'card',
+            'label' => 'Owner Card',
+            'subtitle' => 'Test',
+            'is_default' => true,
+        ], $ownerToken);
+        self::assertSame(201, $ownerMethod['status']);
+        $ownerMethodId = (int) $ownerMethod['json']['data']['id'];
+
+        $strangerSetDefault = $this->legacyApiJson('PATCH', '/api/v1/me/payment-methods/'.$ownerMethodId, [], $strangerToken);
+        self::assertSame(404, $strangerSetDefault['status']);
+        self::assertSame('not_found', $strangerSetDefault['json']['error']);
+        self::assertSame('not_found', $strangerSetDefault['json']['reason_code']);
+
+        $strangerDelete = $this->legacyApiJson('DELETE', '/api/v1/me/payment-methods/'.$ownerMethodId, token: $strangerToken);
+        self::assertSame(200, $strangerDelete['status']);
+        self::assertSame(['ok' => true], $strangerDelete['json']['data']);
+        self::assertGreaterThan(0, UserPaymentMethod::query()->whereKey($ownerMethodId)->count());
+
+        $missingProductAdd = $this->legacyApiJson('POST', '/api/v1/me/wishlist', [
+            'product_id' => 99999999,
+        ], $ownerToken);
+        self::assertSame(404, $missingProductAdd['status']);
+        self::assertSame('not_found', $missingProductAdd['json']['error']);
+        self::assertSame('product_not_found', $missingProductAdd['json']['reason_code']);
+
+        $firstAdd = $this->legacyApiJson('POST', '/api/v1/me/wishlist', [
+            'product_id' => $product->id,
+        ], $ownerToken);
+        self::assertSame(201, $firstAdd['status']);
+        $wishlistId = (int) $firstAdd['json']['data']['id'];
+
+        $duplicateAdd = $this->legacyApiJson('POST', '/api/v1/me/wishlist', [
+            'product_id' => $product->id,
+        ], $ownerToken);
+        self::assertSame(201, $duplicateAdd['status']);
+        self::assertSame($wishlistId, (int) $duplicateAdd['json']['data']['id']);
+        self::assertSame(1, UserWishlistItem::query()->where('user_id', $owner->id)->where('product_id', $product->id)->count());
+
+        $strangerRemove = $this->legacyApiJson('DELETE', '/api/v1/me/wishlist/'.$product->id, token: $strangerToken);
+        self::assertSame(200, $strangerRemove['status']);
+        self::assertSame(['ok' => true], $strangerRemove['json']['data']);
+        self::assertSame(1, UserWishlistItem::query()->where('user_id', $owner->id)->where('product_id', $product->id)->count());
+    }
+
     /**
      * @return array{status: int, json: array<string, mixed>}
      */
