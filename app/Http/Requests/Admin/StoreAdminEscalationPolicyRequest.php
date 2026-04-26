@@ -23,7 +23,7 @@ final class StoreAdminEscalationPolicyRequest extends FormRequest
             'on_call_role_code' => ['nullable', 'string', 'max:64'],
             'ack_sla_minutes' => ['required', 'integer', 'min:1', 'max:10080'],
             'resolve_sla_minutes' => ['required', 'integer', 'min:1', 'max:43200'],
-            'comms_integration_id' => ['nullable', 'integer'],
+            'comms_integration_id' => ['nullable', 'integer', 'exists:admin_comms_integrations,id'],
             'is_enabled' => ['required', 'boolean'],
         ];
     }

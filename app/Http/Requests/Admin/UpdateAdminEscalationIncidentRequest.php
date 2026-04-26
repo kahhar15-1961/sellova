@@ -17,10 +17,10 @@ final class UpdateAdminEscalationIncidentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'incident_id' => ['required', 'integer', 'min:1'],
+            'incident_id' => ['required', 'integer', 'exists:admin_escalation_incidents,id'],
             'action' => ['required', 'string', Rule::in(['acknowledge', 'resolve', 'reassign'])],
-            'assignee_user_id' => ['nullable', 'integer', 'min:1'],
-            'resolution_reason' => ['nullable', 'string', 'max:2000'],
+            'assignee_user_id' => ['nullable', 'integer', 'exists:users,id', 'required_if:action,reassign'],
+            'resolution_reason' => ['nullable', 'string', 'max:2000', 'required_if:action,resolve'],
         ];
     }
 }

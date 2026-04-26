@@ -6,8 +6,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\Admin\StoreAdminCommsIntegrationRequest;
 use App\Models\AdminCommsIntegration;
+use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
+use Throwable;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -43,31 +46,50 @@ final class AdminCommsIntegrationsController extends AdminPageController
 
     public function store(StoreAdminCommsIntegrationRequest $request): RedirectResponse
     {
-        AdminCommsIntegration::query()->create($request->validated());
+        $payload = $request->validated();
+        AdminCommsIntegration::query()->updateOrCreate(
+            ['name' => (string) $payload['name']],
+            $payload,
+        );
 
-        return back()->with('success', 'Comms integration added.');
+        return back()->with('success', 'Comms integration saved.');
     }
 
-    public function test(): RedirectResponse
+    public function test(Request $request): RedirectResponse
     {
-        $integration = AdminCommsIntegration::query()
-            ->where('channel', 'webhook')
-            ->whereNotNull('webhook_url')
-            ->where('is_enabled', true)
-            ->orderByDesc('id')
-            ->first();
+        $integrationId = (int) $request->input('integration_id', 0);
+        $integration = AdminCommsIntegration::query()->when(
+            $integrationId > 0,
+            static fn ($q) => $q->whereKey($integrationId),
+            static fn ($q) => $q->where('is_enabled', true)->orderByDesc('id'),
+        )->first();
 
         if ($integration === null) {
-            return back()->with('error', 'No enabled webhook integration to test.');
+            return back()->with('error', 'No integration found to test.');
         }
 
-        Http::timeout(5)->post((string) $integration->webhook_url, [
-            'event' => 'admin.comms.test',
-            'time' => now()->toIso8601String(),
-            'source' => 'sellova-admin',
-        ]);
+        try {
+            if ($integration->channel === 'webhook' && $integration->webhook_url) {
+                Http::timeout(5)->post((string) $integration->webhook_url, [
+                    'event' => 'admin.comms.test',
+                    'time' => now()->toIso8601String(),
+                    'source' => 'sellova-admin',
+                    'integration' => $integration->name,
+                ])->throw();
+            } elseif ($integration->channel === 'email' && $integration->email_to) {
+                Mail::raw('Sellova admin comms integration test message.', static function ($msg) use ($integration): void {
+                    $msg->to((string) $integration->email_to)
+                        ->subject('Sellova Admin Comms Test');
+                });
+            } else {
+                return back()->with('error', 'Integration is missing required endpoint configuration.');
+            }
+        } catch (Throwable $e) {
+            return back()->with('error', 'Integration test failed: '.$e->getMessage());
+        }
+
         $integration->forceFill(['last_tested_at' => now()])->save();
 
-        return back()->with('success', 'Webhook test sent.');
+        return back()->with('success', 'Integration test sent.');
     }
 }

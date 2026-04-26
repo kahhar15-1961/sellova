@@ -11,7 +11,10 @@ use App\Models\AdminEscalationPolicy;
 use App\Models\AdminOnCallRotation;
 use App\Models\Notification;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Throwable;
 
 final class EscalationOperationsService
 {
@@ -165,19 +168,45 @@ final class EscalationOperationsService
             return;
         }
 
-        if ($integration->channel === 'webhook' && $integration->webhook_url) {
-            Http::timeout(5)->post($integration->webhook_url, [
-                'event' => 'admin.escalation.incident.opened',
-                'incident' => [
-                    'id' => $incident->id,
-                    'queue_code' => $incident->queue_code,
-                    'target_type' => $incident->target_type,
-                    'target_id' => $incident->target_id,
-                    'severity' => $incident->severity,
-                    'status' => $incident->status,
-                ],
-            ]);
+        try {
+            if ($integration->channel === 'webhook' && $integration->webhook_url) {
+                Http::timeout(5)->post($integration->webhook_url, [
+                    'event' => 'admin.escalation.incident.opened',
+                    'incident' => [
+                        'id' => $incident->id,
+                        'queue_code' => $incident->queue_code,
+                        'target_type' => $incident->target_type,
+                        'target_id' => $incident->target_id,
+                        'severity' => $incident->severity,
+                        'status' => $incident->status,
+                    ],
+                ])->throw();
+            } elseif ($integration->channel === 'email' && $integration->email_to) {
+                Mail::raw(
+                    sprintf(
+                        'Escalation incident #%d (%s %s #%d) opened with severity %s.',
+                        $incident->id,
+                        $incident->queue_code,
+                        $incident->target_type,
+                        $incident->target_id,
+                        $incident->severity,
+                    ),
+                    static function ($msg) use ($integration): void {
+                        $msg->to((string) $integration->email_to)
+                            ->subject('Sellova escalation incident opened');
+                    },
+                );
+            } else {
+                return;
+            }
+
             $integration->forceFill(['last_tested_at' => now()])->save();
+        } catch (Throwable $e) {
+            Log::warning('Escalation comms delivery failed.', [
+                'integration_id' => $integration->id,
+                'incident_id' => $incident->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

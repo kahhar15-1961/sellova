@@ -17,12 +17,23 @@ final class StoreAdminOnCallRotationRequest extends FormRequest
     {
         return [
             'role_code' => ['required', 'string', 'max:64'],
-            'user_id' => ['required', 'integer', 'min:1'],
+            'user_id' => ['required', 'integer', 'exists:users,id'],
             'weekday' => ['required', 'integer', 'min:0', 'max:6'],
             'start_hour' => ['required', 'integer', 'min:0', 'max:23'],
             'end_hour' => ['required', 'integer', 'min:0', 'max:23'],
             'priority' => ['required', 'integer', 'min:1', 'max:999'],
             'is_active' => ['required', 'boolean'],
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $start = (int) $this->input('start_hour');
+            $end = (int) $this->input('end_hour');
+            if ($end < $start) {
+                $validator->errors()->add('end_hour', 'End hour must be greater than or equal to start hour.');
+            }
+        });
     }
 }

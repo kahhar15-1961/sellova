@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\Admin\StoreAdminEscalationPolicyRequest;
 use App\Http\Requests\Admin\StoreAdminOnCallRotationRequest;
+use App\Models\AdminCommsIntegration;
 use App\Models\AdminEscalationPolicy;
 use App\Models\AdminOnCallRotation;
 use App\Models\User;
@@ -56,6 +57,15 @@ final class AdminEscalationPoliciesController extends AdminPageController
             'users' => User::query()->whereNull('deleted_at')->orderBy('email')->limit(400)->get(['id', 'email'])
                 ->map(static fn (User $u): array => ['id' => $u->id, 'email' => $u->email ?? ('User #'.$u->id)])
                 ->values()->all(),
+            'comms_integrations' => AdminCommsIntegration::query()
+                ->where('is_enabled', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'channel'])
+                ->map(static fn (AdminCommsIntegration $i): array => [
+                    'id' => $i->id,
+                    'name' => $i->name,
+                    'channel' => $i->channel,
+                ])->values()->all(),
         ]);
     }
 

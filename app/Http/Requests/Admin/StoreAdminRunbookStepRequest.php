@@ -16,7 +16,7 @@ final class StoreAdminRunbookStepRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'runbook_id' => ['required', 'integer', 'min:1'],
+            'runbook_id' => ['required', 'integer', 'exists:admin_runbooks,id'],
             'step_order' => ['required', 'integer', 'min:1', 'max:1000'],
             'instruction' => ['required', 'string', 'max:4000'],
             'is_required' => ['required', 'boolean'],

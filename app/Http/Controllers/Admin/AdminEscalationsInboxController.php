@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Models\AdminEscalationIncident;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -70,6 +71,15 @@ final class AdminEscalationsInboxController extends AdminPageController
                 'resolved' => (int) AdminEscalationIncident::query()->where('status', 'resolved')->count(),
                 'critical' => (int) AdminEscalationIncident::query()->where('severity', 'critical')->where('status', '!=', 'resolved')->count(),
             ],
+            'staff_users' => User::query()
+                ->whereNull('deleted_at')
+                ->orderBy('email')
+                ->limit(400)
+                ->get(['id', 'email'])
+                ->map(static fn (User $u): array => [
+                    'id' => $u->id,
+                    'email' => $u->email ?? ('User #'.$u->id),
+                ])->values()->all(),
         ]);
     }
 }

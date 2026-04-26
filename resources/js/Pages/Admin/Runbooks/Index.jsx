@@ -21,6 +21,7 @@ export default function RunbooksIndex({ header, runbooks, runbook_store_url, ste
                             </select>
                             <input name="title" className="h-9 w-full rounded-md border px-2 text-sm" placeholder="Runbook title" />
                             <textarea name="objective" className="min-h-20 w-full rounded-md border px-2 py-2 text-sm" placeholder="Objective" />
+                            <input type="hidden" name="is_active" value="0" />
                             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked value="1" /> active</label>
                             <Button type="submit">Create runbook</Button>
                         </Form>
@@ -36,8 +37,10 @@ export default function RunbooksIndex({ header, runbooks, runbook_store_url, ste
                             </select>
                             <div className="grid grid-cols-2 gap-2">
                                 <input name="step_order" defaultValue="1" className="h-9 rounded-md border px-2 text-sm" placeholder="step order" />
+                                <input type="hidden" name="is_required" value="0" />
                                 <label className="flex items-center gap-2 text-sm rounded-md border px-2"><input type="checkbox" name="is_required" value="1" defaultChecked /> required</label>
                             </div>
+                            <input type="hidden" name="evidence_required" value="0" />
                             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="evidence_required" value="1" /> evidence required</label>
                             <textarea name="instruction" className="min-h-20 w-full rounded-md border px-2 py-2 text-sm" placeholder="Step instruction" />
                             <Button type="submit">Add step</Button>

@@ -24,4 +24,17 @@ final class StoreAdminCommsIntegrationRequest extends FormRequest
             'is_enabled' => ['required', 'boolean'],
         ];
     }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $channel = (string) $this->input('channel');
+            if ($channel === 'webhook' && ! $this->filled('webhook_url')) {
+                $validator->errors()->add('webhook_url', 'Webhook URL is required when channel is webhook.');
+            }
+            if ($channel === 'email' && ! $this->filled('email_to')) {
+                $validator->errors()->add('email_to', 'Email target is required when channel is email.');
+            }
+        });
+    }
 }

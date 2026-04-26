@@ -5,7 +5,7 @@ import { DataTableShell } from '@/components/admin/DataTableShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-export default function EscalationPoliciesIndex({ header, policies, rotations, users, policy_store_url, rotation_store_url }) {
+export default function EscalationPoliciesIndex({ header, policies, rotations, users, comms_integrations: commsIntegrations, policy_store_url, rotation_store_url }) {
     return (
         <AdminLayout>
             <Head title={header.title} />
@@ -26,11 +26,19 @@ export default function EscalationPoliciesIndex({ header, policies, rotations, u
                                 <option value="critical">critical</option>
                             </select>
                             <input name="on_call_role_code" className="h-9 w-full rounded-md border px-2 text-sm" placeholder="on_call_role_code e.g. dispute_officer" />
+                            <select name="comms_integration_id" className="h-9 w-full rounded-md border px-2 text-sm" defaultValue="">
+                                <option value="">No comms integration</option>
+                                {(commsIntegrations || []).map((i) => (
+                                    <option key={i.id} value={i.id}>{`${i.name} (${i.channel})`}</option>
+                                ))}
+                            </select>
                             <div className="grid grid-cols-2 gap-2">
                                 <input name="ack_sla_minutes" defaultValue="30" className="h-9 rounded-md border px-2 text-sm" placeholder="ack SLA minutes" />
                                 <input name="resolve_sla_minutes" defaultValue="240" className="h-9 rounded-md border px-2 text-sm" placeholder="resolve SLA minutes" />
                             </div>
+                            <input type="hidden" name="auto_assign_on_call" value="0" />
                             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="auto_assign_on_call" value="1" defaultChecked /> auto assign on-call</label>
+                            <input type="hidden" name="is_enabled" value="0" />
                             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_enabled" value="1" defaultChecked /> enabled</label>
                             <Button type="submit">Save policy</Button>
                         </Form>
@@ -51,6 +59,7 @@ export default function EscalationPoliciesIndex({ header, policies, rotations, u
                                 <input name="end_hour" defaultValue="23" className="h-9 rounded-md border px-2 text-sm" placeholder="end" />
                                 <input name="priority" defaultValue="100" className="h-9 rounded-md border px-2 text-sm" placeholder="priority" />
                             </div>
+                            <input type="hidden" name="is_active" value="0" />
                             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" value="1" defaultChecked /> active</label>
                             <Button type="submit">Add rotation</Button>
                         </Form>

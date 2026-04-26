@@ -27,22 +27,32 @@ export default function CommsIntegrationsIndex({ header, rows, store_url, test_u
                         </select>
                         <input name="webhook_url" className="h-9 rounded-md border px-2 text-sm" placeholder="Webhook URL (for webhook channel)" />
                         <input name="email_to" className="h-9 rounded-md border px-2 text-sm" placeholder="Email target (for email channel)" />
+                        <input type="hidden" name="is_enabled" value="0" />
                         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_enabled" value="1" defaultChecked /> enabled</label>
                         <div className="flex gap-2">
-                            <Button type="submit">Add integration</Button>
-                            <Button type="button" variant="outline" onClick={() => router.post(test_url, {}, { preserveScroll: true })}>Send test webhook</Button>
+                            <Button type="submit">Save integration</Button>
                         </div>
                     </Form>
                 </CardContent>
             </Card>
 
             <DataTableShell
-                columns={['name', 'channel', 'is_enabled', 'webhook_url', 'email_to', 'last_tested_at']}
+                columns={['name', 'channel', 'is_enabled', 'webhook_url', 'email_to', 'last_tested_at', 'actions']}
                 rows={rows}
                 emptyTitle="No comms integrations"
                 renderers={{
                     is_enabled: (v) => <StatusBadge status={v ? 'active' : 'inactive'} />,
                     last_tested_at: (v) => <span className="text-muted-foreground">{fmtDate(v)}</span>,
+                    actions: (_v, row) => (
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => router.post(test_url, { integration_id: row.id }, { preserveScroll: true })}
+                        >
+                            Send test
+                        </Button>
+                    ),
                 }}
             />
         </AdminLayout>
