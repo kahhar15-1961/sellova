@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Exceptions\AuthValidationFailedException;
+use App\Events\ChatMessageCreated;
+use App\Events\ChatTypingUpdated;
 use App\Http\AppServices;
 use App\Http\Responses\ApiEnvelope;
 use App\Models\ChatMessage;
@@ -185,6 +187,13 @@ final class ChatController
             Cache::forget($key);
         }
 
+        event(new ChatTypingUpdated(
+            threadId: $threadId,
+            userId: (int) $actor->id,
+            name: (string) ($actor->email ?? ('User #'.$actor->id)),
+            typing: $typing,
+        ));
+
         return ApiEnvelope::data(['ok' => true]);
     }
 
@@ -260,6 +269,20 @@ final class ChatController
             ['thread_id' => $thread->id, 'user_id' => $actor->id],
             ['last_read_at' => now()]
         );
+
+        event(new ChatMessageCreated(
+            threadId: (int) $thread->id,
+            message: [
+                'id' => (int) $message->id,
+                'sender_user_id' => (int) $message->sender_user_id,
+                'from_me' => false,
+                'body' => (string) $message->body,
+                'attachment_url' => $message->attachment_url,
+                'attachment_name' => $message->attachment_name,
+                'delivery_status' => 'sent',
+                'created_at' => $message->created_at?->toIso8601String(),
+            ],
+        ));
 
         return ApiEnvelope::data([
             'id' => (int) $message->id,

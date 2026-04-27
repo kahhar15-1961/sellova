@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
 
-class TrackOrderScreen extends StatelessWidget {
+import '../../../app/providers/repository_providers.dart';
+import '../data/order_repository.dart';
+
+class TrackOrderScreen extends ConsumerStatefulWidget {
   const TrackOrderScreen({
     super.key,
     required this.orderId,
@@ -10,15 +16,107 @@ class TrackOrderScreen extends StatelessWidget {
   final int orderId;
 
   @override
+  ConsumerState<TrackOrderScreen> createState() => _TrackOrderScreenState();
+}
+
+class _TrackOrderScreenState extends ConsumerState<TrackOrderScreen> {
+  OrderTrackingDto? _tracking;
+  bool _loading = true;
+  String? _error;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(_load);
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) => _load(silent: true));
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final data = await ref.read(orderRepositoryProvider).getTracking(widget.orderId);
+      if (!mounted) return;
+      setState(() {
+        _tracking = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final t = _tracking;
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FE),
-      appBar: AppBar(title: Text('Order #$orderId')),
+      appBar: AppBar(title: Text('Order #${widget.orderId}')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-          child: Column(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(child: Text('Failed to load tracking: $_error'))
+                  : Column(
             children: <Widget>[
+              if (t != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('Carrier: ${t.carrierName}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: <Widget>[
+                          Expanded(child: Text('Tracking ID: ${t.trackingId}')),
+                          TextButton(
+                            onPressed: () async {
+                              await Clipboard.setData(ClipboardData(text: t.trackingId));
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tracking ID copied')));
+                            },
+                            child: const Text('Copy'),
+                          ),
+                        ],
+                      ),
+                      if (t.eta.isNotEmpty) Text('ETA: ${t.eta.substring(0, 10)}'),
+                      if (t.trackingUrl.isNotEmpty)
+                        TextButton(
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: t.trackingUrl));
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tracking URL copied')));
+                          },
+                          child: const Text('Copy tracking URL'),
+                        ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: Container(
                   width: double.infinity,
@@ -28,25 +126,49 @@ class TrackOrderScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35)),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: <Widget>[
-                      _TrackRow(done: true, active: false, title: 'Paid in Escrow', subtitle: 'May 30, 10:30 AM', showLine: true),
-                      _TrackRow(done: true, active: false, title: 'Processing', subtitle: 'May 30, 02:00 PM', showLine: true),
-                      _TrackRow(done: false, active: true, title: 'Shipped', subtitle: 'Pending', showLine: true),
-                      _TrackRow(done: false, active: false, title: 'Delivered', subtitle: 'Pending', showLine: true),
-                      _TrackRow(done: false, active: false, title: 'Completed', subtitle: 'Pending', showLine: false),
+                      for (var i = 0; i < (t?.timeline.length ?? 0); i++)
+                        _TrackRow(
+                          done: ((t!.timeline[i]['at'] ?? '').toString().isNotEmpty),
+                          active: i == ((t.timeline.indexWhere((e) => ((e['at'] ?? '').toString().isEmpty)) == -1)
+                              ? t.timeline.length - 1
+                              : (t.timeline.indexWhere((e) => ((e['at'] ?? '').toString().isEmpty)) - 1)),
+                          title: (t.timeline[i]['title'] ?? '').toString(),
+                          subtitle: ((t.timeline[i]['at'] ?? '').toString().isEmpty)
+                              ? 'Pending'
+                              : (t.timeline[i]['at'] as String).substring(0, 16).replaceFirst('T', ' '),
+                          showLine: i < (t.timeline.length - 1),
+                        ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () => context.push('/disputes/create?orderId=$orderId'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Need Help? Open Dispute'),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => context.push('/orders/${widget.orderId}/chat'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('Contact Seller'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => context.push('/disputes/create?orderId=${widget.orderId}'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('Open Dispute'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

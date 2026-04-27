@@ -113,6 +113,11 @@ class OrderRepository {
     return OrderDto(parseObjectEnvelope(json).data);
   }
 
+  Future<OrderTrackingDto> getTracking(int orderId) async {
+    final json = await _apiClient.get('/api/v1/orders/$orderId/tracking');
+    return OrderTrackingDto(parseObjectEnvelope(json).data);
+  }
+
   Future<OrderDto> markPendingPayment({
     required int orderId,
     Map<String, dynamic>? request,
@@ -227,6 +232,31 @@ class ChatThreadDto {
   String get preview => (raw['last_message_preview'] ?? '').toString();
   bool get hasUnread => raw['has_unread'] == true || raw['has_unread']?.toString() == '1';
   String get counterparty => (raw['counterparty_label'] ?? '').toString();
+}
+
+class OrderTrackingDto {
+  const OrderTrackingDto(this.raw);
+  final Map<String, dynamic> raw;
+
+  String get carrierName => (raw['carrier_name'] ?? '').toString();
+  String get trackingId => (raw['tracking_id'] ?? '').toString();
+  String get trackingUrl => (raw['tracking_url'] ?? '').toString();
+  String get eta => (raw['eta'] ?? '').toString();
+  List<Map<String, dynamic>> get timeline {
+    final rows = raw['timeline'];
+    if (rows is List) {
+      return rows.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  Map<String, dynamic> get proofOfDelivery {
+    final pod = raw['proof_of_delivery'];
+    if (pod is Map) {
+      return Map<String, dynamic>.from(pod);
+    }
+    return const <String, dynamic>{};
+  }
 }
 
 class ChatMessageDto {

@@ -10,6 +10,7 @@ import '../../features/profile/data/profile_extras_repository.dart';
 import '../../features/seller/data/seller_business_datasource.dart';
 import '../../features/seller/data/seller_repository.dart';
 import '../../features/withdrawals/data/withdrawal_repository.dart';
+import '../../core/realtime/chat_realtime_client.dart';
 import 'app_providers.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
@@ -53,4 +54,11 @@ final sellerRepositoryProvider = Provider<SellerRepository>((ref) {
 
 final sellerBusinessDataSourceProvider = Provider<SellerBusinessDataSource>((ref) {
   return SellerRepositoryBusinessAdapter(ref.watch(sellerRepositoryProvider));
+});
+
+final chatRealtimeClientProvider = Provider<ChatRealtimeClient>((ref) {
+  return ChatRealtimeClient(
+    baseUrl: ref.watch(baseUrlProvider),
+    tokenStore: ref.watch(tokenStoreProvider),
+  );
 });

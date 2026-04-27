@@ -212,6 +212,12 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame(200, $show['status']);
         self::assertSame($order->id, $show['json']['data']['id']);
 
+        $tracking = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id.'/tracking', token: $buyerToken);
+        self::assertSame(200, $tracking['status']);
+        self::assertSame($order->id, $tracking['json']['data']['order_id']);
+        self::assertArrayHasKey('timeline', $tracking['json']['data']);
+        self::assertArrayHasKey('carrier_name', $tracking['json']['data']);
+
         $stranger = $this->createUser('stranger-orders@example.test');
         $strangerToken = $this->issueAccessTokenForUser($stranger);
         $forbidden = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id, token: $strangerToken);
@@ -637,6 +643,13 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame(200, $thread['status']);
         $threadId = (int) $thread['json']['data']['thread_id'];
         self::assertGreaterThan(0, $threadId);
+
+        $realtimeAuth = $this->legacyApiJson('POST', '/api/v1/realtime/auth', [
+            'socket_id' => '1234.5678',
+            'channel_name' => 'private-chat.thread.'.$threadId,
+        ], $buyerToken);
+        self::assertSame(200, $realtimeAuth['status']);
+        self::assertArrayHasKey('auth', $realtimeAuth['json']['data']);
 
         $sendBuyer = $this->legacyApiJson('POST', '/api/v1/chat/threads/'.$threadId.'/messages', [
             'body' => 'Hello seller',

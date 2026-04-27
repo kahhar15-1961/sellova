@@ -14,6 +14,7 @@ dependencies:
   flutter_riverpod: ^2.5.1
   go_router: ^14.2.7
   google_sign_in: ^6.2.2
+  pusher_client: ^2.0.0
   shared_preferences: ^2.3.2
   sign_in_with_apple: ^6.1.4
 

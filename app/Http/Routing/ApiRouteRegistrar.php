@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DisputeController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
+use App\Http\Controllers\Api\V1\RealtimeAuthController;
 use App\Http\Controllers\Api\V1\UserProfileController;
 use App\Http\Controllers\Api\V1\WithdrawalController;
 use Symfony\Component\HttpFoundation\Response;
@@ -41,6 +42,7 @@ final class ApiRouteRegistrar
         self::authRoutes($routes, $app);
         self::profileRoutes($routes, $app);
         self::chatRoutes($routes, $app);
+        self::realtimeRoutes($routes, $app);
         self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
@@ -351,6 +353,20 @@ final class ApiRouteRegistrar
         ));
     }
 
+    private static function realtimeRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new RealtimeAuthController($app);
+        $routes->add('api.v1.realtime.auth', new Route(
+            '/api/v1/realtime/auth',
+            ['_controller' => $c->authenticate(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+    }
+
     private static function productRoutes(RouteCollection $routes, AppServices $app): void
     {
         $c = new ProductController($app);
@@ -448,6 +464,15 @@ final class ApiRouteRegistrar
         $routes->add('api.v1.orders.show', new Route(
             '/api/v1/orders/{orderId}',
             ['_controller' => $c->show(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.tracking', new Route(
+            '/api/v1/orders/{orderId}/tracking',
+            ['_controller' => $c->tracking(...), '_auth' => true],
             ['orderId' => '\d+'],
             [],
             '',

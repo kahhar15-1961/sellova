@@ -51,6 +51,30 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
       });
       _pollTimer?.cancel();
       _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _refreshSilently());
+      await ref.read(chatRealtimeClientProvider).subscribeThread(
+            threadId: widget.threadId,
+            onMessageCreated: (message) {
+              if (!mounted) return;
+              final dto = ChatMessageDto(message);
+              setState(() {
+                if (_messages.any((m) => m.id == dto.id)) return;
+                _messages.add(dto);
+              });
+            },
+            onTypingUpdated: (typing) {
+              if (!mounted) return;
+              final typingOn = typing['typing'] == true;
+              final name = (typing['name'] ?? '').toString();
+              if (name.isEmpty) return;
+              setState(() {
+                if (!typingOn) {
+                  _typingUsers = _typingUsers.where((u) => u != name).toList();
+                } else if (!_typingUsers.contains(name)) {
+                  _typingUsers = <String>[..._typingUsers, name];
+                }
+              });
+            },
+          );
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -109,6 +133,7 @@ class _ChatThreadScreenState extends ConsumerState<ChatThreadScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _typingDebouncer.dispose();
+    ref.read(chatRealtimeClientProvider).unsubscribeThread(widget.threadId);
     _msgCtrl.dispose();
     super.dispose();
   }

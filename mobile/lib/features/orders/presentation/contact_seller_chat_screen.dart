@@ -52,6 +52,30 @@ class _ContactSellerChatScreenState extends ConsumerState<ContactSellerChatScree
       });
       _pollTimer?.cancel();
       _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) => _refreshMessagesSilently());
+      await ref.read(chatRealtimeClientProvider).subscribeThread(
+            threadId: threadId,
+            onMessageCreated: (message) {
+              if (!mounted) return;
+              final dto = ChatMessageDto(message);
+              setState(() {
+                if (_messages.any((m) => m.id == dto.id)) return;
+                _messages.add(dto);
+              });
+            },
+            onTypingUpdated: (typing) {
+              if (!mounted) return;
+              final typingOn = typing['typing'] == true;
+              final name = (typing['name'] ?? '').toString();
+              if (name.isEmpty) return;
+              setState(() {
+                if (!typingOn) {
+                  _typingUsers = _typingUsers.where((u) => u != name).toList();
+                } else if (!_typingUsers.contains(name)) {
+                  _typingUsers = <String>[..._typingUsers, name];
+                }
+              });
+            },
+          );
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -111,6 +135,9 @@ class _ContactSellerChatScreenState extends ConsumerState<ContactSellerChatScree
   void dispose() {
     _pollTimer?.cancel();
     _typingDebouncer.dispose();
+    if (_threadId > 0) {
+      ref.read(chatRealtimeClientProvider).unsubscribeThread(_threadId);
+    }
     _msgCtrl.dispose();
     super.dispose();
   }
