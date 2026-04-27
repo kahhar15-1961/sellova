@@ -22,6 +22,7 @@ use App\Models\OrderItem;
 use App\Models\PaymentIntent;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
+use App\Models\ReturnRequest;
 use App\Models\Role;
 use App\Models\SellerProfile;
 use App\Models\Storefront;
@@ -694,6 +695,113 @@ final class ApiV1IntegrationTest extends TestCase
         $supportInbox = $this->legacyApiJson('GET', '/api/v1/chat/support-inbox', token: $supportToken);
         self::assertSame(200, $supportInbox['status']);
         self::assertNotEmpty($supportInbox['json']['data']);
+    }
+
+    public function test_returns_center_phase1_buyer_and_seller_lifecycle(): void
+    {
+        [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Completed, '89.0000');
+        $order->forceFill(['completed_at' => now()->subDays(2)])->save();
+        $buyerToken = $this->issueAccessTokenForUser($buyer);
+        $sellerToken = $this->issueAccessTokenForUser($sellerProfile->user);
+
+        $eligibility = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id.'/returns/eligibility', token: $buyerToken);
+        self::assertSame(200, $eligibility['status']);
+        self::assertTrue((bool) $eligibility['json']['data']['eligible']);
+
+        $create = $this->legacyApiJson('POST', '/api/v1/returns', [
+            'order_id' => $order->id,
+            'reason_code' => 'damaged_item',
+            'notes' => 'Box arrived crushed and item cracked',
+            'evidence' => ['https://cdn.example.test/returns/photo-1.jpg'],
+        ], $buyerToken);
+        self::assertSame(201, $create['status']);
+        $returnId = (int) $create['json']['data']['id'];
+        self::assertGreaterThan(0, $returnId);
+        self::assertSame('requested', $create['json']['data']['status']);
+
+        $buyerList = $this->legacyApiJson('GET', '/api/v1/returns', token: $buyerToken);
+        self::assertSame(200, $buyerList['status']);
+        self::assertNotEmpty($buyerList['json']['data']['items']);
+        self::assertTrue(
+            collect($buyerList['json']['data']['items'])->pluck('id')->contains($returnId)
+        );
+
+        $sellerList = $this->legacyApiJson('GET', '/api/v1/seller/returns', token: $sellerToken);
+        self::assertSame(200, $sellerList['status']);
+        self::assertNotEmpty($sellerList['json']['data']['items']);
+
+        $sellerDecide = $this->legacyApiJson('PATCH', '/api/v1/seller/returns/'.$returnId.'/decision', [
+            'decision' => 'approve',
+            'decision_note' => 'Approved after evidence verification',
+        ], $sellerToken);
+        self::assertSame(200, $sellerDecide['status']);
+        self::assertSame('approved', $sellerDecide['json']['data']['status']);
+
+        $buyerShippedBack = $this->legacyApiJson('POST', '/api/v1/returns/'.$returnId.'/shipped-back', [
+            'carrier' => 'DHL',
+            'tracking_url' => 'https://tracking.example.test/rma',
+        ], $buyerToken);
+        self::assertSame(200, $buyerShippedBack['status']);
+        self::assertSame('in_transit_to_seller', $buyerShippedBack['json']['data']['reverse_logistics_status']);
+
+        $sellerReceived = $this->legacyApiJson('POST', '/api/v1/seller/returns/'.$returnId.'/received', [], $sellerToken);
+        self::assertSame(200, $sellerReceived['status']);
+        self::assertSame('received_by_seller', $sellerReceived['json']['data']['reverse_logistics_status']);
+
+        $detail = $this->legacyApiJson('GET', '/api/v1/returns/'.$returnId, token: $buyerToken);
+        self::assertSame(200, $detail['status']);
+        self::assertSame('approved', $detail['json']['data']['status']);
+        self::assertNotEmpty($detail['json']['data']['timeline']);
+
+        $admin = $this->createUser('admin-returns-'.Str::random(6).'@example.test');
+        $this->assignRole($admin, RoleCodes::Admin);
+        $adminToken = $this->issueAccessTokenForUser($admin);
+        $adminQueue = $this->legacyApiJson('GET', '/api/v1/admin/returns', token: $adminToken);
+        self::assertSame(200, $adminQueue['status']);
+        self::assertNotEmpty($adminQueue['json']['data']['items']);
+
+        $analytics = $this->legacyApiJson('GET', '/api/v1/admin/returns/analytics', token: $adminToken);
+        self::assertSame(200, $analytics['status']);
+        self::assertArrayHasKey('status_counts', $analytics['json']['data']);
+
+        $submitRefund = $this->legacyApiJson('POST', '/api/v1/admin/returns/'.$returnId.'/refund/submit', [
+            'amount' => '89.0000',
+        ], $adminToken);
+        self::assertSame(200, $submitRefund['status']);
+        self::assertSame('submitted', $submitRefund['json']['data']['refund_status']);
+
+        $confirmRefund = $this->legacyApiJson('POST', '/api/v1/admin/returns/'.$returnId.'/refund/confirm', [], $adminToken);
+        self::assertSame(200, $confirmRefund['status']);
+        self::assertSame('refunded', $confirmRefund['json']['data']['status']);
+        self::assertSame('confirmed', $confirmRefund['json']['data']['refund_status']);
+
+        $escalateOrder = $this->seedOrder(OrderStatus::Completed, '45.0000', $buyer, $sellerProfile)[2];
+        $escalateOrder->forceFill(['completed_at' => now()->subDays(1)])->save();
+        $escalateCreate = $this->legacyApiJson('POST', '/api/v1/returns', [
+            'order_id' => $escalateOrder->id,
+            'reason_code' => 'quality_issue',
+        ], $buyerToken);
+        self::assertSame(201, $escalateCreate['status']);
+        $escalatedId = (int) $escalateCreate['json']['data']['id'];
+        $escalated = $this->legacyApiJson('POST', '/api/v1/admin/returns/'.$escalatedId.'/escalate', ['note' => 'SLA breach risk'], $adminToken);
+        self::assertSame(200, $escalated['status']);
+        self::assertSame('escalated', $escalated['json']['data']['status']);
+
+        ReturnRequest::query()->whereKey($escalatedId)->update([
+            'status' => 'requested',
+            'sla_due_at' => now()->subHours(1),
+        ]);
+        $autoEscalate = $this->legacyApiJson('POST', '/api/v1/admin/returns/auto-escalate', [], $adminToken);
+        self::assertSame(200, $autoEscalate['status']);
+        self::assertGreaterThanOrEqual(1, (int) $autoEscalate['json']['data']['updated']);
+
+        $oldOrder = $this->seedOrder(OrderStatus::Completed, '15.0000', $buyer, $sellerProfile)[2];
+        $oldOrder->forceFill(['completed_at' => now()->subDays(31)])->save();
+        $ineligible = $this->legacyApiJson('POST', '/api/v1/returns', [
+            'order_id' => $oldOrder->id,
+            'reason_code' => 'wrong_item',
+        ], $buyerToken);
+        self::assertSame(422, $ineligible['status']);
     }
 
     /**

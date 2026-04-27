@@ -67,11 +67,15 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
           context: context,
           builder: (BuildContext context) => AlertDialog(
             title: const Text('Sign out?'),
-            content: const Text('You will need to sign in again to access the platform.'),
+            content: const Text(
+                'You will need to sign in again to access the platform.'),
             actions: <Widget>[
-              TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel')),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+                style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700),
                 onPressed: () => Navigator.of(context).pop(true),
                 child: const Text('Sign out'),
               ),
@@ -139,7 +143,9 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                OutlinedButton(onPressed: () => context.pop(), child: const Text('Go back')),
+                OutlinedButton(
+                    onPressed: () => context.pop(),
+                    child: const Text('Go back')),
               ],
             ),
           ),
@@ -148,14 +154,16 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
     }
 
     final p = _profile!;
-    final primaryRole = p.roleCodes.contains('admin') ? 'Administrator' : 'Adjudicator';
+    final primaryRole =
+        p.roleCodes.contains('admin') ? 'Administrator' : 'Adjudicator';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Staff profile'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => context.canPop() ? context.pop() : context.go('/profile'),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/profile'),
         ),
       ),
       body: ListView(
@@ -164,7 +172,8 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
           Card(
             elevation: 0,
             color: cs.primaryContainer.withValues(alpha: 0.35),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
@@ -172,18 +181,22 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
                   CircleAvatar(
                     radius: 32,
                     backgroundColor: cs.primary.withValues(alpha: 0.18),
-                    child: Icon(Icons.admin_panel_settings_rounded, size: 36, color: cs.primary),
+                    child: Icon(Icons.admin_panel_settings_rounded,
+                        size: 36, color: cs.primary),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(primaryRole, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(primaryRole,
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800)),
                         const SizedBox(height: 4),
                         Text(
                           'Signed in with platform privileges.',
-                          style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -193,17 +206,40 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          Text('Account', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          Text('Account',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          _InfoTile(icon: Icons.badge_outlined, label: 'User ID', value: '${p.id ?? '—'}'),
-          _InfoTile(icon: Icons.alternate_email, label: 'Email', value: p.email.isEmpty ? '—' : p.email),
-          _InfoTile(icon: Icons.phone_outlined, label: 'Phone', value: p.phone.isEmpty ? '—' : p.phone),
-          _InfoTile(icon: Icons.verified_user_outlined, label: 'Status', value: (p.raw['status'] ?? '—').toString()),
+          _InfoTile(
+              icon: Icons.badge_outlined,
+              label: 'User ID',
+              value: '${p.id ?? '—'}'),
+          _InfoTile(
+              icon: Icons.alternate_email,
+              label: 'Email',
+              value: p.email.isEmpty ? '—' : p.email),
+          _InfoTile(
+              icon: Icons.phone_outlined,
+              label: 'Phone',
+              value: p.phone.isEmpty ? '—' : p.phone),
+          _InfoTile(
+              icon: Icons.verified_user_outlined,
+              label: 'Status',
+              value: (p.raw['status'] ?? '—').toString()),
           const SizedBox(height: 20),
-          Text('Roles', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          FilledButton.tonalIcon(
+            onPressed: () => context.push('/profile/admin/returns'),
+            icon: const Icon(Icons.assignment_return_rounded),
+            label: const Text('Open Returns Queue'),
+          ),
+          const SizedBox(height: 20),
+          Text('Roles',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           if (p.roleCodes.isEmpty)
-            Text('No roles returned for this account.', style: theme.textTheme.bodyMedium)
+            Text('No roles returned for this account.',
+                style: theme.textTheme.bodyMedium)
           else
             Wrap(
               spacing: 8,
@@ -259,8 +295,12 @@ class _InfoTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(label, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                Text(value, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+                Text(label,
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                Text(value,
+                    style: theme.textTheme.bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w600)),
               ],
             ),
           ),

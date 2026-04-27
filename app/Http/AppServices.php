@@ -12,6 +12,7 @@ use App\Services\Category\CategoryService;
 use App\Services\Dispute\DisputeService;
 use App\Services\Order\OrderService;
 use App\Services\Product\ProductService;
+use App\Services\Returns\ReturnService;
 use App\Services\UserSeller\UserSellerService;
 use App\Services\Withdrawal\WithdrawalService;
 use Symfony\Component\HttpFoundation\Request;
@@ -35,6 +36,8 @@ final class AppServices
     private ?ProductService $productService = null;
 
     private ?CategoryService $categoryService = null;
+
+    private ?ReturnService $returnService = null;
 
     private ?DomainGate $domainGate = null;
 
@@ -71,6 +74,11 @@ final class AppServices
     public function categoryService(): CategoryService
     {
         return $this->categoryService ??= new CategoryService();
+    }
+
+    public function returnService(): ReturnService
+    {
+        return $this->returnService ??= new ReturnService();
     }
 
     public function domainGate(): DomainGate

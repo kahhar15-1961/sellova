@@ -69,13 +69,23 @@ class _OrderDetailContent extends StatelessWidget {
                     child: Column(
                       children: <Widget>[
                         Text(
-                          order.orderNumber.startsWith('#') ? order.orderNumber : '#${order.orderNumber}',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: _kNavy),
+                          order.orderNumber.startsWith('#')
+                              ? order.orderNumber
+                              : '#${order.orderNumber}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(
+                                  fontWeight: FontWeight.w900, color: _kNavy),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Placed on $created',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  color: _kMuted, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -111,12 +121,16 @@ class _OrderDetailContent extends StatelessWidget {
               ),
             ),
             Container(
-              padding: EdgeInsets.fromLTRB(16, 10, 16, 14 + MediaQuery.paddingOf(context).bottom),
+              padding: EdgeInsets.fromLTRB(
+                  16, 10, 16, 14 + MediaQuery.paddingOf(context).bottom),
               decoration: BoxDecoration(
                 color: cs.surface.withValues(alpha: 0.95),
-                border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35))),
+                border: Border(
+                    top: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.35))),
               ),
-              child: stage == OrderUiStage.disputed || stage == OrderUiStage.cancelled
+              child: stage == OrderUiStage.disputed ||
+                      stage == OrderUiStage.cancelled
                   ? OutlinedButton(
                       onPressed: () {
                         final id = order.id;
@@ -136,47 +150,68 @@ class _OrderDetailContent extends StatelessWidget {
                       },
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        side: BorderSide(color: cs.primary.withValues(alpha: 0.4)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        side: BorderSide(
+                            color: cs.primary.withValues(alpha: 0.4)),
                       ),
                       child: Text(_ctaText(stage)),
                     )
-                  : FilledButton(
-                      onPressed: () {
-                        final id = order.id;
-                        if (id == null) {
-                          return;
-                        }
-                        switch (stage) {
-                          case OrderUiStage.toPay:
-                            HapticFeedback.lightImpact();
-                            context.push(_paymentRouteForOrder(order));
-                            break;
-                          case OrderUiStage.shipped:
-                          case OrderUiStage.delivered:
-                            HapticFeedback.lightImpact();
-                            context.push('/orders/$id/confirm-delivery');
-                            break;
-                          case OrderUiStage.completed:
-                            HapticFeedback.lightImpact();
-                            context.push('/orders/$id/review');
-                            break;
-                          case OrderUiStage.disputed:
-                          case OrderUiStage.cancelled:
-                            break;
-                          case OrderUiStage.escrow:
-                          case OrderUiStage.processing:
-                          case OrderUiStage.other:
-                            HapticFeedback.lightImpact();
-                            context.push('/orders/$id/chat');
-                            break;
-                        }
-                      },
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: Text(_ctaText(stage)),
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (stage == OrderUiStage.completed)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () {
+                                final id = order.id;
+                                if (id == null) return;
+                                HapticFeedback.selectionClick();
+                                context.push('/orders/$id/return-request');
+                              },
+                              child: const Text('Need return/refund?'),
+                            ),
+                          ),
+                        FilledButton(
+                          onPressed: () {
+                            final id = order.id;
+                            if (id == null) {
+                              return;
+                            }
+                            switch (stage) {
+                              case OrderUiStage.toPay:
+                                HapticFeedback.lightImpact();
+                                context.push(_paymentRouteForOrder(order));
+                                break;
+                              case OrderUiStage.shipped:
+                              case OrderUiStage.delivered:
+                                HapticFeedback.lightImpact();
+                                context.push('/orders/$id/confirm-delivery');
+                                break;
+                              case OrderUiStage.completed:
+                                HapticFeedback.lightImpact();
+                                context.push('/orders/$id/review');
+                                break;
+                              case OrderUiStage.disputed:
+                              case OrderUiStage.cancelled:
+                                break;
+                              case OrderUiStage.escrow:
+                              case OrderUiStage.processing:
+                              case OrderUiStage.other:
+                                HapticFeedback.lightImpact();
+                                context.push('/orders/$id/chat');
+                                break;
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: Text(_ctaText(stage)),
+                        ),
+                      ],
                     ),
             ),
           ],
@@ -214,7 +249,10 @@ class _HeroStateCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   style.title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: style.fg),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900, color: style.fg),
                 ),
               ),
             ],
@@ -228,11 +266,16 @@ class _HeroStateCard extends StatelessWidget {
                   height: 1.4,
                 ),
           ),
-          if (tracking != null && (stage == OrderUiStage.shipped || stage == OrderUiStage.delivered)) ...<Widget>[
+          if (tracking != null &&
+              (stage == OrderUiStage.shipped ||
+                  stage == OrderUiStage.delivered)) ...<Widget>[
             const SizedBox(height: 10),
             Text(
               'Tracking ID: $tracking',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: style.fg, fontWeight: FontWeight.w800),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: style.fg, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 10),
             FilledButton.tonal(
@@ -247,7 +290,8 @@ class _HeroStateCard extends StatelessWidget {
                 minimumSize: const Size(120, 36),
                 backgroundColor: cs.primary.withValues(alpha: 0.16),
                 foregroundColor: cs.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999)),
               ),
               child: const Text('Track Order'),
             ),
@@ -278,19 +322,28 @@ class _MilestoneTimeline extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35)),
+        border: Border.all(
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.35)),
       ),
       child: Column(
         children: List<Widget>.generate(labels.length, (i) {
           final done = i < currentStep;
           final active = i == currentStep;
-          final color = done || active ? (active ? const Color(0xFF4F46E5) : const Color(0xFF22C55E)) : const Color(0xFF94A3B8);
+          final color = done || active
+              ? (active ? const Color(0xFF4F46E5) : const Color(0xFF22C55E))
+              : const Color(0xFF94A3B8);
           return _TimelineRow(
             title: labels[i],
-            subtitle: _timelineDate(now.subtract(Duration(hours: (labels.length - i) * 2))),
+            subtitle: _timelineDate(
+                now.subtract(Duration(hours: (labels.length - i) * 2))),
             color: color,
             showLine: i < labels.length - 1,
-            state: done ? _PointState.done : (active ? _PointState.active : _PointState.pending),
+            state: done
+                ? _PointState.done
+                : (active ? _PointState.active : _PointState.pending),
           );
         }),
       ),
@@ -329,7 +382,9 @@ class _TimelineRow extends StatelessWidget {
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: state == _PointState.pending ? Colors.transparent : color,
+                    color: state == _PointState.pending
+                        ? Colors.transparent
+                        : color,
                     border: Border.all(color: color, width: 2),
                     shape: BoxShape.circle,
                   ),
@@ -359,12 +414,18 @@ class _TimelineRow extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: _kNavy),
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800, color: _kNavy),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -387,15 +448,21 @@ class _AmountCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35)),
+        border: Border.all(
+            color: Theme.of(context)
+                .colorScheme
+                .outlineVariant
+                .withValues(alpha: 0.35)),
       ),
       child: Column(
         children: <Widget>[
           _moneyRow(context, 'Total Amount', _totalMoney(order), true),
           const SizedBox(height: 10),
-          _moneyRow(context, 'Payment State', _humanize(order.paymentStatus), false),
+          _moneyRow(
+              context, 'Payment State', _humanize(order.paymentStatus), false),
           const SizedBox(height: 8),
-          _moneyRow(context, 'Escrow State', _humanize(order.escrowStatus), false),
+          _moneyRow(
+              context, 'Escrow State', _humanize(order.escrowStatus), false),
         ],
       ),
     );
@@ -411,7 +478,11 @@ class _ToPayStateSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = order.items;
     final first = items.isNotEmpty ? items.first : <String, dynamic>{};
-    final itemName = (first['title'] ?? first['name'] ?? first['product_name'] ?? 'Order item').toString();
+    final itemName = (first['title'] ??
+            first['name'] ??
+            first['product_name'] ??
+            'Order item')
+        .toString();
     final qty = ((first['quantity'] as num?)?.toInt() ?? 1).toString();
     final total = _totalMoney(order);
     return Column(
@@ -430,20 +501,32 @@ class _ToPayStateSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('Items (${items.isEmpty ? 1 : items.length})', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
+              Text('Items (${items.isEmpty ? 1 : items.length})',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                  border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   children: <Widget>[
                     Container(
                       width: 56,
                       height: 56,
-                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
+                      decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(10)),
                       child: const Icon(Icons.headphones_rounded),
                     ),
                     const SizedBox(width: 10),
@@ -451,22 +534,44 @@ class _ToPayStateSection extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(itemName, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700)),
+                          Text(itemName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 6),
-                          Text('Qty: $qty', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: _kMuted)),
+                          Text('Qty: $qty',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: _kMuted)),
                         ],
                       ),
                     ),
-                    Text(total, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+                    Text(total,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w900)),
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              Text('Payment Summary', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
+              Text('Payment Summary',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
               const SizedBox(height: 8),
               _moneyRow(context, 'Subtotal', total, false),
               const SizedBox(height: 8),
-              _moneyRow(context, 'Shipping', _moneyFromRaw(order.raw['shipping_amount'] ?? 0, order), false),
+              _moneyRow(
+                  context,
+                  'Shipping',
+                  _moneyFromRaw(order.raw['shipping_amount'] ?? 0, order),
+                  false),
               const Divider(height: 22),
               _moneyRow(context, 'Total', total, true),
             ],
@@ -484,7 +589,8 @@ class _DisputedStateSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disputeOpenedAt = _niceDateTime(_parseAnyDate(order.raw['disputed_at'] ?? order.raw['dispute_opened_at']));
+    final disputeOpenedAt = _niceDateTime(_parseAnyDate(
+        order.raw['disputed_at'] ?? order.raw['dispute_opened_at']));
     return Column(
       children: <Widget>[
         _DetailsCard(
@@ -502,18 +608,32 @@ class _DisputedStateSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('Issue', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
+              Text('Issue',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                  border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.4)),
                 ),
                 child: Text(
-                  (order.raw['dispute_reason'] ?? order.raw['reason'] ?? 'Item not as described.').toString(),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4),
+                  (order.raw['dispute_reason'] ??
+                          order.raw['reason'] ??
+                          'Item not as described.')
+                      .toString(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(height: 1.4),
                 ),
               ),
             ],
@@ -533,7 +653,8 @@ class _CancelledStateSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cancelledAt = _niceDateTime(_parseAnyDate(order.raw['cancelled_at'] ?? order.raw['canceled_at']));
+    final cancelledAt = _niceDateTime(
+        _parseAnyDate(order.raw['cancelled_at'] ?? order.raw['canceled_at']));
     return Column(
       children: <Widget>[
         _DetailsCard(
@@ -552,18 +673,32 @@ class _CancelledStateSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('Reason', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
+              Text('Reason',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                  border: Border.all(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.4)),
                 ),
                 child: Text(
-                  (order.raw['cancel_reason'] ?? order.raw['reason'] ?? 'Order was cancelled by the buyer.').toString(),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4),
+                  (order.raw['cancel_reason'] ??
+                          order.raw['reason'] ??
+                          'Order was cancelled by the buyer.')
+                      .toString(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(height: 1.4),
                 ),
               ),
             ],
@@ -596,20 +731,30 @@ class _DetailsCard extends StatelessWidget {
   }
 }
 
-Widget _moneyRow(BuildContext context, String label, String value, bool emphasize) {
+Widget _moneyRow(
+    BuildContext context, String label, String value, bool emphasize) {
   return Row(
     children: <Widget>[
       Expanded(
         child: Text(
           label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
         ),
       ),
       Text(
         value,
         style: emphasize
-            ? Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)
-            : Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800, color: _kNavy),
+            ? Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontWeight: FontWeight.w900, color: _kNavy)
+            : Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w800, color: _kNavy),
       ),
     ],
   );
@@ -712,22 +857,33 @@ String _ctaText(OrderUiStage stage) {
     OrderUiStage.completed => 'Rate & Review',
     OrderUiStage.disputed => 'View Dispute Details',
     OrderUiStage.cancelled => 'View Support',
-    OrderUiStage.escrow || OrderUiStage.processing || OrderUiStage.other => 'Contact Seller',
+    OrderUiStage.escrow ||
+    OrderUiStage.processing ||
+    OrderUiStage.other =>
+      'Contact Seller',
   };
 }
 
 String _humanize(String raw) {
   final s = raw.trim().toLowerCase();
   if (s.isEmpty || s == 'unavailable') return 'Not provided';
-  return s.split(RegExp(r'[_\s]+')).where((w) => w.isNotEmpty).map((w) => '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+  return s
+      .split(RegExp(r'[_\s]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
 }
 
 String _totalMoney(OrderDto order) {
   final currency = (order.raw['currency'] ?? '').toString().toUpperCase();
-  final total = order.raw['total_amount'] ?? order.raw['gross_amount'] ?? order.raw['net_amount'] ?? order.raw['total'];
+  final total = order.raw['total_amount'] ??
+      order.raw['gross_amount'] ??
+      order.raw['net_amount'] ??
+      order.raw['total'];
   if (total == null) return order.totalLabel;
   final n = num.tryParse(total.toString());
-  if (n == null) return currency.isEmpty ? total.toString() : '$currency $total';
+  if (n == null)
+    return currency.isEmpty ? total.toString() : '$currency $total';
   final t = n.toStringAsFixed(2);
   return currency == 'USD' ? '\$$t' : (currency.isEmpty ? t : '$currency $t');
 }
@@ -735,7 +891,20 @@ String _totalMoney(OrderDto order) {
 String _niceDateTime(DateTime? date) {
   if (date == null) return 'date unavailable';
   final d = date.toLocal();
-  const months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   final hour = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
   final min = d.minute.toString().padLeft(2, '0');
   final amPm = d.hour >= 12 ? 'PM' : 'AM';
@@ -745,28 +914,38 @@ String _niceDateTime(DateTime? date) {
 String _timelineDate(DateTime d) => _niceDateTime(d);
 
 String? _extractTracking(Map<String, dynamic> raw) {
-  final tracking = raw['tracking_number'] ?? raw['tracking_id'] ?? raw['tracking'];
+  final tracking =
+      raw['tracking_number'] ?? raw['tracking_id'] ?? raw['tracking'];
   final v = tracking?.toString().trim() ?? '';
   if (v.isEmpty) return null;
   return v;
 }
 
 String _paymentMethodLabel(OrderDto order) {
-  final raw = (order.raw['payment_method'] ?? order.raw['payment_channel'] ?? order.raw['payment_provider'] ?? '').toString();
+  final raw = (order.raw['payment_method'] ??
+          order.raw['payment_channel'] ??
+          order.raw['payment_provider'] ??
+          '')
+      .toString();
   if (raw.trim().isEmpty) return 'Not provided';
   return _humanize(raw);
 }
 
 String _paymentRouteForOrder(OrderDto order) {
-  final raw = (order.raw['payment_method'] ?? order.raw['payment_channel'] ?? '').toString().toLowerCase();
+  final raw =
+      (order.raw['payment_method'] ?? order.raw['payment_channel'] ?? '')
+          .toString()
+          .toLowerCase();
   if (raw.contains('bkash')) return '/checkout/payment/bkash';
   if (raw.contains('nagad')) return '/checkout/payment/nagad';
-  if (raw.contains('card') || raw.contains('visa') || raw.contains('master')) return '/checkout/payment/card';
+  if (raw.contains('card') || raw.contains('visa') || raw.contains('master'))
+    return '/checkout/payment/card';
   return '/checkout/payment';
 }
 
 int? _extractDisputeId(Map<String, dynamic> raw) {
-  return (raw['dispute_id'] as num?)?.toInt() ?? (raw['latest_dispute_id'] as num?)?.toInt();
+  return (raw['dispute_id'] as num?)?.toInt() ??
+      (raw['latest_dispute_id'] as num?)?.toInt();
 }
 
 DateTime? _parseAnyDate(dynamic raw) {

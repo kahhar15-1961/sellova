@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\DisputeController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\RealtimeAuthController;
+use App\Http\Controllers\Api\V1\ReturnController;
 use App\Http\Controllers\Api\V1\UserProfileController;
 use App\Http\Controllers\Api\V1\WithdrawalController;
 use Symfony\Component\HttpFoundation\Response;
@@ -43,6 +44,7 @@ final class ApiRouteRegistrar
         self::profileRoutes($routes, $app);
         self::chatRoutes($routes, $app);
         self::realtimeRoutes($routes, $app);
+        self::returnRoutes($routes, $app);
         self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
@@ -359,6 +361,146 @@ final class ApiRouteRegistrar
         $routes->add('api.v1.realtime.auth', new Route(
             '/api/v1/realtime/auth',
             ['_controller' => $c->authenticate(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+    }
+
+    private static function returnRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new ReturnController($app);
+        $routes->add('api.v1.returns.index', new Route(
+            '/api/v1/returns',
+            ['_controller' => $c->listBuyerReturns(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.returns.store', new Route(
+            '/api/v1/returns',
+            ['_controller' => $c->createBuyerReturn(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.returns.eligibility', new Route(
+            '/api/v1/orders/{orderId}/returns/eligibility',
+            ['_controller' => $c->eligibility(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.returns.show', new Route(
+            '/api/v1/returns/{returnRequestId}',
+            ['_controller' => $c->show(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.returns.index', new Route(
+            '/api/v1/seller/returns',
+            ['_controller' => $c->listSellerReturns(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.returns.decide', new Route(
+            '/api/v1/seller/returns/{returnRequestId}/decision',
+            ['_controller' => $c->decide(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.admin.returns.queue', new Route(
+            '/api/v1/admin/returns',
+            ['_controller' => $c->adminQueue(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.admin.returns.escalate', new Route(
+            '/api/v1/admin/returns/{returnRequestId}/escalate',
+            ['_controller' => $c->escalate(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.returns.analytics', new Route(
+            '/api/v1/admin/returns/analytics',
+            ['_controller' => $c->analytics(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.returns.shipped_back', new Route(
+            '/api/v1/returns/{returnRequestId}/shipped-back',
+            ['_controller' => $c->markBuyerShipped(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.returns.received', new Route(
+            '/api/v1/seller/returns/{returnRequestId}/received',
+            ['_controller' => $c->markSellerReceived(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.returns.refund.submit', new Route(
+            '/api/v1/admin/returns/{returnRequestId}/refund/submit',
+            ['_controller' => $c->submitRefund(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.returns.refund.confirm', new Route(
+            '/api/v1/admin/returns/{returnRequestId}/refund/confirm',
+            ['_controller' => $c->confirmRefund(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.returns.refund.fail', new Route(
+            '/api/v1/admin/returns/{returnRequestId}/refund/fail',
+            ['_controller' => $c->failRefund(...), '_auth' => true],
+            ['returnRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.returns.auto_escalate', new Route(
+            '/api/v1/admin/returns/auto-escalate',
+            ['_controller' => $c->autoEscalate(...), '_auth' => true],
             [],
             [],
             '',

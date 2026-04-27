@@ -21,7 +21,10 @@ import '../../features/orders/presentation/contact_seller_chat_screen.dart';
 import '../../features/orders/presentation/chat_inbox_screen.dart';
 import '../../features/orders/presentation/chat_thread_screen.dart';
 import '../../features/orders/presentation/track_order_screen.dart';
+import '../../features/orders/presentation/return_request_screen.dart';
+import '../../features/orders/presentation/return_detail_screen.dart';
 import '../../features/profile/presentation/admin_profile_screen.dart';
+import '../../features/profile/presentation/admin_returns_queue_screen.dart';
 import '../../features/profile/presentation/help_support_screen.dart';
 import '../../features/profile/presentation/my_profile_screen.dart';
 import '../../features/profile/presentation/my_reviews_screen.dart';
@@ -54,6 +57,7 @@ import '../../features/seller/presentation/seller_store_settings_screen.dart';
 import '../../features/seller/presentation/seller_shipping_settings_screen.dart';
 import '../../features/seller/presentation/seller_help_support_screen.dart';
 import '../../features/seller/presentation/seller_bank_payment_methods_screen.dart';
+import '../../features/seller/presentation/seller_returns_queue_screen.dart';
 import '../../features/seller/presentation/seller_dispute_conversation_screen.dart';
 import '../../features/seller/presentation/seller_dispute_resolution_screen.dart';
 import '../../features/seller/presentation/seller_what_next_screen.dart';
@@ -88,7 +92,8 @@ import '../../features/withdrawals/presentation/withdrawal_list_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authSessionControllerProvider);
-  final lastRoute = ref.watch(navigationStatePersistenceProvider).loadLastRoute() ?? '/home';
+  final lastRoute =
+      ref.watch(navigationStatePersistenceProvider).loadLastRoute() ?? '/home';
 
   return GoRouter(
     initialLocation: '/splash',
@@ -137,6 +142,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const OrderListScreen(),
           ),
           GoRoute(
+            path: '/orders/:orderId/return-request',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['orderId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
+              }
+              return ReturnRequestScreen(orderId: id);
+            },
+          ),
+          GoRoute(
+            path: '/returns/:returnId',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['returnId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                    body: Center(child: Text('Invalid return ID')));
+              }
+              return ReturnDetailScreen(returnId: id);
+            },
+          ),
+          GoRoute(
             path: '/profile',
             builder: (_, __) => const MyProfileScreen(),
           ),
@@ -147,6 +174,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/profile/admin',
             builder: (_, __) => const AdminProfileScreen(),
+          ),
+          GoRoute(
+            path: '/profile/admin/returns',
+            builder: (_, __) => const AdminReturnsQueueScreen(),
           ),
           GoRoute(
             path: '/profile/help',
@@ -225,6 +256,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const SellerBankPaymentMethodsScreen(),
           ),
           GoRoute(
+            path: '/seller/returns',
+            builder: (_, __) => const SellerReturnsQueueScreen(),
+          ),
+          GoRoute(
             path: '/seller/orders',
             builder: (_, __) => const SellerOrdersScreen(),
           ),
@@ -238,14 +273,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/seller/products/add',
-            builder: (_, state) => SellerAddProductScreen(productType: state.uri.queryParameters['type'] ?? 'physical'),
+            builder: (_, state) => SellerAddProductScreen(
+                productType: state.uri.queryParameters['type'] ?? 'physical'),
           ),
           GoRoute(
             path: '/seller/products/:productId',
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['productId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid product ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid product ID')));
               }
               return SellerProductDetailScreen(productId: id);
             },
@@ -255,7 +292,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['productId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid product ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid product ID')));
               }
               return SellerEditProductScreen(productId: id);
             },
@@ -277,7 +315,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['movementId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid movement ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid movement ID')));
               }
               return SellerInventoryMovementDetailScreen(movementId: id);
             },
@@ -285,9 +324,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/seller/inventory/add-stock-in',
             builder: (_, state) {
-              final id = int.tryParse(state.uri.queryParameters['productId'] ?? '');
+              final id =
+                  int.tryParse(state.uri.queryParameters['productId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid product ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid product ID')));
               }
               return SellerAddStockInScreen(productId: id);
             },
@@ -295,9 +336,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/seller/inventory/add-stock-out',
             builder: (_, state) {
-              final id = int.tryParse(state.uri.queryParameters['productId'] ?? '');
+              final id =
+                  int.tryParse(state.uri.queryParameters['productId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid product ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid product ID')));
               }
               return SellerAddStockOutScreen(productId: id);
             },
@@ -305,9 +348,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/seller/inventory/add-adjustment',
             builder: (_, state) {
-              final id = int.tryParse(state.uri.queryParameters['productId'] ?? '');
+              final id =
+                  int.tryParse(state.uri.queryParameters['productId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid product ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid product ID')));
               }
               return SellerAddAdjustmentScreen(productId: id);
             },
@@ -321,7 +366,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return SellerOrderDetailScreen(orderId: id);
             },
@@ -331,7 +377,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return SellerOrderChatScreen(orderId: id);
             },
@@ -341,7 +388,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const MaterialPage<void>(child: Scaffold(body: Center(child: Text('Invalid order ID'))));
+                return const MaterialPage<void>(
+                    child: Scaffold(
+                        body: Center(child: Text('Invalid order ID'))));
               }
               return _sellerStepTransitionPage(
                 key: state.pageKey,
@@ -354,7 +403,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const MaterialPage<void>(child: Scaffold(body: Center(child: Text('Invalid order ID'))));
+                return const MaterialPage<void>(
+                    child: Scaffold(
+                        body: Center(child: Text('Invalid order ID'))));
               }
               return _sellerStepTransitionPage(
                 key: state.pageKey,
@@ -367,7 +418,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const MaterialPage<void>(child: Scaffold(body: Center(child: Text('Invalid order ID'))));
+                return const MaterialPage<void>(
+                    child: Scaffold(
+                        body: Center(child: Text('Invalid order ID'))));
               }
               return _sellerStepTransitionPage(
                 key: state.pageKey,
@@ -381,7 +434,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/seller/disputes/chat-seller',
-            builder: (_, __) => const SellerDisputeConversationScreen(sellerView: true),
+            builder: (_, __) =>
+                const SellerDisputeConversationScreen(sellerView: true),
           ),
           GoRoute(
             path: '/seller/disputes/resolution',
@@ -396,7 +450,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['disputeId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid dispute ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid dispute ID')));
               }
               return SellerDisputeDetailScreen(disputeId: id);
             },
@@ -406,7 +461,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['disputeId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid dispute ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid dispute ID')));
               }
               return SellerRespondDisputeScreen(disputeId: id);
             },
@@ -420,7 +476,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['reviewId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid review ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid review ID')));
               }
               return SellerReviewDetailScreen(reviewId: id);
             },
@@ -430,7 +487,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['reviewId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid review ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid review ID')));
               }
               return SellerReplyReviewScreen(reviewId: id);
             },
@@ -442,7 +500,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/disputes/create',
             builder: (_, state) {
-              final orderId = int.tryParse(state.uri.queryParameters['orderId'] ?? '');
+              final orderId =
+                  int.tryParse(state.uri.queryParameters['orderId'] ?? '');
               return CreateDisputeScreen(orderId: orderId);
             },
           ),
@@ -472,7 +531,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/addresses/edit',
-            builder: (_, state) => AddEditAddressScreen(addressId: state.uri.queryParameters['addressId']),
+            builder: (_, state) => AddEditAddressScreen(
+                addressId: state.uri.queryParameters['addressId']),
           ),
           GoRoute(
             path: '/checkout/promo',
@@ -493,11 +553,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/order-success',
             builder: (_, GoRouterState state) {
-              final orderId = state.uri.queryParameters['orderId'] ?? 'BS0000000000';
+              final orderId =
+                  state.uri.queryParameters['orderId'] ?? 'BS0000000000';
               final total = state.uri.queryParameters['total'] ?? '0.00';
-              final currency = (state.uri.queryParameters['currency'] ?? 'USD').toUpperCase();
-              final formatted = currency == 'USD' ? '\$$total' : '$currency $total';
-              return OrderSuccessScreen(orderId: orderId, totalFormatted: formatted);
+              final currency = (state.uri.queryParameters['currency'] ?? 'USD')
+                  .toUpperCase();
+              final formatted =
+                  currency == 'USD' ? '\$$total' : '$currency $total';
+              return OrderSuccessScreen(
+                  orderId: orderId, totalFormatted: formatted);
             },
           ),
           GoRoute(
@@ -507,7 +571,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/withdrawals/:withdrawalId',
             builder: (_, state) {
-              final id = int.tryParse(state.pathParameters['withdrawalId'] ?? '');
+              final id =
+                  int.tryParse(state.pathParameters['withdrawalId'] ?? '');
               if (id == null) {
                 return const Scaffold(
                   body: Center(child: Text('Invalid withdrawal ID')),
@@ -545,7 +610,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return RateReviewScreen(orderId: id);
             },
@@ -555,7 +621,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return ConfirmDeliveryScreen(orderId: id);
             },
@@ -565,7 +632,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return ContactSellerChatScreen(orderId: id);
             },
@@ -579,7 +647,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['threadId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid thread ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid thread ID')));
               }
               final title = state.uri.queryParameters['title'] ?? 'Chat';
               return ChatThreadScreen(threadId: id, title: title);
@@ -590,7 +659,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
               if (id == null) {
-                return const Scaffold(body: Center(child: Text('Invalid order ID')));
+                return const Scaffold(
+                    body: Center(child: Text('Invalid order ID')));
               }
               return TrackOrderScreen(orderId: id);
             },
@@ -610,7 +680,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/storefronts/:storefrontId',
             builder: (_, state) {
-              final id = int.tryParse(state.pathParameters['storefrontId'] ?? '');
+              final id =
+                  int.tryParse(state.pathParameters['storefrontId'] ?? '');
               if (id == null) {
                 return const Scaffold(
                   body: Center(child: Text('Invalid storefront ID')),
@@ -659,8 +730,13 @@ CustomTransitionPage<void> _sellerStepTransitionPage({
     transitionDuration: const Duration(milliseconds: 220),
     reverseTransitionDuration: const Duration(milliseconds: 180),
     transitionsBuilder: (_, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
-      final slide = Tween<Offset>(begin: const Offset(0.03, 0), end: Offset.zero).animate(curved);
+      final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic);
+      final slide =
+          Tween<Offset>(begin: const Offset(0.03, 0), end: Offset.zero)
+              .animate(curved);
       final fade = Tween<double>(begin: 0.0, end: 1.0).animate(curved);
       return FadeTransition(
         opacity: fade,
