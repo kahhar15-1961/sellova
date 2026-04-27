@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { StatusBadge } from '@/components/admin/StatusBadge';
@@ -90,6 +90,17 @@ export default function EscalationShow({
         );
     };
 
+    useEffect(() => {
+        if (!errors.evidence_notes) return;
+        const firstIncomplete = mergedSteps.find((s) => s.status !== 'completed');
+        if (!firstIncomplete) return;
+        const selector = `input[data-step-evidence="${firstIncomplete.id}"]`;
+        const input = document.querySelector(selector);
+        if (!(input instanceof HTMLInputElement)) return;
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        input.focus();
+    }, [errors.evidence_notes, mergedSteps]);
+
     return (
         <AdminLayout>
             <Head title={header.title} />
@@ -161,6 +172,7 @@ export default function EscalationShow({
                                                     <div className="flex items-center gap-2">
                                                         <input
                                                             name="evidence_notes"
+                                                            data-step-evidence={s.id}
                                                             className="h-8 rounded-md border px-2 text-xs"
                                                             placeholder={s.evidence_required ? 'Evidence notes (required)' : 'Evidence notes'}
                                                             value={evidenceByStep[s.id] ?? ''}
