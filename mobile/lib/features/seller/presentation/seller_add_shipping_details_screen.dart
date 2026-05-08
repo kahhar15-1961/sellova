@@ -16,14 +16,12 @@ class SellerAddShippingDetailsScreen extends ConsumerStatefulWidget {
 class _SellerAddShippingDetailsScreenState extends ConsumerState<SellerAddShippingDetailsScreen> {
   final TextEditingController _courier = TextEditingController(text: 'Pathao');
   final TextEditingController _tracking = TextEditingController(text: 'PT123456789BD');
-  final TextEditingController _date = TextEditingController(text: '26 May 2025');
   final TextEditingController _note = TextEditingController(text: 'Package handed over to courier partner.');
 
   @override
   void dispose() {
     _courier.dispose();
     _tracking.dispose();
-    _date.dispose();
     _note.dispose();
     super.dispose();
   }
@@ -54,10 +52,6 @@ class _SellerAddShippingDetailsScreenState extends ConsumerState<SellerAddShippi
           const SizedBox(height: 6),
           TextField(controller: _tracking, decoration: const InputDecoration(border: OutlineInputBorder())),
           const SizedBox(height: 12),
-          const Text('Shipping Date'),
-          const SizedBox(height: 6),
-          TextField(controller: _date, decoration: const InputDecoration(border: OutlineInputBorder())),
-          const SizedBox(height: 12),
           const Text('Additional Note (Optional)'),
           const SizedBox(height: 6),
           TextField(controller: _note, maxLines: 4, maxLength: 200, decoration: const InputDecoration(border: OutlineInputBorder())),
@@ -75,7 +69,7 @@ class _SellerAddShippingDetailsScreenState extends ConsumerState<SellerAddShippi
                       note: _note.text.trim(),
                     );
                 if (context.mounted) {
-                  showSellerSuccessToast(context, 'Shipping details saved and order marked as shipped.');
+                  showSellerSuccessToast(context, 'Shipping details saved and order moved to shipped.');
                   context.go('/seller/orders/${widget.orderId}');
                 }
               } catch (_) {
@@ -84,7 +78,7 @@ class _SellerAddShippingDetailsScreenState extends ConsumerState<SellerAddShippi
                 }
               }
             },
-            child: const Text('Mark as Shipped'),
+            child: const Text('Save Shipping Details'),
           ),
           if (busy) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
         ],

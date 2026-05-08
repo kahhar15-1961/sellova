@@ -251,12 +251,23 @@ final class EscalationOperationsService
                 'target_id' => $incident->target_id,
                 'severity' => $incident->severity,
                 'status' => $incident->status,
+                'href' => $this->incidentHref($incident),
             ],
             'status' => 'sent',
             'sent_at' => now(),
         ]);
 
         $incident->forceFill(['last_notified_at' => now()])->save();
+    }
+
+    private function incidentHref(AdminEscalationIncident $incident): ?string
+    {
+        return match ($incident->queue_code) {
+            'seller_kyc' => route('admin.sellers.kyc.show', ['kyc' => $incident->target_id]),
+            'disputes' => route('admin.disputes.show', ['dispute' => $incident->target_id]),
+            'withdrawals' => route('admin.withdrawals.show', ['withdrawal' => $incident->target_id]),
+            default => route('admin.escalations.show', ['incident' => $incident->id]),
+        };
     }
 
     private function notifyComms(AdminEscalationIncident $incident, ?int $integrationId, string $eventType = 'admin.escalation.incident.opened'): void

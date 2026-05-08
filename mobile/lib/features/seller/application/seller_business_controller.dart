@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers/repository_providers.dart';
+import '../../../core/errors/api_exception.dart';
 import '../../../core/network/network_retry.dart';
 import '../../../core/telemetry/telemetry.dart';
 import 'seller_failure.dart';
@@ -13,7 +14,10 @@ class SellerBusinessState {
     required this.storeSettings,
     required this.shippingSettings,
     required this.payoutMethods,
+    required this.withdrawalSettings,
     required this.notifications,
+    this.sellerAccessChecked = false,
+    this.hasSellerProfile = false,
     this.isLoading = false,
     this.isSaving = false,
     this.failure,
@@ -23,7 +27,10 @@ class SellerBusinessState {
   final SellerStoreSettings storeSettings;
   final SellerShippingSettings shippingSettings;
   final List<SellerPayoutMethod> payoutMethods;
+  final SellerWithdrawalSettings withdrawalSettings;
   final List<SellerNotificationItem> notifications;
+  final bool sellerAccessChecked;
+  final bool hasSellerProfile;
   final bool isLoading;
   final bool isSaving;
   final SellerFailure? failure;
@@ -35,7 +42,10 @@ class SellerBusinessState {
     SellerStoreSettings? storeSettings,
     SellerShippingSettings? shippingSettings,
     List<SellerPayoutMethod>? payoutMethods,
+    SellerWithdrawalSettings? withdrawalSettings,
     List<SellerNotificationItem>? notifications,
+    bool? sellerAccessChecked,
+    bool? hasSellerProfile,
     bool? isLoading,
     bool? isSaving,
     SellerFailure? failure,
@@ -47,16 +57,21 @@ class SellerBusinessState {
       storeSettings: storeSettings ?? this.storeSettings,
       shippingSettings: shippingSettings ?? this.shippingSettings,
       payoutMethods: payoutMethods ?? this.payoutMethods,
+      withdrawalSettings: withdrawalSettings ?? this.withdrawalSettings,
       notifications: notifications ?? this.notifications,
+      sellerAccessChecked: sellerAccessChecked ?? this.sellerAccessChecked,
+      hasSellerProfile: hasSellerProfile ?? this.hasSellerProfile,
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
       failure: clearFailure ? null : (failure ?? this.failure),
-      successMessage: clearSuccess ? null : (successMessage ?? this.successMessage),
+      successMessage:
+          clearSuccess ? null : (successMessage ?? this.successMessage),
     );
   }
 }
 
-final sellerBusinessControllerProvider = NotifierProvider<SellerBusinessController, SellerBusinessState>(
+final sellerBusinessControllerProvider =
+    NotifierProvider<SellerBusinessController, SellerBusinessState>(
   SellerBusinessController.new,
 );
 
@@ -64,50 +79,36 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
   @override
   SellerBusinessState build() {
     Future<void>.microtask(load);
-    return SellerBusinessState(
-      storeSettings: const SellerStoreSettings(
-        storeName: 'Tech Haven',
-        storeDescription: 'We provide high quality electronic products with the best customer service.',
-        contactEmail: 'support@example.com',
-        contactPhone: '+880 1912-345678',
+    return const SellerBusinessState(
+      storeSettings: SellerStoreSettings(
+        storeName: '',
+        storeDescription:
+            'Store details will appear here after access is verified.',
+        contactEmail: '',
+        contactPhone: '',
       ),
-      shippingSettings: const SellerShippingSettings(
-        insideDhakaLabel: 'Inside Dhaka',
-        insideDhakaFee: 60,
-        outsideDhakaLabel: 'Outside Dhaka',
-        outsideDhakaFee: 120,
+      shippingSettings: SellerShippingSettings(
+        insideDhakaLabel: '',
+        insideDhakaFee: 0,
+        outsideDhakaLabel: '',
+        outsideDhakaFee: 0,
         cashOnDeliveryEnabled: true,
-        processingTimeLabel: '1-2 Business Days',
+        processingTimeLabel: '',
       ),
-      payoutMethods: const <SellerPayoutMethod>[
-        SellerPayoutMethod(
-          id: '1',
-          type: SellerPayoutMethodType.bkash,
-          accountName: 'Tech Haven',
-          accountNumberMasked: '01XXXXXXXXX',
-          providerName: 'bKash',
-          isDefault: true,
-        ),
-      ],
-      notifications: const <SellerNotificationItem>[
-        SellerNotificationItem(
-          id: 'n1',
-          title: 'New Order Received',
-          body: 'You have received a new order ORD-2025-000124',
-          timeAgoLabel: '2m ago',
-          kind: 'order',
-          read: false,
-        ),
-      ],
+      payoutMethods: <SellerPayoutMethod>[],
+      withdrawalSettings: SellerWithdrawalSettings.fallback,
+      notifications: <SellerNotificationItem>[],
     );
   }
 
-  SellerBusinessDataSource get _ds => ref.read(sellerBusinessDataSourceProvider);
+  SellerBusinessDataSource get _ds =>
+      ref.read(sellerBusinessDataSourceProvider);
   Telemetry get _telemetry => ref.read(telemetryProvider);
   SellerFormDraftStore get _drafts => ref.read(sellerFormDraftStoreProvider);
 
   Future<void> load() async {
-    state = state.copyWith(isLoading: true, clearFailure: true, clearSuccess: true);
+    state =
+        state.copyWith(isLoading: true, clearFailure: true, clearSuccess: true);
     _telemetry.record('seller.business.load_attempt');
     try {
       await runWithRetry(() async {
@@ -115,18 +116,23 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
           _ds.getStoreSettings(),
           _ds.getShippingSettings(),
           _ds.listPayoutMethods(),
+          _ds.getWithdrawalSettings(),
           _ds.listSellerNotifications(),
         ]);
         final store = results[0] as SellerStoreSettings;
         final shipping = results[1] as SellerShippingSettings;
         final payouts = results[2] as List<SellerPayoutMethod>;
-        final notifications = results[3] as List<SellerNotificationItem>;
+        final withdrawalSettings = results[3] as SellerWithdrawalSettings;
+        final notifications = results[4] as List<SellerNotificationItem>;
         state = state.copyWith(
           isLoading: false,
+          sellerAccessChecked: true,
+          hasSellerProfile: true,
           storeSettings: store,
           shippingSettings: shipping,
-          payoutMethods: payouts.isEmpty ? state.payoutMethods : payouts,
-          notifications: notifications.isEmpty ? state.notifications : notifications,
+          payoutMethods: payouts,
+          withdrawalSettings: withdrawalSettings,
+          notifications: notifications,
           clearFailure: true,
           clearSuccess: true,
         );
@@ -134,7 +140,38 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
       _telemetry.record('seller.business.load_success');
     } catch (error) {
       final failure = SellerFailure.from(error);
-      state = state.copyWith(isLoading: false, failure: failure, clearSuccess: true);
+      final clearedState = state.copyWith(
+        isLoading: false,
+        sellerAccessChecked: true,
+        hasSellerProfile: false,
+        storeSettings: const SellerStoreSettings(
+          storeName: '',
+          storeDescription: '',
+          contactEmail: '',
+          contactPhone: '',
+          addressLine: '',
+          city: '',
+          region: '',
+          postalCode: '',
+          country: '',
+          storeAddress: '',
+        ),
+        shippingSettings: const SellerShippingSettings(
+          insideDhakaLabel: '',
+          insideDhakaFee: 0,
+          outsideDhakaLabel: '',
+          outsideDhakaFee: 0,
+          cashOnDeliveryEnabled: false,
+          processingTimeLabel: '',
+        ),
+        payoutMethods: <SellerPayoutMethod>[],
+        withdrawalSettings: SellerWithdrawalSettings.fallback,
+        notifications: <SellerNotificationItem>[],
+        clearSuccess: true,
+      );
+      state = failure.type == ApiExceptionType.notFound
+          ? clearedState.copyWith(clearFailure: true)
+          : clearedState.copyWith(failure: failure);
       _telemetry.record('seller.business.load_failed', <String, Object?>{
         'type': failure.type?.name,
         'code': failure.code,
@@ -146,15 +183,36 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
   Future<void> saveStoreSettings({
     required String storeName,
     required String storeDescription,
+    String? storeLogoUrl,
+    String? bannerImageUrl,
+    String? contactEmail,
+    String? contactPhone,
+    String? addressLine,
+    String? city,
+    String? region,
+    String? postalCode,
+    String? country,
   }) async {
     final prev = state.storeSettings;
     final optimistic = SellerStoreSettings(
       storeName: storeName.trim(),
       storeDescription: storeDescription.trim(),
-      storeLogoUrl: prev.storeLogoUrl,
-      bannerImageUrl: prev.bannerImageUrl,
-      contactEmail: prev.contactEmail,
-      contactPhone: prev.contactPhone,
+      storeLogoUrl: storeLogoUrl ?? prev.storeLogoUrl,
+      bannerImageUrl: bannerImageUrl ?? prev.bannerImageUrl,
+      contactEmail: contactEmail?.trim() ?? prev.contactEmail,
+      contactPhone: contactPhone?.trim() ?? prev.contactPhone,
+      addressLine: addressLine?.trim() ?? prev.addressLine,
+      city: city?.trim() ?? prev.city,
+      region: region?.trim() ?? prev.region,
+      postalCode: postalCode?.trim() ?? prev.postalCode,
+      country: country?.trim() ?? prev.country,
+      storeAddress: _formatStoreAddress(
+        addressLine: addressLine?.trim() ?? prev.addressLine,
+        city: city?.trim() ?? prev.city,
+        region: region?.trim() ?? prev.region,
+        postalCode: postalCode?.trim() ?? prev.postalCode,
+        country: country?.trim() ?? prev.country,
+      ),
     );
     state = state.copyWith(
       storeSettings: optimistic,
@@ -166,16 +224,28 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     try {
       final updated = await runWithRetry(
         () => _ds.updateStoreSettings(
-              storeName: storeName.trim(),
-              storeDescription: storeDescription.trim(),
-            ),
+          storeName: storeName.trim(),
+          storeDescription: storeDescription.trim(),
+          storeLogoUrl: storeLogoUrl ?? prev.storeLogoUrl,
+          bannerImageUrl: bannerImageUrl ?? prev.bannerImageUrl,
+          contactEmail: contactEmail?.trim() ?? prev.contactEmail,
+          contactPhone: contactPhone?.trim() ?? prev.contactPhone,
+          addressLine: addressLine?.trim() ?? prev.addressLine,
+          city: city?.trim() ?? prev.city,
+          region: region?.trim() ?? prev.region,
+          postalCode: postalCode?.trim() ?? prev.postalCode,
+          country: country?.trim() ?? prev.country,
+        ),
         maxAttempts: 2,
       );
       state = state.copyWith(
         isSaving: false,
         storeSettings: updated.copyWith(
-          storeName: updated.storeName.isEmpty ? storeName.trim() : updated.storeName,
-          storeDescription: updated.storeDescription.isEmpty ? storeDescription.trim() : updated.storeDescription,
+          storeName:
+              updated.storeName.isEmpty ? storeName.trim() : updated.storeName,
+          storeDescription: updated.storeDescription.isEmpty
+              ? storeDescription.trim()
+              : updated.storeDescription,
         ),
         successMessage: 'Store settings saved.',
         clearFailure: true,
@@ -198,6 +268,19 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     }
   }
 
+  String _formatStoreAddress({
+    String? addressLine,
+    String? city,
+    String? region,
+    String? postalCode,
+    String? country,
+  }) {
+    return <String?>[addressLine, city, region, postalCode, country]
+        .map((value) => (value ?? '').trim())
+        .where((value) => value.isNotEmpty)
+        .join(', ');
+  }
+
   Future<void> saveShippingSettings(SellerShippingSettings next) async {
     final prev = state.shippingSettings;
     state = state.copyWith(
@@ -208,7 +291,8 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     );
     _telemetry.record('seller.shipping.save_attempt');
     try {
-      final updated = await runWithRetry(() => _ds.updateShippingSettings(next), maxAttempts: 2);
+      final updated = await runWithRetry(() => _ds.updateShippingSettings(next),
+          maxAttempts: 2);
       state = state.copyWith(
         isSaving: false,
         shippingSettings: updated,
@@ -237,6 +321,9 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     required String accountName,
     required String accountNumber,
     String? bankName,
+    String? branchName,
+    String? routingNumber,
+    String? accountType,
     bool asDefault = false,
   }) async {
     final prev = state.payoutMethods;
@@ -266,11 +353,14 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
         accountName: accountName.trim(),
         accountNumber: accountNumber.trim(),
         bankName: bankName,
+        branchName: branchName,
+        routingNumber: routingNumber,
+        accountType: accountType,
         asDefault: asDefault,
       );
       state = state.copyWith(
         isSaving: false,
-        payoutMethods: remote.isNotEmpty ? remote : optimistic,
+        payoutMethods: remote,
         successMessage: 'Payout method saved.',
         clearFailure: true,
       );
@@ -295,16 +385,21 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     required SellerPayoutMethodType type,
     required String accountNumber,
     required String amountText,
+    int? walletId,
+    String? currency,
   }) async {
-    state = state.copyWith(isSaving: true, clearFailure: true, clearSuccess: true);
+    state =
+        state.copyWith(isSaving: true, clearFailure: true, clearSuccess: true);
     _telemetry.record('seller.withdraw.request_attempt');
     try {
       await runWithRetry(
         () => _ds.requestWithdrawal(
-              methodType: type,
-              accountNumber: accountNumber.trim(),
-              amountText: amountText.trim(),
-            ),
+          methodType: type,
+          accountNumber: accountNumber.trim(),
+          amountText: amountText.trim(),
+          walletId: walletId,
+          currency: currency,
+        ),
         maxAttempts: 2,
       );
       state = state.copyWith(
@@ -328,9 +423,46 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
     }
   }
 
+  Future<void> deletePayoutMethod(String id) async {
+    final prev = state.payoutMethods;
+    state = state.copyWith(
+      payoutMethods: prev.where((method) => method.id != id).toList(),
+      isSaving: true,
+      clearFailure: true,
+      clearSuccess: true,
+    );
+    _telemetry.record('seller.payout.delete_attempt');
+    try {
+      final remote = await runWithRetry(
+        () => _ds.deletePayoutMethod(id),
+        maxAttempts: 2,
+      );
+      state = state.copyWith(
+        isSaving: false,
+        payoutMethods: remote,
+        successMessage: 'Payout method removed.',
+        clearFailure: true,
+      );
+      _telemetry.record('seller.payout.delete_success');
+    } catch (error) {
+      final failure = SellerFailure.from(error);
+      state = state.copyWith(
+        payoutMethods: prev,
+        isSaving: false,
+        failure: failure,
+      );
+      _telemetry.record('seller.payout.delete_failed', <String, Object?>{
+        'type': failure.type?.name,
+        'code': failure.code,
+      });
+    }
+  }
+
   void markNotificationRead(String id) {
     state = state.copyWith(
-      notifications: state.notifications.map((e) => e.id == id ? e.copyWith(read: true) : e).toList(),
+      notifications: state.notifications
+          .map((e) => e.id == id ? e.copyWith(read: true) : e)
+          .toList(),
     );
   }
 
@@ -344,7 +476,8 @@ class SellerBusinessController extends Notifier<SellerBusinessState> {
       await runWithRetry(() => _ds.markAllNotificationsRead());
       _telemetry.record('seller.notifications.mark_all_success');
     } catch (error) {
-      state = state.copyWith(notifications: prev, failure: SellerFailure.from(error));
+      state = state.copyWith(
+          notifications: prev, failure: SellerFailure.from(error));
       _telemetry.record('seller.notifications.mark_all_failed');
       _telemetry.record('seller.notifications.mark_all_rollback');
     }

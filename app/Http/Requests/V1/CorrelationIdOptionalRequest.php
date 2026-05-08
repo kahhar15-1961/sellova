@@ -13,12 +13,12 @@ use Symfony\Component\Validator\Constraints\Optional;
 use Symfony\Component\Validator\Constraints\Type;
 
 /**
- * Shared strict-but-minimal body for write endpoints that are not implemented yet.
+ * Shared strict-but-minimal body for write endpoints with optional notes.
  */
 final class CorrelationIdOptionalRequest extends AbstractValidatedRequest
 {
     /**
-     * @return array{correlation_id?: string}
+     * @return array{correlation_id?: string, note?: string}
      */
     public static function payload(Request $request): array
     {
@@ -30,6 +30,7 @@ final class CorrelationIdOptionalRequest extends AbstractValidatedRequest
         return new Collection([
             'fields' => [
                 'correlation_id' => new Optional([new Type('string'), new Length(max: 191)]),
+                'note' => new Optional([new Type('string'), new Length(max: 2000)]),
             ],
             'allowMissingFields' => true,
             'allowExtraFields' => false,

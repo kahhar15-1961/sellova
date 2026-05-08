@@ -14,9 +14,26 @@ enum OrderUiStage {
 
 OrderUiStage inferOrderUiStage(OrderDto order) {
   final primary = _fromStatusText(order.status);
+  final escrow = order.escrowStatus.toLowerCase().trim();
+  final escrowReleased = escrow.contains('released') ||
+      escrow.contains('settled') ||
+      escrow.contains('closed');
+
+  if (escrowReleased &&
+      (primary == OrderUiStage.shipped ||
+          primary == OrderUiStage.delivered ||
+          primary == OrderUiStage.completed)) {
+    return OrderUiStage.completed;
+  }
+
+  if (primary == OrderUiStage.escrow) {
+    if (escrow.contains('released') || escrow.contains('settled')) {
+      return OrderUiStage.processing;
+    }
+  }
   if (primary != OrderUiStage.other) return primary;
-  final escrow = _fromStatusText(order.escrowStatus);
-  if (escrow != OrderUiStage.other) return escrow;
+  final escrowStage = _fromStatusText(order.escrowStatus);
+  if (escrowStage != OrderUiStage.other) return escrowStage;
   return _fromStatusText(order.paymentStatus);
 }
 
@@ -25,11 +42,21 @@ OrderUiStage _fromStatusText(String text) {
   if (s.contains('disput')) return OrderUiStage.disputed;
   if (s.contains('cancel')) return OrderUiStage.cancelled;
   if (s.contains('complete')) return OrderUiStage.completed;
+  if (s.contains('buyer_review') || s.contains('delivery_submitted')) {
+    return OrderUiStage.delivered;
+  }
   if (s.contains('deliver')) return OrderUiStage.delivered;
   if (s.contains('ship')) return OrderUiStage.shipped;
-  if (s.contains('process') || s.contains('prepar')) return OrderUiStage.processing;
-  if (s.contains('escrow') || (s.contains('paid') && !s.contains('pending'))) return OrderUiStage.escrow;
-  if (s.contains('pending') || s.contains('to pay') || s.contains('unpaid') || s.contains('awaiting payment')) {
+  if (s.contains('process') || s.contains('prepar')) {
+    return OrderUiStage.processing;
+  }
+  if (s.contains('escrow') || (s.contains('paid') && !s.contains('pending'))) {
+    return OrderUiStage.escrow;
+  }
+  if (s.contains('pending') ||
+      s.contains('to pay') ||
+      s.contains('unpaid') ||
+      s.contains('awaiting payment')) {
     return OrderUiStage.toPay;
   }
   return OrderUiStage.other;

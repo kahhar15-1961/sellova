@@ -6,19 +6,24 @@ import '../application/seller_demo_controller.dart';
 import '../application/seller_inventory_controller.dart';
 import '../application/seller_product_controller.dart';
 import 'seller_feedback_widgets.dart';
+import 'seller_product_thumbnail.dart';
 
 class SellerAddStockOutScreen extends ConsumerStatefulWidget {
   const SellerAddStockOutScreen({super.key, required this.productId});
   final int productId;
 
   @override
-  ConsumerState<SellerAddStockOutScreen> createState() => _SellerAddStockOutScreenState();
+  ConsumerState<SellerAddStockOutScreen> createState() =>
+      _SellerAddStockOutScreenState();
 }
 
-class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScreen> {
+class _SellerAddStockOutScreenState
+    extends ConsumerState<SellerAddStockOutScreen> {
   final TextEditingController _quantity = TextEditingController(text: '1');
-  final TextEditingController _reason = TextEditingController(text: 'Manual deduction');
-  final TextEditingController _note = TextEditingController(text: 'Stock reduced manually after physical count.');
+  final TextEditingController _reason =
+      TextEditingController(text: 'Manual deduction');
+  final TextEditingController _note = TextEditingController(
+      text: 'Stock reduced manually after physical count.');
   String _warehouse = 'Main Warehouse';
 
   @override
@@ -32,9 +37,16 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(sellerBusyProvider);
-    final product = ref.watch(sellerProductsProvider.notifier).byId(widget.productId);
-    if (product == null) return const Scaffold(body: Center(child: Text('Product not found')));
-    final currentWarehouseStock = product.warehouseStocks[_warehouse] ?? 0;
+    final product =
+        ref.watch(sellerProductsProvider.notifier).byId(widget.productId);
+    if (product == null) {
+      return const Scaffold(body: Center(child: Text('Product not found')));
+    }
+    final warehouseNames = ref.watch(sellerWarehouseProvider.notifier).names();
+    final selectedWarehouse =
+        warehouseNames.contains(_warehouse) ? _warehouse : warehouseNames.first;
+    final currentWarehouseStock =
+        product.warehouseStocks[selectedWarehouse] ?? 0;
     return Scaffold(
       appBar: AppBar(title: const Text('Add Stock Out')),
       body: ListView(
@@ -42,19 +54,28 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
         children: <Widget>[
           ListTile(
             contentPadding: const EdgeInsets.all(12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
-            leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
-            title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text('SKU: ${product.sku}\nCurrent Stock: $currentWarehouseStock'),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant)),
+            leading: SellerProductThumbnail(product: product, size: 64),
+            title: Text(product.name,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text(
+                'SKU: ${product.sku}\nCurrent Stock: $currentWarehouseStock'),
           ),
           const SizedBox(height: 10),
-          _warehouseField(),
+          _warehouseField(selectedWarehouse, warehouseNames),
           _line('Quantity Out', _quantity.text, editable: _quantity),
           _line('Reason', _reason.text, editable: _reason),
           const SizedBox(height: 10),
           const Text('Notes (Optional)'),
           const SizedBox(height: 6),
-          TextField(controller: _note, maxLines: 4, maxLength: 200, decoration: const InputDecoration(border: OutlineInputBorder())),
+          TextField(
+              controller: _note,
+              maxLines: 4,
+              maxLength: 200,
+              decoration: const InputDecoration(border: OutlineInputBorder())),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: busy
@@ -62,22 +83,27 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
                 : () async {
                     final q = int.tryParse(_quantity.text.trim());
                     if (q == null || q <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter valid stock-out quantity.')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Enter valid stock-out quantity.')));
                       return;
                     }
                     if (q > currentWarehouseStock) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Quantity exceeds current stock.')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Quantity exceeds current stock.')));
                       return;
                     }
-                    await ref.read(sellerInventoryProvider.notifier).addStockOut(
+                    await ref
+                        .read(sellerInventoryProvider.notifier)
+                        .addStockOut(
                           product: product,
                           quantity: q,
-                          warehouse: _warehouse,
+                          warehouse: selectedWarehouse,
                           reason: _reason.text.trim(),
                           note: _note.text.trim(),
                         );
                     if (context.mounted) {
-                      showSellerSuccessToast(context, 'Stock out saved successfully.');
+                      showSellerSuccessToast(
+                          context, 'Stock out saved successfully.');
                       context.go('/seller/inventory/history');
                     }
                   },
@@ -88,15 +114,20 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
     );
   }
 
-  Widget _warehouseField() {
+  Widget _warehouseField(
+      String selectedWarehouse, List<String> warehouseNames) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: <Widget>[
-          const Expanded(child: Text('Warehouse', style: TextStyle(color: Colors.black54))),
+          const Expanded(
+              child:
+                  Text('Warehouse', style: TextStyle(color: Colors.black54))),
           DropdownButton<String>(
-            value: _warehouse,
-            items: kSellerWarehouses.where((e) => e != 'All Warehouses').map((e) => DropdownMenuItem<String>(value: e, child: Text(e))).toList(),
+            value: selectedWarehouse,
+            items: warehouseNames
+                .map((e) => DropdownMenuItem<String>(value: e, child: Text(e)))
+                .toList(),
             onChanged: (v) {
               if (v != null) setState(() => _warehouse = v);
             },
@@ -111,7 +142,8 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: <Widget>[
-          Expanded(child: Text(k, style: const TextStyle(color: Colors.black54))),
+          Expanded(
+              child: Text(k, style: const TextStyle(color: Colors.black54))),
           if (editable == null)
             Text(v, style: const TextStyle(fontWeight: FontWeight.w700))
           else
@@ -122,7 +154,8 @@ class _SellerAddStockOutScreenState extends ConsumerState<SellerAddStockOutScree
                 textAlign: TextAlign.right,
                 keyboardType: TextInputType.number,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    isDense: true, border: OutlineInputBorder()),
               ),
             ),
         ],

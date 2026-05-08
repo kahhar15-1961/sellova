@@ -100,14 +100,22 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
 
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Staff profile')),
+        appBar: AppBar(
+          backgroundColor: Colors.white.withValues(alpha: 0.94),
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Staff'),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Staff profile')),
+        appBar: AppBar(
+          backgroundColor: Colors.white.withValues(alpha: 0.94),
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Staff'),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -128,7 +136,11 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
 
     if (!_allowed) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Staff profile')),
+        appBar: AppBar(
+          backgroundColor: Colors.white.withValues(alpha: 0.94),
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Staff'),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -138,14 +150,13 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
                 Icon(Icons.lock_outline, size: 48, color: cs.outline),
                 const SizedBox(height: 12),
                 Text(
-                  'This area is for platform staff (admin or adjudicator).',
+                  'Staff access only.',
                   style: theme.textTheme.titleMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
                 OutlinedButton(
-                    onPressed: () => context.pop(),
-                    child: const Text('Go back')),
+                    onPressed: () => context.pop(), child: const Text('Back')),
               ],
             ),
           ),
@@ -154,117 +165,126 @@ class _AdminProfileScreenState extends ConsumerState<AdminProfileScreen> {
     }
 
     final p = _profile!;
-    final primaryRole =
-        p.roleCodes.contains('admin') ? 'Administrator' : 'Adjudicator';
+    final primaryRole = p.roleCodes.contains('admin') ? 'Admin' : 'Adjudicator';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Staff profile'),
+        backgroundColor: Colors.white.withValues(alpha: 0.94),
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Staff'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () =>
               context.canPop() ? context.pop() : context.go('/profile'),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        children: <Widget>[
-          Card(
-            elevation: 0,
-            color: cs.primaryContainer.withValues(alpha: 0.35),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: <Widget>[
-                  CircleAvatar(
-                    radius: 32,
-                    backgroundColor: cs.primary.withValues(alpha: 0.18),
-                    child: Icon(Icons.admin_panel_settings_rounded,
-                        size: 36, color: cs.primary),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(primaryRole,
-                            style: theme.textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Signed in with platform privileges.',
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ],
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[Color(0xFFF7F8FC), Color(0xFFF3F5FA)],
+          ),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: <Widget>[
+            Card(
+              elevation: 0,
+              color: cs.primaryContainer.withValues(alpha: 0.28),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: <Widget>[
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: cs.primary.withValues(alpha: 0.15),
+                      child: Icon(Icons.admin_panel_settings_rounded,
+                          size: 36, color: cs.primary),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(primaryRole,
+                              style: theme.textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Access',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Text('Account',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          _InfoTile(
-              icon: Icons.badge_outlined,
-              label: 'User ID',
-              value: '${p.id ?? '—'}'),
-          _InfoTile(
-              icon: Icons.alternate_email,
-              label: 'Email',
-              value: p.email.isEmpty ? '—' : p.email),
-          _InfoTile(
-              icon: Icons.phone_outlined,
-              label: 'Phone',
-              value: p.phone.isEmpty ? '—' : p.phone),
-          _InfoTile(
-              icon: Icons.verified_user_outlined,
-              label: 'Status',
-              value: (p.raw['status'] ?? '—').toString()),
-          const SizedBox(height: 20),
-          FilledButton.tonalIcon(
-            onPressed: () => context.push('/profile/admin/returns'),
-            icon: const Icon(Icons.assignment_return_rounded),
-            label: const Text('Open Returns Queue'),
-          ),
-          const SizedBox(height: 20),
-          Text('Roles',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          if (p.roleCodes.isEmpty)
-            Text('No roles returned for this account.',
-                style: theme.textTheme.bodyMedium)
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: p.roleCodes
-                  .map(
-                    (String code) => Chip(
-                      label: Text(code),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  )
-                  .toList(),
+            const SizedBox(height: 20),
+            Text('Profile',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            _InfoTile(
+                icon: Icons.badge_outlined,
+                label: 'ID',
+                value: '${p.id ?? '—'}'),
+            _InfoTile(
+                icon: Icons.alternate_email,
+                label: 'Email',
+                value: p.email.isEmpty ? '—' : p.email),
+            _InfoTile(
+                icon: Icons.phone_outlined,
+                label: 'Phone',
+                value: p.phone.isEmpty ? '—' : p.phone),
+            _InfoTile(
+                icon: Icons.verified_user_outlined,
+                label: 'State',
+                value: (p.raw['status'] ?? '—').toString()),
+            const SizedBox(height: 20),
+            FilledButton.tonalIcon(
+              onPressed: () => context.push('/profile/admin/returns'),
+              icon: const Icon(Icons.assignment_return_rounded),
+              label: const Text('Returns'),
             ),
-          const SizedBox(height: 28),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(52),
+            const SizedBox(height: 20),
+            Text('Roles',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            if (p.roleCodes.isEmpty)
+              Text('No roles.', style: theme.textTheme.bodyMedium)
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: p.roleCodes
+                    .map(
+                      (String code) => Chip(
+                        label: Text(code),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                    .toList(),
+              ),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(52),
+              ),
+              onPressed: _logout,
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Sign out'),
             ),
-            onPressed: _logout,
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Sign out'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

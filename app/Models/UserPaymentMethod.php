@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property string $kind
  * @property string $label
  * @property string|null $subtitle
+ * @property array<string, mixed>|null $details_json
  * @property bool $is_default
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -30,6 +31,7 @@ class UserPaymentMethod extends Model
         'kind',
         'label',
         'subtitle',
+        'details_json',
         'is_default',
     ];
 
@@ -38,6 +40,7 @@ class UserPaymentMethod extends Model
         'kind' => 'string',
         'label' => 'string',
         'subtitle' => 'string',
+        'details_json' => 'array',
         'is_default' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -48,4 +51,3 @@ class UserPaymentMethod extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 }
-

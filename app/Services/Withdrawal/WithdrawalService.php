@@ -45,6 +45,7 @@ class WithdrawalService
 
     public function __construct(
         private readonly WalletLedgerService $walletLedgerService = new WalletLedgerService(),
+        private readonly WithdrawalSettingsService $settingsService = new WithdrawalSettingsService(),
     ) {
     }
 
@@ -125,6 +126,19 @@ class WithdrawalService
                 throw new WithdrawalValidationFailedException(null, 'withdrawal_nonzero_fee_not_supported', [
                     'fee_amount' => $feeStr,
                 ]);
+            }
+
+            $minimumScale = $this->toScale($this->settingsService->minimumAmount());
+            if ($requestedScale < $minimumScale) {
+                throw new WithdrawalValidationFailedException(
+                    null,
+                    'withdrawal_amount_below_minimum',
+                    [
+                        'minimum_withdrawal_amount' => $this->fromScale($minimumScale),
+                        'requested_amount' => $command->amount,
+                    ],
+                    'Withdrawal amount is below the platform minimum.',
+                );
             }
 
             $netScale = $requestedScale - $feeScale;

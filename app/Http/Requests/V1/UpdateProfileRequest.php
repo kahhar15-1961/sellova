@@ -28,6 +28,10 @@ final class UpdateProfileRequest extends AbstractValidatedRequest
     public static function toCommand(Request $request, int $userId): UpdateUserProfileCommand
     {
         $p = self::validate($request);
+        $displayName = isset($p['display_name']) ? trim((string) $p['display_name']) : null;
+        if ($displayName === '') {
+            $displayName = null;
+        }
         $email = isset($p['email']) ? trim((string) $p['email']) : null;
         if ($email === '') {
             $email = null;
@@ -44,7 +48,7 @@ final class UpdateProfileRequest extends AbstractValidatedRequest
         return new UpdateUserProfileCommand(
             $userId,
             new UserProfilePatch(
-                displayName: null,
+                displayName: $displayName,
                 email: $email,
                 phone: $phone,
                 passwordPlain: $passwordPlain,
@@ -56,6 +60,7 @@ final class UpdateProfileRequest extends AbstractValidatedRequest
     {
         return new Collection([
             'fields' => [
+                'display_name' => new Optional([new Type('string'), new Length(min: 1, max: 191)]),
                 'email' => new Optional([new Type('string'), new Email()]),
                 'phone' => new Optional([new Type('string'), new Length(max: 32)]),
                 'password' => new Optional([new Type('string'), new Length(min: 8, max: 1024)]),

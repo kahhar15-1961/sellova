@@ -50,7 +50,7 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
         self::assertSame(OrderStatus::PendingPayment, $order->status);
     }
 
-    public function test_mark_paid_posts_capture_funding_escrow_hold_and_sets_paid_in_escrow(): void
+    public function test_mark_paid_posts_capture_funding_escrow_hold_and_sets_escrow_funded(): void
     {
         [$order] = $this->seedSingleSellerOrder(OrderStatus::PendingPayment, '42.0000');
         [, $txn] = $this->seedCapturedPayment($order, '42.0000');
@@ -60,11 +60,11 @@ final class OrderServicePaymentOrchestrationTest extends TestCase
             paymentTransactionId: $txn->id,
             actorUserId: (int) $order->buyer_user_id,
         ));
-        self::assertSame('paid_in_escrow', $result['status']);
+        self::assertSame('escrow_funded', $result['status']);
         self::assertSame('held', $result['escrow_state']);
 
         $order->refresh();
-        self::assertSame(OrderStatus::PaidInEscrow, $order->status);
+        self::assertSame(OrderStatus::EscrowFunded, $order->status);
         self::assertNotNull($order->placed_at);
 
         $escrow = EscrowAccount::query()->where('order_id', $order->id)->firstOrFail();

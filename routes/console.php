@@ -25,6 +25,11 @@ Schedule::command('admin:comms-retries')
     ->withoutOverlapping()
     ->onOneServer();
 
+Schedule::command('escrow:timeouts')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 /*
 | Production: cron `* * * * * cd /path/to/app && php artisan schedule:run`
 | Then use `Illuminate\Support\Facades\Schedule` in this file (see Laravel docs).

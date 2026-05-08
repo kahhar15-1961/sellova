@@ -61,6 +61,7 @@ final class ChatController
             return [
                 'id' => (int) $thread->id,
                 'kind' => (string) $thread->kind,
+                'purpose' => (string) ($thread->purpose ?? 'conversation'),
                 'order_id' => $thread->order_id,
                 'subject' => (string) ($thread->subject ?? 'Chat'),
                 'status' => (string) $thread->status,
@@ -112,6 +113,7 @@ final class ChatController
             ['kind' => 'order', 'order_id' => $orderId],
             [
                 'uuid' => (string) Str::uuid(),
+                'purpose' => 'conversation',
                 'buyer_user_id' => (int) $order->buyer_user_id,
                 'seller_user_id' => (int) $sellerUserId,
                 'subject' => 'Order #'.($order->order_number ?? $order->id),
@@ -119,8 +121,85 @@ final class ChatController
                 'last_message_at' => now(),
             ]
         );
+        $this->syncOrderThreadParticipants($thread, $order, (int) $sellerUserId);
+
+        if ($isBuyer) {
+            $this->seedBuyerOrderSummaryMessage($thread, $order, (int) $actor->id, (int) $sellerUserId, $request);
+        }
 
         return ApiEnvelope::data(['thread_id' => (int) $thread->id]);
+    }
+
+    private function seedBuyerOrderSummaryMessage(
+        ChatThread $thread,
+        Order $order,
+        int $buyerUserId,
+        int $sellerUserId,
+        Request $request
+    ): void {
+        $exists = ChatMessage::query()
+            ->where('thread_id', $thread->id)
+            ->where('marker_type', 'buyer_order_summary')
+            ->exists();
+        if ($exists) {
+            return;
+        }
+
+        $order->loadMissing('orderItems');
+        $orderNumber = (string) ($order->order_number ?? ('ORD-'.$order->id));
+        $currency = strtoupper((string) ($order->currency ?? ''));
+        $total = trim($currency.' '.number_format((float) $order->net_amount, 2));
+        $productType = str_replace('_', ' ', (string) ($order->product_type ?? 'order'));
+        $lines = $order->orderItems
+            ->map(static function ($item): string {
+                $title = trim((string) ($item->title_snapshot ?? 'Item'));
+                $qty = (int) ($item->quantity ?? 1);
+                $lineTotal = number_format((float) $item->line_total_snapshot, 2);
+
+                return "- {$title} x {$qty} ({$lineTotal})";
+            })
+            ->values()
+            ->all();
+
+        $itemSummary = $lines === []
+            ? '- Order item details unavailable'
+            : implode("\n", $lines);
+
+        $body = implode("\n", [
+            "Hi, I just placed order #{$orderNumber}.",
+            'Please deliver it as soon as possible when escrow is ready.',
+            '',
+            "Type: {$productType}",
+            "Total: {$total}",
+            $itemSummary,
+        ]);
+
+        $message = ChatMessage::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'thread_id' => $thread->id,
+            'sender_user_id' => $buyerUserId,
+            'receiver_user_id' => $sellerUserId,
+            'sender_role' => 'buyer',
+            'body' => $body,
+            'marker_type' => 'buyer_order_summary',
+            'artifact_type' => 'order_summary',
+            'is_delivery_proof' => false,
+        ]);
+
+        $thread->last_message_at = now();
+        $thread->save();
+
+        ChatThreadRead::query()->updateOrCreate(
+            ['thread_id' => $thread->id, 'user_id' => $buyerUserId],
+            ['last_read_at' => now()]
+        );
+
+        event(new ChatMessageCreated(
+            threadId: (int) $thread->id,
+            message: [
+                ...$this->messagePayload($message, false, 'sent', $request),
+            ],
+        ));
     }
 
     public function listMessages(Request $request): Response
@@ -141,7 +220,7 @@ final class ChatController
             ->where('thread_id', $thread->id)
             ->orderBy('id')
             ->get()
-            ->map(function (ChatMessage $m) use ($actor, $counterpartyReadAt): array {
+            ->map(function (ChatMessage $m) use ($actor, $counterpartyReadAt, $request): array {
                 $fromMe = (int) $m->sender_user_id === (int) $actor->id;
                 $deliveryStatus = 'sent';
                 if ($fromMe) {
@@ -152,21 +231,59 @@ final class ChatController
                     }
                 }
 
-                return [
-                    'id' => (int) $m->id,
-                    'sender_user_id' => (int) $m->sender_user_id,
-                    'from_me' => $fromMe,
-                    'body' => (string) $m->body,
-                    'attachment_url' => $m->attachment_url,
-                    'attachment_name' => $m->attachment_name,
-                    'delivery_status' => $deliveryStatus,
-                    'created_at' => $m->created_at?->toIso8601String(),
-                ];
+                return $this->messagePayload($m, $fromMe, $deliveryStatus, $request);
             })
             ->values()
             ->all();
 
         return ApiEnvelope::data($messages);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function messagePayload(ChatMessage $m, bool $fromMe, string $deliveryStatus, Request $request): array
+    {
+        $attachmentUrl = $m->attachment_url;
+        $attachmentDataUrl = null;
+        $attachmentMime = $m->attachment_mime;
+        if ((string) $m->attachment_type === 'image'
+            && is_string($m->attachment_url)
+            && $m->attachment_url !== ''
+            && str_starts_with($m->attachment_url, '/')
+            && is_string($attachmentMime)
+            && $attachmentMime !== '') {
+            $localPath = public_path(ltrim($m->attachment_url, '/'));
+            if (is_file($localPath) && filesize($localPath) <= 10 * 1024 * 1024) {
+                $contents = file_get_contents($localPath);
+                if ($contents !== false) {
+                    $attachmentDataUrl = 'data:'.$attachmentMime.';base64,'.base64_encode($contents);
+                }
+            }
+        }
+        if (is_string($attachmentUrl) && $attachmentUrl !== '' && str_starts_with($attachmentUrl, '/')) {
+            $attachmentUrl = rtrim($request->getSchemeAndHttpHost(), '/').$attachmentUrl;
+        }
+
+        return [
+            'id' => (int) $m->id,
+            'sender_user_id' => (int) $m->sender_user_id,
+            'receiver_user_id' => $m->receiver_user_id !== null ? (int) $m->receiver_user_id : null,
+            'sender_role' => $m->sender_role,
+            'from_me' => $fromMe,
+            'body' => (string) $m->body,
+            'marker_type' => $m->marker_type,
+            'artifact_type' => $m->artifact_type,
+            'is_delivery_proof' => (bool) $m->is_delivery_proof,
+            'attachment_url' => $attachmentUrl,
+            'attachment_name' => $m->attachment_name,
+            'attachment_type' => $m->attachment_type,
+            'attachment_mime' => $attachmentMime,
+            'attachment_size' => $m->attachment_size !== null ? (int) $m->attachment_size : null,
+            'attachment_data_url' => $attachmentDataUrl,
+            'delivery_status' => $deliveryStatus,
+            'created_at' => $m->created_at?->toIso8601String(),
+        ];
     }
 
     public function setTyping(Request $request): Response
@@ -237,29 +354,106 @@ final class ChatController
         }
         $text = trim((string) (($body['body'] ?? '') ?: ''));
         $attachment = $request->files->get('attachment');
-        if (! $attachment instanceof UploadedFile && $text === '') {
+        $encodedAttachment = isset($body['attachment_base64']) ? trim((string) $body['attachment_base64']) : '';
+        if (! $attachment instanceof UploadedFile && $encodedAttachment === '' && $text === '') {
             throw new AuthValidationFailedException('validation_failed', ['body' => 'required_or_attachment']);
         }
         $attachmentUrl = null;
         $attachmentName = null;
+        $attachmentType = null;
+        $attachmentMime = null;
+        $attachmentSize = null;
+        $imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        $documentExtensions = ['pdf', 'txt', 'doc', 'docx', 'zip'];
+        $allowedExtensions = array_merge($imageExtensions, $documentExtensions);
+        $allowed = [
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'application/pdf',
+            'text/plain',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/zip',
+        ];
         if ($attachment instanceof UploadedFile) {
-            $name = Str::uuid()->toString().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $attachment->getClientOriginalName() ?: 'file');
+            if (! $attachment->isValid()) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'upload_failed']);
+            }
+            $attachmentSize = (int) ($attachment->getSize() ?? 0);
+            if ($attachmentSize <= 0 || $attachmentSize > 10 * 1024 * 1024) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'max_10mb']);
+            }
+            $originalName = (string) ($attachment->getClientOriginalName() ?: 'file');
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $attachmentMime = (string) ($attachment->getMimeType() ?: 'application/octet-stream');
+            if (! in_array($attachmentMime, $allowed, true) && ! in_array($extension, $allowedExtensions, true)) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'unsupported_file_type']);
+            }
+            $attachmentType = str_starts_with($attachmentMime, 'image/') || in_array($extension, $imageExtensions, true)
+                ? 'image'
+                : ($attachmentMime === 'application/pdf' || $extension === 'pdf' ? 'document' : 'file');
+            $name = Str::uuid()->toString().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
             $targetDir = public_path('uploads/chat');
             if (! is_dir($targetDir)) {
                 @mkdir($targetDir, 0755, true);
             }
             $attachment->move($targetDir, $name);
             $attachmentUrl = '/uploads/chat/'.$name;
-            $attachmentName = (string) $attachment->getClientOriginalName();
+            $attachmentName = $originalName;
+        } elseif ($encodedAttachment !== '') {
+            $originalName = (string) (($body['attachment_name'] ?? '') ?: 'file');
+            $originalName = preg_replace('/[^a-zA-Z0-9._ -]/', '_', $originalName) ?: 'file';
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $attachmentMime = (string) (($body['attachment_mime'] ?? '') ?: 'application/octet-stream');
+            if (str_starts_with($encodedAttachment, 'data:')) {
+                [, $encodedAttachment] = explode(',', $encodedAttachment, 2) + [1 => ''];
+            }
+            $decoded = base64_decode($encodedAttachment, true);
+            if ($decoded === false) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'invalid_file_data']);
+            }
+            $attachmentSize = strlen($decoded);
+            if ($attachmentSize <= 0 || $attachmentSize > 10 * 1024 * 1024) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'max_10mb']);
+            }
+            if (! in_array($attachmentMime, $allowed, true) && ! in_array($extension, $allowedExtensions, true)) {
+                throw new AuthValidationFailedException('validation_failed', ['attachment' => 'unsupported_file_type']);
+            }
+            $attachmentType = str_starts_with($attachmentMime, 'image/') || in_array($extension, $imageExtensions, true)
+                ? 'image'
+                : ($attachmentMime === 'application/pdf' || $extension === 'pdf' ? 'document' : 'file');
+            $name = Str::uuid()->toString().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
+            $targetDir = public_path('uploads/chat');
+            if (! is_dir($targetDir)) {
+                @mkdir($targetDir, 0755, true);
+            }
+            file_put_contents($targetDir.DIRECTORY_SEPARATOR.$name, $decoded);
+            $attachmentUrl = '/uploads/chat/'.$name;
+            $attachmentName = $originalName;
+        }
+        $counterpartyUserId = $this->counterpartyUserId($thread, (int) $actor->id);
+        $senderRole = (int) $thread->seller_user_id === (int) $actor->id
+            ? 'seller'
+            : ((int) $thread->buyer_user_id === (int) $actor->id ? 'buyer' : 'admin');
+        $isDeliveryProof = filter_var($body['is_delivery_proof'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $artifactType = isset($body['artifact_type']) ? trim((string) $body['artifact_type']) : null;
+        if ($artifactType === '') {
+            $artifactType = null;
         }
 
         $message = ChatMessage::query()->create([
             'uuid' => (string) Str::uuid(),
             'thread_id' => $thread->id,
             'sender_user_id' => $actor->id,
+            'receiver_user_id' => $counterpartyUserId,
+            'sender_role' => $senderRole,
             'body' => $text,
+            'artifact_type' => $artifactType,
+            'is_delivery_proof' => $isDeliveryProof,
             'attachment_url' => $attachmentUrl,
             'attachment_name' => $attachmentName,
+            'attachment_type' => $attachmentType,
+            'attachment_mime' => $attachmentMime,
+            'attachment_size' => $attachmentSize,
         ]);
 
         $thread->last_message_at = now();
@@ -273,27 +467,11 @@ final class ChatController
         event(new ChatMessageCreated(
             threadId: (int) $thread->id,
             message: [
-                'id' => (int) $message->id,
-                'sender_user_id' => (int) $message->sender_user_id,
-                'from_me' => false,
-                'body' => (string) $message->body,
-                'attachment_url' => $message->attachment_url,
-                'attachment_name' => $message->attachment_name,
-                'delivery_status' => 'sent',
-                'created_at' => $message->created_at?->toIso8601String(),
+                ...$this->messagePayload($message, false, 'sent', $request),
             ],
         ));
 
-        return ApiEnvelope::data([
-            'id' => (int) $message->id,
-            'sender_user_id' => (int) $message->sender_user_id,
-            'from_me' => true,
-            'body' => (string) $message->body,
-            'attachment_url' => $message->attachment_url,
-            'attachment_name' => $message->attachment_name,
-            'delivery_status' => 'sent',
-            'created_at' => $message->created_at?->toIso8601String(),
-        ], Response::HTTP_CREATED);
+        return ApiEnvelope::data($this->messagePayload($message, true, 'sent', $request), Response::HTTP_CREATED);
     }
 
     public function markThreadRead(Request $request): Response
@@ -327,6 +505,7 @@ final class ChatController
         $thread = ChatThread::query()->create([
             'uuid' => (string) Str::uuid(),
             'kind' => 'support',
+            'purpose' => 'conversation',
             'order_id' => null,
             'buyer_user_id' => (int) $actor->id,
             'seller_user_id' => null,
@@ -405,14 +584,54 @@ final class ChatController
             })
             ->first();
         if ($thread === null) {
+            /** @var ChatThread|null $candidate */
+            $candidate = ChatThread::query()->whereKey($threadId)->first();
+            if ($candidate !== null && $candidate->kind === 'order' && $candidate->order_id !== null) {
+                /** @var Order|null $order */
+                $order = Order::query()->whereKey((int) $candidate->order_id)->first();
+                $sellerUserId = $this->sellerUserForOrder((int) $candidate->order_id);
+                if ($order !== null
+                    && $sellerUserId !== null
+                    && ((int) $order->buyer_user_id === $actorUserId || (int) $sellerUserId === $actorUserId)) {
+                    $this->syncOrderThreadParticipants($candidate, $order, (int) $sellerUserId);
+
+                    return $candidate->fresh() ?? $candidate;
+                }
+            }
             throw new AuthValidationFailedException('not_found', ['thread_id' => $threadId]);
         }
 
         return $thread;
     }
 
+    private function syncOrderThreadParticipants(ChatThread $thread, Order $order, int $sellerUserId): void
+    {
+        $changed = false;
+        if ((int) $thread->buyer_user_id !== (int) $order->buyer_user_id) {
+            $thread->buyer_user_id = (int) $order->buyer_user_id;
+            $changed = true;
+        }
+        if ((int) ($thread->seller_user_id ?? 0) !== $sellerUserId) {
+            $thread->seller_user_id = $sellerUserId;
+            $changed = true;
+        }
+        $expectedSubject = 'Order #'.($order->order_number ?? $order->id);
+        if ((string) $thread->subject !== $expectedSubject) {
+            $thread->subject = $expectedSubject;
+            $changed = true;
+        }
+        if ($changed) {
+            $thread->save();
+        }
+    }
+
     private function sellerUserForOrder(int $orderId): ?int
     {
+        $frozenSellerId = Order::query()->whereKey($orderId)->value('seller_user_id');
+        if ($frozenSellerId !== null && (int) $frozenSellerId > 0) {
+            return (int) $frozenSellerId;
+        }
+
         $sellerProfileId = \App\Models\OrderItem::query()
             ->where('order_id', $orderId)
             ->orderBy('id')
@@ -462,6 +681,7 @@ final class ChatController
                 $table->id();
                 $table->string('uuid', 191)->nullable();
                 $table->string('kind', 32)->default('order');
+                $table->string('purpose', 32)->default('conversation');
                 $table->unsignedBigInteger('order_id')->nullable();
                 $table->unsignedBigInteger('buyer_user_id');
                 $table->unsignedBigInteger('seller_user_id')->nullable();
@@ -471,21 +691,58 @@ final class ChatController
                 $table->timestamps();
             });
         }
+        if (Schema::hasTable('chat_threads') && ! Schema::hasColumn('chat_threads', 'purpose')) {
+            Schema::table('chat_threads', function (Blueprint $table): void {
+                $table->string('purpose', 32)->default('conversation')->after('kind');
+            });
+        }
         if (! Schema::hasTable('chat_messages')) {
             Schema::create('chat_messages', function (Blueprint $table): void {
                 $table->id();
                 $table->string('uuid', 191)->nullable();
                 $table->unsignedBigInteger('thread_id');
                 $table->unsignedBigInteger('sender_user_id');
+                $table->unsignedBigInteger('receiver_user_id')->nullable();
+                $table->string('sender_role', 32)->nullable();
                 $table->text('body');
+                $table->string('marker_type', 64)->nullable();
+                $table->string('artifact_type', 64)->nullable();
+                $table->boolean('is_delivery_proof')->default(false);
                 $table->string('attachment_url', 512)->nullable();
                 $table->string('attachment_name', 191)->nullable();
+                $table->string('attachment_type', 32)->nullable();
+                $table->string('attachment_mime', 191)->nullable();
+                $table->unsignedBigInteger('attachment_size')->nullable();
                 $table->timestamps();
             });
         } elseif (! Schema::hasColumn('chat_messages', 'attachment_url')) {
             Schema::table('chat_messages', function (Blueprint $table): void {
                 $table->string('attachment_url', 512)->nullable()->after('body');
                 $table->string('attachment_name', 191)->nullable()->after('attachment_url');
+            });
+        }
+        if (Schema::hasTable('chat_messages') && ! Schema::hasColumn('chat_messages', 'marker_type')) {
+            Schema::table('chat_messages', function (Blueprint $table): void {
+                $table->string('marker_type', 64)->nullable()->after('body');
+                $table->string('artifact_type', 64)->nullable()->after('marker_type');
+                $table->boolean('is_delivery_proof')->default(false)->after('artifact_type');
+            });
+        }
+        if (Schema::hasTable('chat_messages') && ! Schema::hasColumn('chat_messages', 'receiver_user_id')) {
+            Schema::table('chat_messages', function (Blueprint $table): void {
+                $table->unsignedBigInteger('receiver_user_id')->nullable()->after('sender_user_id');
+            });
+        }
+        if (Schema::hasTable('chat_messages') && ! Schema::hasColumn('chat_messages', 'sender_role')) {
+            Schema::table('chat_messages', function (Blueprint $table): void {
+                $table->string('sender_role', 32)->nullable()->after('receiver_user_id');
+            });
+        }
+        if (Schema::hasTable('chat_messages') && ! Schema::hasColumn('chat_messages', 'attachment_type')) {
+            Schema::table('chat_messages', function (Blueprint $table): void {
+                $table->string('attachment_type', 32)->nullable()->after('attachment_name');
+                $table->string('attachment_mime', 191)->nullable()->after('attachment_type');
+                $table->unsignedBigInteger('attachment_size')->nullable()->after('attachment_mime');
             });
         }
         if (! Schema::hasTable('chat_thread_reads')) {
@@ -499,4 +756,3 @@ final class ChatController
         }
     }
 }
-

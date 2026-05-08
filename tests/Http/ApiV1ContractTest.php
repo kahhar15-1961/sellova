@@ -120,17 +120,128 @@ final class ApiV1ContractTest extends TestCase
         $this->assertPaginatedEnvelope($search, 200);
 
         $productShow = $this->legacyApiJson('GET', '/api/v1/products/'.$product->id);
-        $this->assertSuccessEnvelope($productShow, 200, ['id', 'title', 'status', 'currency', 'base_price']);
+        $this->assertSuccessEnvelope($productShow, 200, ['id', 'title', 'status', 'currency', 'base_price', 'seller_summary', 'review_summary']);
 
-        // orders: list/detail/mark-pending-payment/mark-paid
-        [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Draft, '35.0000');
+        $productCreate = $this->legacyApiJson('POST', '/api/v1/products', [
+            'title' => 'Contract Widget Write',
+            'currency' => 'USD',
+            'base_price' => '18.5000',
+            'category_id' => $category->id,
+            'product_type' => 'physical',
+            'description' => 'Created through the contract suite',
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($productCreate, 201, ['id', 'title', 'status', 'currency', 'base_price']);
+
+        $writeProductId = (int) $productCreate['json']['data']['id'];
+        $productUpdate = $this->legacyApiJson('PATCH', '/api/v1/products/'.$writeProductId, [
+            'title' => 'Contract Widget Write Updated',
+            'currency' => 'USD',
+            'base_price' => '22.5000',
+            'category_id' => $category->id,
+            'product_type' => 'physical',
+            'description' => 'Updated through the contract suite',
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($productUpdate, 200, ['id', 'title', 'status', 'currency', 'base_price']);
+
+        $productDelete = $this->legacyApiJson('DELETE', '/api/v1/products/'.$writeProductId, [
+            'correlation_id' => 'contract-delete-'.Str::random(8),
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($productDelete, 200, ['product_id', 'status', 'deleted']);
+
+        $sellerList = $this->legacyApiJson('GET', '/api/v1/seller/products', token: $sellerToken);
+        $this->assertPaginatedEnvelope($sellerList, 200);
+
+        $sellerCreate = $this->legacyApiJson('POST', '/api/v1/seller/products', [
+            'title' => 'Seller Contract Widget',
+            'currency' => 'USD',
+            'base_price' => '15.5000',
+            'category_id' => $category->id,
+            'stock' => 4,
+            'product_type' => 'physical',
+            'description' => 'Created through seller contract routes',
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($sellerCreate, 201, ['id', 'title', 'status', 'currency', 'base_price', 'stock']);
+
+        $sellerCreatedId = (int) $sellerCreate['json']['data']['id'];
+        $sellerUpdate = $this->legacyApiJson('PATCH', '/api/v1/seller/products/'.$sellerCreatedId, [
+            'title' => 'Seller Contract Widget Plus',
+            'currency' => 'USD',
+            'base_price' => '17.0000',
+            'category_id' => $category->id,
+            'stock' => 8,
+            'product_type' => 'physical',
+            'description' => 'Updated through seller contract routes',
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($sellerUpdate, 200, ['id', 'title', 'status', 'currency', 'base_price', 'stock']);
+
+        $sellerToggle = $this->legacyApiJson('POST', '/api/v1/seller/products/'.$sellerCreatedId.'/toggle', [
+            'active' => false,
+        ], $sellerToken);
+        $this->assertSuccessEnvelope($sellerToggle, 200, ['id', 'title', 'status', 'currency', 'base_price', 'stock']);
+
+        $sellerTokenForWrite = (string) $sellerReg['json']['data']['access_token'];
+        $productCreate = $this->legacyApiJson('POST', '/api/v1/products', [
+            'title' => 'Contract Widget',
+            'currency' => 'USD',
+            'base_price' => '14.9900',
+            'category_id' => $category->id,
+            'product_type' => 'physical',
+        ], $sellerTokenForWrite);
+        $this->assertSuccessEnvelope($productCreate, 201, ['id', 'title', 'status', 'currency', 'base_price']);
+
+        // orders: create/list/detail/mark-pending-payment/mark-paid/cancel
+        $buyer = $this->createUser('contract-order-buyer-'.Str::random(8).'@example.test');
         $buyerToken = $this->issueAccessTokenForUser($buyer);
+        $promoList = $this->legacyApiJson('GET', '/api/v1/promo-codes?subtotal=1200&currency=USD&shipping_method=standard', token: $buyerToken);
+        $this->assertSuccessEnvelope($promoList, 200, ['items']);
+        $this->assertNotEmpty($promoList['json']['data']['items']);
+
+        $promoValidate = $this->legacyApiJson('POST', '/api/v1/promo-codes/validate', [
+            'code' => 'WELCOME10',
+            'subtotal' => '1200.0000',
+            'shipping_fee' => '20.0000',
+            'currency' => 'USD',
+            'shipping_method' => 'standard',
+        ], $buyerToken);
+        $this->assertSuccessEnvelope($promoValidate, 200, ['actor_user_id', 'promo']);
+        $this->assertSame('WELCOME10', $promoValidate['json']['data']['promo']['code']);
+
+        $create = $this->legacyApiJson('POST', '/api/v1/orders', [
+            'correlation_id' => 'contract-create-'.Str::random(8),
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 2,
+                    'unit_price' => '600.0000',
+                    'currency' => 'USD',
+                ],
+            ],
+            'shipping_method' => 'standard',
+            'promo_code' => 'WELCOME10',
+        ], $buyerToken);
+        $this->assertSuccessEnvelope($create, 200, ['id', 'order_number', 'status', 'currency', 'net_amount', 'items']);
+        $createdOrderId = (int) $create['json']['data']['id'];
+        $this->assertSame('1200.0000', (string) $create['json']['data']['gross_amount']);
+        $this->assertSame('20.0000', (string) $create['json']['data']['fee_amount']);
+        $this->assertSame('25.0000', (string) $create['json']['data']['discount_amount']);
+        $this->assertSame('1195.0000', (string) $create['json']['data']['net_amount']);
+        $this->assertSame('WELCOME10', (string) $create['json']['data']['promo_code']);
+
+        $walletPay = $this->legacyApiJson('POST', '/api/v1/orders/'.$createdOrderId.'/pay/wallet', [
+            'correlation_id' => 'contract-wallet-pay-'.Str::random(8),
+        ], $buyerToken);
+        $this->assertSuccessEnvelope($walletPay, 200, ['id', 'status', 'currency', 'net_amount', 'items']);
+
+        [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Draft, '35.0000', $buyer);
 
         $orders = $this->legacyApiJson('GET', '/api/v1/orders?page=1&per_page=10', token: $buyerToken);
         $this->assertPaginatedEnvelope($orders, 200);
 
+        $createdOrderShow = $this->legacyApiJson('GET', '/api/v1/orders/'.$createdOrderId, token: $buyerToken);
+        $this->assertSuccessEnvelope($createdOrderShow, 200, ['id', 'status', 'currency', 'net_amount', 'items', 'promo_code', 'shipping_amount']);
+
         $orderShow = $this->legacyApiJson('GET', '/api/v1/orders/'.$order->id, token: $buyerToken);
-        $this->assertSuccessEnvelope($orderShow, 200, ['id', 'status', 'currency', 'net_amount']);
+        $this->assertSuccessEnvelope($orderShow, 200, ['id', 'status', 'currency', 'net_amount', 'shipping_amount']);
 
         $pending = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/mark-pending-payment', [], $buyerToken);
         $this->assertSuccessEnvelope($pending, 200, ['order_id', 'status']);
@@ -140,6 +251,27 @@ final class ApiV1ContractTest extends TestCase
             'payment_transaction_id' => $txn->id,
         ], $buyerToken);
         $this->assertSuccessEnvelope($paid, 200, ['order_id', 'status', 'escrow_account_id', 'escrow_state']);
+
+        [$cancelBuyer, , $cancelOrder] = $this->seedOrder(OrderStatus::Draft, '16.0000');
+        $cancelBuyerToken = $this->issueAccessTokenForUser($cancelBuyer);
+        $this->assertSuccessEnvelope(
+            $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/mark-pending-payment', [], $cancelBuyerToken),
+            200,
+            ['order_id', 'status']
+        );
+        [, $cancelTxn] = $this->seedCapturedPayment($cancelOrder, '16.0000');
+        $this->assertSuccessEnvelope(
+            $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/mark-paid', [
+                'payment_transaction_id' => $cancelTxn->id,
+            ], $cancelBuyerToken),
+            200,
+            ['order_id', 'status', 'escrow_account_id', 'escrow_state']
+        );
+        $cancel = $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/cancel', [
+            'reason' => 'Contract cancellation check',
+        ], $cancelBuyerToken);
+        $this->assertSuccessEnvelope($cancel, 200, ['id', 'status', 'can_cancel', 'cancel_reason', 'items']);
+        $this->assertSame('cancelled', $cancel['json']['data']['status']);
 
         // disputes: list/detail/open/evidence/move-to-review/escalate/resolve/*
         [$order1, $buyer1] = $this->seedPaidEscrowOrderForDisputes('40.0000');
@@ -459,9 +591,9 @@ final class ApiV1ContractTest extends TestCase
     /**
      * @return array{0: User, 1: SellerProfile, 2: Order}
      */
-    private function seedOrder(OrderStatus $status, string $netAmount): array
+    private function seedOrder(OrderStatus $status, string $netAmount, ?User $buyer = null): array
     {
-        $buyer = $this->createUser('contract-order-buyer-'.Str::random(6).'@example.test');
+        $buyer ??= $this->createUser('contract-order-buyer-'.Str::random(6).'@example.test');
         $sellerUser = $this->createUser('contract-order-seller-'.Str::random(6).'@example.test');
         $sellerProfile = SellerProfile::query()->create([
             'uuid' => (string) Str::uuid(),
@@ -478,6 +610,9 @@ final class ApiV1ContractTest extends TestCase
             'uuid' => (string) Str::uuid(),
             'order_number' => 'ORD-'.Str::upper(Str::random(10)),
             'buyer_user_id' => $buyer->id,
+            'seller_user_id' => $sellerUser->id,
+            'product_type' => 'physical',
+            'fulfillment_state' => 'not_started',
             'status' => $status,
             'currency' => 'USD',
             'gross_amount' => $netAmount,

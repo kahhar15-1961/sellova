@@ -144,7 +144,7 @@ export default function UsersIndex({ header, rows, pagination, filters, index_ur
                 </div>
 
                 <DataTableShell
-                    columns={['select', 'id', 'email', 'status', 'risk', 'roles', 'last_login']}
+                    columns={['select', 'id', 'email', 'buyer_profile', 'seller_profile', 'status', 'risk', 'roles', 'last_login']}
                     rows={rows.map((r) => ({ ...r, select: String(r.row_id ?? '') }))}
                     emptyTitle="No users"
                     renderers={{
@@ -162,6 +162,24 @@ export default function UsersIndex({ header, rows, pagination, filters, index_ur
                             <Link href={row.href} className="font-medium text-primary hover:underline">
                                 {String(value)}
                             </Link>
+                        ),
+                        buyer_profile: (value, row) => (
+                            row.buyer_href ? (
+                                <Link href={row.buyer_href} className="text-primary hover:underline">
+                                    {String(value)}
+                                </Link>
+                            ) : (
+                                <span className="text-muted-foreground">—</span>
+                            )
+                        ),
+                        seller_profile: (value, row) => (
+                            row.seller_href ? (
+                                <Link href={row.seller_href} className="text-primary hover:underline">
+                                    {String(value)}
+                                </Link>
+                            ) : (
+                                <span className="text-muted-foreground">—</span>
+                            )
                         ),
                         status: (value) => <StatusBadge status={String(value)} />,
                         last_login: (value) => <span className="text-muted-foreground">{fmtDate(value)}</span>,

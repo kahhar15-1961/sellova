@@ -22,6 +22,7 @@ use App\Models\SellerProfile;
 use App\Models\User;
 use App\Models\WalletHold;
 use App\Models\WithdrawalRequest;
+use App\Models\WithdrawalSetting;
 use App\Services\WalletLedger\WalletLedgerService;
 use App\Services\Withdrawal\WithdrawalService;
 use Illuminate\Support\Str;
@@ -34,6 +35,10 @@ final class WithdrawalServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        WithdrawalSetting::query()->create([
+            'minimum_withdrawal_amount' => '1.0000',
+            'currency' => 'USD',
+        ]);
         $this->wallet = new WalletLedgerService();
         $this->withdrawals = new WithdrawalService($this->wallet);
     }

@@ -75,11 +75,14 @@ class NotificationsController extends Notifier<NotificationsState> {
     await ref.read(profileExtrasRepositoryProvider).markNotificationRead(id);
     final nextItems = state.items.map((e) => e.id == id ? UserNotificationItem(
       id: e.id,
+      templateCode: e.templateCode,
       title: e.title,
       body: e.body,
       channel: e.channel,
       isRead: true,
       createdAt: e.createdAt,
+      href: e.href,
+      payload: e.payload,
     ) : e).toList();
     final unread = nextItems.where((e) => !e.isRead).length;
     state = state.copyWith(items: nextItems, unreadCount: unread);
@@ -90,11 +93,14 @@ class NotificationsController extends Notifier<NotificationsState> {
     final nextItems = state.items
         .map((e) => UserNotificationItem(
               id: e.id,
+              templateCode: e.templateCode,
               title: e.title,
               body: e.body,
               channel: e.channel,
               isRead: true,
               createdAt: e.createdAt,
+              href: e.href,
+              payload: e.payload,
             ))
         .toList();
     state = state.copyWith(items: nextItems, unreadCount: 0);
@@ -104,5 +110,19 @@ class NotificationsController extends Notifier<NotificationsState> {
     final saved = await ref.read(profileExtrasRepositoryProvider).updateNotificationPreferences(next);
     state = state.copyWith(preferences: saved);
   }
-}
 
+  void applyRealtimeNotification(Map<String, dynamic> notification, {int? unreadCount}) {
+    final item = UserNotificationItem.fromJson(notification);
+    final nextItems = <UserNotificationItem>[
+      item,
+      ...state.items.where((e) => e.id != item.id),
+    ];
+    final nextUnread = unreadCount ?? nextItems.where((e) => !e.isRead).length;
+    state = state.copyWith(
+      items: nextItems,
+      unreadCount: nextUnread,
+      loading: false,
+      error: null,
+    );
+  }
+}

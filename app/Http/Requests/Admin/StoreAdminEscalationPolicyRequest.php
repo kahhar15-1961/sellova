@@ -17,7 +17,7 @@ final class StoreAdminEscalationPolicyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'queue_code' => ['required', 'string', Rule::in(['disputes', 'withdrawals', 'approvals'])],
+            'queue_code' => ['required', 'string', Rule::in(['disputes', 'withdrawals', 'approvals', 'seller_kyc'])],
             'default_severity' => ['required', 'string', Rule::in(['medium', 'high', 'critical'])],
             'auto_assign_on_call' => ['required', 'boolean'],
             'on_call_role_code' => ['nullable', 'string', 'max:64'],

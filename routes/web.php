@@ -13,35 +13,47 @@ use App\Http\Controllers\Admin\AdminEscalationIncidentDetailController;
 use App\Http\Controllers\Admin\AdminEscalationPoliciesController;
 use App\Http\Controllers\Admin\AdminEscalationSloExportController;
 use App\Http\Controllers\Admin\AdminEscalationsInboxController;
+use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminRunbooksController;
 use App\Http\Controllers\Admin\AuditLogExportController;
 use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\AuditLogShowController;
+use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\BuyerRiskController;
 use App\Http\Controllers\Admin\BuyersController;
 use App\Http\Controllers\Admin\BuyerShowController;
+use App\Http\Controllers\Admin\CategoriesController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\DisputeAssignmentController;
 use App\Http\Controllers\Admin\DisputeDispositionController;
 use App\Http\Controllers\Admin\DisputesController;
 use App\Http\Controllers\Admin\DisputeShowController;
+use App\Http\Controllers\Admin\EscrowActionController;
 use App\Http\Controllers\Admin\EscrowsController;
+use App\Http\Controllers\Admin\EscrowShowController;
 use App\Http\Controllers\Admin\OrdersController;
 use App\Http\Controllers\Admin\OrderShowController;
 use App\Http\Controllers\Admin\ProductBulkModerationController;
 use App\Http\Controllers\Admin\ProductModerationController;
 use App\Http\Controllers\Admin\ProductsController;
 use App\Http\Controllers\Admin\ProductShowController;
+use App\Http\Controllers\Admin\PromotionsController;
 use App\Http\Controllers\Admin\SellerProfilesController;
 use App\Http\Controllers\Admin\SellerProfileShowController;
+use App\Http\Controllers\Admin\SellerVerificationAssignmentController;
 use App\Http\Controllers\Admin\SellerStoreStateController;
 use App\Http\Controllers\Admin\SellerVerificationController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\ShippingMethodsController;
+use App\Http\Controllers\Admin\PaymentGatewaysController;
 use App\Http\Controllers\Admin\UserBulkManagementController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\UsersController;
 use App\Http\Controllers\Admin\UserShowController;
+use App\Http\Controllers\Admin\WalletTopUpReviewController;
+use App\Http\Controllers\Admin\WalletTopUpShowController;
+use App\Http\Controllers\Admin\WalletTopUpsController;
 use App\Http\Controllers\Admin\WalletLedgerExportController;
 use App\Http\Controllers\Admin\WalletsController;
 use App\Http\Controllers\Admin\WalletShowController;
@@ -49,9 +61,33 @@ use App\Http\Controllers\Admin\WithdrawalAssignmentController;
 use App\Http\Controllers\Admin\WithdrawalReviewController;
 use App\Http\Controllers\Admin\WithdrawalsController;
 use App\Http\Controllers\Admin\WithdrawalShowController;
+use App\Http\Controllers\Web\MarketplaceController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', static fn () => redirect('/admin/dashboard'));
+Route::get('/', [MarketplaceController::class, 'home'])->name('web.home');
+Route::get('/buyer', [MarketplaceController::class, 'buyer'])->name('web.buyer');
+Route::get('/seller', [MarketplaceController::class, 'seller'])->name('web.seller');
+Route::get('/marketplace', [MarketplaceController::class, 'marketplace'])->name('web.marketplace');
+Route::get('/products/{productId}', [MarketplaceController::class, 'product'])->whereNumber('productId')->name('web.products.show');
+Route::get('/{view}', [MarketplaceController::class, 'buyerView'])
+    ->where('view', 'cart|checkout|orders|wishlist|profile|support')
+    ->name('web.buyer.view');
+Route::get('/seller/{view?}', [MarketplaceController::class, 'sellerView'])
+    ->where('view', 'dashboard|products|inventory|orders|payouts|delivery|offers|business|analytics|support')
+    ->name('web.seller.view');
+Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
+    Route::post('cart/add', [MarketplaceController::class, 'cartAdd'])->name('cart.add');
+    Route::post('cart/update', [MarketplaceController::class, 'cartUpdate'])->name('cart.update');
+    Route::post('checkout', [MarketplaceController::class, 'checkout'])->name('checkout');
+    Route::post('wishlist/toggle', [MarketplaceController::class, 'wishlistToggle'])->name('wishlist.toggle');
+    Route::post('seller/products', [MarketplaceController::class, 'sellerProductStore'])->name('seller.products.store');
+    Route::post('seller/inventory/adjust', [MarketplaceController::class, 'inventoryAdjust'])->name('seller.inventory.adjust');
+    Route::post('seller/coupons', [MarketplaceController::class, 'couponStore'])->name('seller.coupons.store');
+    Route::post('seller/payouts', [MarketplaceController::class, 'payoutRequestStore'])->name('seller.payouts.store');
+    Route::post('support/messages', [MarketplaceController::class, 'supportMessageStore'])->name('support.messages.store');
+    Route::post('profile', [MarketplaceController::class, 'profileUpdate'])->name('profile.update');
+    Route::post('business', [MarketplaceController::class, 'businessUpdate'])->name('business.update');
+});
 
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::middleware('guest')->group(function (): void {
@@ -129,6 +165,30 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::post('comms-integrations/test', [AdminCommsIntegrationsController::class, 'test'])
             ->name('comms-integrations.test')
             ->middleware('admin.permission:'.AdminPermission::ACCESS);
+        Route::get('access-control', [AccessControlController::class, 'index'])
+            ->name('access-control.index')
+            ;
+        Route::post('access-control/roles', [AccessControlController::class, 'store'])
+            ->name('access-control.roles.store')
+            ;
+        Route::post('access-control/roles/{role}', [AccessControlController::class, 'update'])
+            ->name('access-control.roles.update')
+            ;
+        Route::get('promotions', [PromotionsController::class, 'index'])
+            ->name('promotions.index')
+            ->middleware('admin.permission:'.AdminPermission::PROMOTIONS_MANAGE.','.AdminPermission::ACCESS);
+        Route::post('promotions', [PromotionsController::class, 'store'])
+            ->name('promotions.store')
+            ->middleware('admin.permission:'.AdminPermission::PROMOTIONS_MANAGE.','.AdminPermission::ACCESS);
+        Route::patch('promotions/{promotion}', [PromotionsController::class, 'update'])
+            ->name('promotions.update')
+            ->middleware('admin.permission:'.AdminPermission::PROMOTIONS_MANAGE.','.AdminPermission::ACCESS);
+        Route::post('promotions/{promotion}/toggle', [PromotionsController::class, 'toggle'])
+            ->name('promotions.toggle')
+            ->middleware('admin.permission:'.AdminPermission::PROMOTIONS_MANAGE.','.AdminPermission::ACCESS);
+        Route::delete('promotions/{promotion}', [PromotionsController::class, 'destroy'])
+            ->name('promotions.delete')
+            ->middleware('admin.permission:'.AdminPermission::PROMOTIONS_MANAGE.','.AdminPermission::ACCESS);
 
         Route::get('users', UsersController::class)
             ->name('users.index')
@@ -155,6 +215,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('sellers/kyc/documents/{document}/download', [SellerVerificationController::class, 'downloadDocument'])
             ->name('sellers.kyc.documents.download')
             ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
+        Route::get('sellers/export', [SellerVerificationController::class, 'export'])
+            ->name('sellers.export')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VIEW);
 
         Route::post('sellers/kyc/{kyc}/claim', [SellerVerificationController::class, 'claim'])
             ->name('sellers.kyc.claim')
@@ -162,6 +225,15 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
         Route::post('sellers/kyc/{kyc}/review', [SellerVerificationController::class, 'review'])
             ->name('sellers.kyc.review')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
+        Route::post('sellers/kyc/{kyc}/notes', [SellerVerificationController::class, 'storeNote'])
+            ->name('sellers.kyc.note')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
+        Route::post('sellers/kyc/{kyc}/reassign', [SellerVerificationAssignmentController::class, 'reassign'])
+            ->name('sellers.kyc.reassign')
+            ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
+        Route::post('sellers/kyc/bulk-claim', [SellerVerificationAssignmentController::class, 'bulkClaim'])
+            ->name('sellers.kyc.bulk-claim')
             ->middleware('admin.permission:'.AdminPermission::SELLERS_VERIFY);
 
         Route::get('sellers/kyc/{kyc}', [SellerVerificationController::class, 'show'])
@@ -184,6 +256,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('products', ProductsController::class)
             ->name('products.index')
             ->middleware('admin.permission:'.AdminPermission::PRODUCTS_VIEW);
+        Route::post('products', [ProductsController::class, 'store'])
+            ->name('products.store')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE);
+        Route::post('products/bulk-discount', [ProductsController::class, 'bulkDiscount'])
+            ->name('products.bulk-discount')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE);
         Route::get('products/{product}', ProductShowController::class)
             ->name('products.show')
             ->middleware('admin.permission:'.AdminPermission::PRODUCTS_VIEW);
@@ -193,6 +271,25 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::post('products/bulk-moderate', [ProductBulkModerationController::class, 'updateStatus'])
             ->name('products.bulk-moderate')
             ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE);
+
+        Route::get('categories', [CategoriesController::class, 'index'])
+            ->name('categories.index')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
+        Route::post('categories', [CategoriesController::class, 'store'])
+            ->name('categories.store')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
+        Route::patch('categories/{category}', [CategoriesController::class, 'update'])
+            ->name('categories.update')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
+        Route::post('categories/{category}/toggle', [CategoriesController::class, 'toggle'])
+            ->name('categories.toggle')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
+        Route::post('category-requests/{categoryRequest}/approve', [CategoriesController::class, 'approveRequest'])
+            ->name('category-requests.approve')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
+        Route::post('category-requests/{categoryRequest}/reject', [CategoriesController::class, 'rejectRequest'])
+            ->name('category-requests.reject')
+            ->middleware('admin.permission:'.AdminPermission::PRODUCTS_MODERATE.','.AdminPermission::ACCESS);
 
         Route::get('orders', OrdersController::class)
             ->name('orders.index')
@@ -205,6 +302,12 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('escrows', EscrowsController::class)
             ->name('escrows.index')
             ->middleware('admin.permission:'.AdminPermission::ESCROWS_VIEW);
+        Route::get('escrows/{escrow}', EscrowShowController::class)
+            ->name('escrows.show')
+            ->middleware('admin.permission:'.AdminPermission::ESCROWS_VIEW);
+        Route::post('escrows/{escrow}/action', [EscrowActionController::class, 'store'])
+            ->name('escrows.action')
+            ->middleware('admin.permission:'.AdminPermission::ESCROWS_MANAGE);
 
         Route::get('disputes', DisputesController::class)
             ->name('disputes.index')
@@ -255,9 +358,63 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('wallets/{wallet}/ledger-export', WalletLedgerExportController::class)
             ->name('wallets.ledger-export')
             ->middleware('admin.permission:'.AdminPermission::WALLETS_VIEW);
+        Route::get('wallet-top-ups', WalletTopUpsController::class)
+            ->name('wallet-top-ups.index')
+            ->middleware('admin.permission:'.AdminPermission::WALLETS_VIEW);
+        Route::get('wallet-top-ups/{walletTopUpRequest}', WalletTopUpShowController::class)
+            ->name('wallet-top-ups.show')
+            ->middleware('admin.permission:'.AdminPermission::WALLETS_VIEW);
+        Route::post('wallet-top-ups/{walletTopUpRequest}/review', [WalletTopUpReviewController::class, 'store'])
+            ->name('wallet-top-ups.review')
+            ->middleware('admin.permission:'.AdminPermission::WALLETS_MANAGE);
 
         Route::get('settings', SettingsController::class)
             ->name('settings.index')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_VIEW);
+        Route::get('shipping-methods', [ShippingMethodsController::class, 'index'])
+            ->name('shipping-methods.index')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE.','.AdminPermission::ACCESS);
+        Route::post('shipping-methods', [ShippingMethodsController::class, 'store'])
+            ->name('shipping-methods.store')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE.','.AdminPermission::ACCESS);
+        Route::patch('shipping-methods/{shippingMethod}', [ShippingMethodsController::class, 'update'])
+            ->name('shipping-methods.update')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE.','.AdminPermission::ACCESS);
+        Route::post('shipping-methods/{shippingMethod}/toggle', [ShippingMethodsController::class, 'toggle'])
+            ->name('shipping-methods.toggle')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE.','.AdminPermission::ACCESS);
+        Route::post('settings/push-notifications', [SettingsController::class, 'updatePush'])
+            ->name('settings.push-notifications.update')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/push-notifications/test', [SettingsController::class, 'testPush'])
+            ->name('settings.push-notifications.test')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/escrow-timeouts', [SettingsController::class, 'updateTimeouts'])
+            ->name('settings.escrow-timeouts.update')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/withdrawals', [SettingsController::class, 'updateWithdrawals'])
+            ->name('settings.withdrawals.update')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('notifications/read-all', [AdminNotificationController::class, 'markAllRead'])
+            ->name('notifications.read-all')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_VIEW);
+        Route::post('notifications/{notification}/read', [AdminNotificationController::class, 'markRead'])
+            ->name('notifications.read')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_VIEW);
+        Route::get('settings/payment-gateways', [PaymentGatewaysController::class, 'index'])
+            ->name('payment-gateways.index')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_VIEW);
+        Route::post('settings/payment-gateways', [PaymentGatewaysController::class, 'store'])
+            ->name('payment-gateways.store')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/payment-gateways/{paymentGateway}', [PaymentGatewaysController::class, 'update'])
+            ->name('payment-gateways.update')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/payment-gateways/{paymentGateway}/toggle', [PaymentGatewaysController::class, 'toggle'])
+            ->name('payment-gateways.toggle')
+            ->middleware('admin.permission:'.AdminPermission::SETTINGS_MANAGE);
+        Route::post('settings/payment-gateways/{paymentGateway}/test', [PaymentGatewaysController::class, 'test'])
+            ->name('payment-gateways.test')
             ->middleware('admin.permission:'.AdminPermission::SETTINGS_VIEW);
 
         Route::get('audit-logs', AuditLogsController::class)

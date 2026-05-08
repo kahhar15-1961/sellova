@@ -122,7 +122,7 @@ class _AddEditAddressScreenState extends ConsumerState<AddEditAddressScreen> {
             Row(
               children: <Widget>[
                 Expanded(child: _AddressField(label: 'City', hint: 'Dhaka', controller: _city)),
-                SizedBox(width: 10),
+                const SizedBox(width: 10),
                 Expanded(child: _AddressField(label: 'Postal Code', hint: '1205', controller: _postalCode)),
               ],
             ),

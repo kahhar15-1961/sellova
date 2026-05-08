@@ -10,7 +10,7 @@ use App\Models\User;
 final class OrderPolicy
 {
     /**
-     * Buyer, any seller on the order line items, or platform staff may inspect the order.
+     * Buyer, frozen seller owner, or platform staff may inspect the order.
      */
     public function view(User $actor, Order $order): bool
     {
@@ -18,7 +18,8 @@ final class OrderPolicy
             return true;
         }
 
-        return OrderParticipant::isParticipant($actor, $order);
+        return (int) $order->buyer_user_id === (int) $actor->id
+            || (int) ($order->seller_user_id ?? 0) === (int) $actor->id;
     }
 
     /**
@@ -30,7 +31,13 @@ final class OrderPolicy
             return false;
         }
 
-        return $order->status === OrderStatus::PaidInEscrow;
+        return in_array($order->status, [
+            OrderStatus::PaidInEscrow,
+            OrderStatus::EscrowFunded,
+            OrderStatus::Processing,
+            OrderStatus::DeliverySubmitted,
+            OrderStatus::BuyerReview,
+        ], true);
     }
 
     /**

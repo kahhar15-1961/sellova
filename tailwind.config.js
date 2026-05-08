@@ -13,7 +13,7 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['DM Sans', ...defaultTheme.fontFamily.sans],
+                sans: ['Plus Jakarta Sans', 'Inter', ...defaultTheme.fontFamily.sans],
             },
             colors: {
                 border: 'hsl(var(--border))',

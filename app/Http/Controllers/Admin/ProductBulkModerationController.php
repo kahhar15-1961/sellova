@@ -28,8 +28,12 @@ final class ProductBulkModerationController
         if ($selectAll) {
             $fq = trim((string) data_get($validated, 'filters.q', ''));
             $fStatus = trim((string) data_get($validated, 'filters.status', ''));
+            $fType = trim((string) data_get($validated, 'filters.type', ''));
             if ($fStatus !== '') {
                 $productsQuery->where('status', $fStatus);
+            }
+            if ($fType !== '') {
+                $productsQuery->where('product_type', $fType);
             }
             if ($fq !== '') {
                 $productsQuery->where(function ($w) use ($fq): void {

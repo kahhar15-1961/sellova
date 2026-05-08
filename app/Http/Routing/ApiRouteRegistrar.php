@@ -10,6 +10,10 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DisputeController;
 use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\PromotionAdminController;
+use App\Http\Controllers\Api\V1\PromoCodeController;
+use App\Http\Controllers\Api\V1\PaymentGatewayController;
+use App\Http\Controllers\Api\V1\SellerMediaController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\RealtimeAuthController;
 use App\Http\Controllers\Api\V1\ReturnController;
@@ -45,11 +49,15 @@ final class ApiRouteRegistrar
         self::chatRoutes($routes, $app);
         self::realtimeRoutes($routes, $app);
         self::returnRoutes($routes, $app);
+        self::promotionAdminRoutes($routes, $app);
+        self::promoCodeRoutes($routes, $app);
         self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
         self::disputeRoutes($routes, $app);
         self::withdrawalRoutes($routes, $app);
+        self::paymentGatewayRoutes($routes, $app);
+        self::sellerMediaRoutes($routes, $app);
     }
 
     private static function authRoutes(RouteCollection $routes, AppServices $app): void
@@ -150,6 +158,96 @@ final class ApiRouteRegistrar
             [],
             ['PATCH'],
         ));
+        $routes->add('api.v1.me.seller.store', new Route(
+            '/api/v1/me/seller',
+            ['_controller' => $c->createSeller(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.me.seller.kyc.store', new Route(
+            '/api/v1/me/seller/kyc',
+            ['_controller' => $c->submitSellerKyc(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.shipping_settings.show', new Route(
+            '/api/v1/seller/shipping/settings',
+            ['_controller' => $c->showSellerShippingSettings(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.shipping_settings.update', new Route(
+            '/api/v1/seller/shipping/settings',
+            ['_controller' => $c->updateSellerShippingSettings(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.seller.payout_methods.index', new Route(
+            '/api/v1/seller/payout-methods',
+            ['_controller' => $c->listSellerPayoutMethods(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.payout_methods.store', new Route(
+            '/api/v1/seller/payout-methods',
+            ['_controller' => $c->upsertSellerPayoutMethod(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.payout_methods.delete', new Route(
+            '/api/v1/seller/payout-methods/{payoutMethodId}',
+            ['_controller' => $c->deleteSellerPayoutMethod(...), '_auth' => true],
+            ['payoutMethodId' => '\d+'],
+            [],
+            '',
+            [],
+            ['DELETE'],
+        ));
+        $routes->add('api.v1.seller.notifications.index', new Route(
+            '/api/v1/seller/notifications',
+            ['_controller' => $c->listSellerNotifications(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.notifications.mark_all_read', new Route(
+            '/api/v1/seller/notifications/mark-all-read',
+            ['_controller' => $c->markAllSellerNotificationsRead(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.reviews.index', new Route(
+            '/api/v1/seller/reviews',
+            ['_controller' => $c->listSellerReviews(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
         $routes->add('api.v1.me.payment_methods.index', new Route(
             '/api/v1/me/payment-methods',
             ['_controller' => $c->listPaymentMethods(...), '_auth' => true],
@@ -167,6 +265,15 @@ final class ApiRouteRegistrar
             '',
             [],
             ['POST'],
+        ));
+        $routes->add('api.v1.me.payment_methods.update', new Route(
+            '/api/v1/me/payment-methods/{paymentMethodId}/edit',
+            ['_controller' => $c->updatePaymentMethod(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['PATCH'],
         ));
         $routes->add('api.v1.me.payment_methods.default', new Route(
             '/api/v1/me/payment-methods/{paymentMethodId}',
@@ -222,6 +329,15 @@ final class ApiRouteRegistrar
             [],
             ['GET'],
         ));
+        $routes->add('api.v1.me.reviews.store', new Route(
+            '/api/v1/me/reviews',
+            ['_controller' => $c->createMyReview(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
         $routes->add('api.v1.me.notifications.index', new Route(
             '/api/v1/me/notifications',
             ['_controller' => $c->listNotifications(...), '_auth' => true],
@@ -266,6 +382,42 @@ final class ApiRouteRegistrar
             '',
             [],
             ['PATCH'],
+        ));
+        $routes->add('api.v1.me.push_devices.store', new Route(
+            '/api/v1/me/push-devices',
+            ['_controller' => $c->registerPushDevice(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.me.push_devices.delete', new Route(
+            '/api/v1/me/push-devices',
+            ['_controller' => $c->unregisterPushDevice(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['DELETE'],
+        ));
+        $routes->add('api.v1.me.wallets.index', new Route(
+            '/api/v1/me/wallets',
+            ['_controller' => $c->listWallets(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.me.wallets.top_up', new Route(
+            '/api/v1/me/wallets/{walletId}/top-up',
+            ['_controller' => $c->topUpWallet(...), '_auth' => true],
+            ['walletId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
         ));
     }
 
@@ -566,6 +718,42 @@ final class ApiRouteRegistrar
             [],
             ['DELETE'],
         ));
+        $routes->add('api.v1.seller.products.index', new Route(
+            '/api/v1/seller/products',
+            ['_controller' => $c->sellerIndex(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.products.store', new Route(
+            '/api/v1/seller/products',
+            ['_controller' => $c->sellerStore(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.products.update', new Route(
+            '/api/v1/seller/products/{productId}',
+            ['_controller' => $c->sellerUpdate(...), '_auth' => true],
+            ['productId' => '\d+'],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.seller.products.toggle', new Route(
+            '/api/v1/seller/products/{productId}/toggle',
+            ['_controller' => $c->sellerToggle(...), '_auth' => true],
+            ['productId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
     }
 
     private static function categoryRoutes(RouteCollection $routes, AppServices $app): void
@@ -580,6 +768,88 @@ final class ApiRouteRegistrar
             [],
             ['GET'],
         ));
+        $routes->add('api.v1.seller.category_requests.store', new Route(
+            '/api/v1/seller/category-requests',
+            ['_controller' => $c->request(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+    }
+
+    private static function promoCodeRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new PromoCodeController($app);
+        $routes->add('api.v1.promo_codes.index', new Route(
+            '/api/v1/promo-codes',
+            ['_controller' => $c->index(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.promo_codes.validate', new Route(
+            '/api/v1/promo-codes/validate',
+            ['_controller' => $c->validate(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+    }
+
+    private static function promotionAdminRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new PromotionAdminController($app);
+        $routes->add('api.v1.admin.promotions.index', new Route(
+            '/api/v1/admin/promotions',
+            ['_controller' => $c->index(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.admin.promotions.store', new Route(
+            '/api/v1/admin/promotions',
+            ['_controller' => $c->store(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.promotions.update', new Route(
+            '/api/v1/admin/promotions/{promotionId}',
+            ['_controller' => $c->update(...), '_auth' => true],
+            ['promotionId' => '\d+'],
+            [],
+            '',
+            [],
+            ['PATCH'],
+        ));
+        $routes->add('api.v1.admin.promotions.toggle', new Route(
+            '/api/v1/admin/promotions/{promotionId}/toggle',
+            ['_controller' => $c->toggle(...), '_auth' => true],
+            ['promotionId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.admin.promotions.delete', new Route(
+            '/api/v1/admin/promotions/{promotionId}',
+            ['_controller' => $c->destroy(...), '_auth' => true],
+            ['promotionId' => '\d+'],
+            [],
+            '',
+            [],
+            ['DELETE'],
+        ));
     }
 
     private static function orderRoutes(RouteCollection $routes, AppServices $app): void
@@ -593,6 +863,42 @@ final class ApiRouteRegistrar
             '',
             [],
             ['GET'],
+        ));
+        $routes->add('api.v1.seller.orders.index', new Route(
+            '/api/v1/seller/orders',
+            ['_controller' => $c->sellerIndex(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.orders.status', new Route(
+            '/api/v1/seller/orders/{orderId}/status',
+            ['_controller' => $c->sellerStatus(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.orders.shipping', new Route(
+            '/api/v1/seller/orders/{orderId}/shipping',
+            ['_controller' => $c->sellerShipping(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.seller.orders.delivery_submit', new Route(
+            '/api/v1/seller/orders/{orderId}/delivery',
+            ['_controller' => $c->sellerSubmitDelivery(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
         ));
         $routes->add('api.v1.orders.store', new Route(
             '/api/v1/orders',
@@ -639,6 +945,24 @@ final class ApiRouteRegistrar
             [],
             ['POST'],
         ));
+        $routes->add('api.v1.orders.pay_wallet', new Route(
+            '/api/v1/orders/{orderId}/pay/wallet',
+            ['_controller' => $c->payWallet(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.pay_manual', new Route(
+            '/api/v1/orders/{orderId}/pay/manual',
+            ['_controller' => $c->payManual(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
         $routes->add('api.v1.orders.advance_fulfillment', new Route(
             '/api/v1/orders/{orderId}/advance-fulfillment',
             ['_controller' => $c->advanceFulfillment(...), '_auth' => true],
@@ -651,6 +975,15 @@ final class ApiRouteRegistrar
         $routes->add('api.v1.orders.complete', new Route(
             '/api/v1/orders/{orderId}/complete',
             ['_controller' => $c->complete(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.cancel', new Route(
+            '/api/v1/orders/{orderId}/cancel',
+            ['_controller' => $c->cancel(...), '_auth' => true],
             ['orderId' => '\d+'],
             [],
             '',
@@ -757,6 +1090,15 @@ final class ApiRouteRegistrar
             [],
             ['GET'],
         ));
+        $routes->add('api.v1.withdrawals.settings', new Route(
+            '/api/v1/withdrawals/settings',
+            ['_controller' => $c->settings(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
         $routes->add('api.v1.withdrawals.store', new Route(
             '/api/v1/withdrawals',
             ['_controller' => $c->store(...), '_auth' => true],
@@ -824,6 +1166,43 @@ final class ApiRouteRegistrar
             '/api/v1/withdrawals/{withdrawalRequestId}/payout/fail',
             ['_controller' => $c->failPayout(...), '_auth' => true],
             ['withdrawalRequestId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+    }
+
+    private static function paymentGatewayRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new PaymentGatewayController($app);
+        $routes->add('api.v1.payment_gateways.index', new Route(
+            '/api/v1/payment-gateways',
+            ['_controller' => $c->index(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+    }
+
+    private static function sellerMediaRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new SellerMediaController($app);
+        $routes->add('api.v1.media.show', new Route(
+            '/api/v1/media/{path}',
+            ['_controller' => $c->show(...), '_auth' => false],
+            ['path' => '.+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.seller.media.upload', new Route(
+            '/api/v1/seller/media/upload',
+            ['_controller' => $c->upload(...), '_auth' => true],
+            [],
             [],
             '',
             [],

@@ -91,6 +91,21 @@ CREATE TABLE seller_profiles (
   default_currency CHAR(3) NOT NULL,
   verification_status ENUM('unverified','pending','verified','rejected') NOT NULL DEFAULT 'unverified',
   store_status ENUM('active','paused','banned') NOT NULL DEFAULT 'active',
+  store_logo_url VARCHAR(512) NULL,
+  banner_image_url VARCHAR(512) NULL,
+  contact_email VARCHAR(191) NULL,
+  contact_phone VARCHAR(40) NULL,
+  address_line VARCHAR(255) NULL,
+  city VARCHAR(120) NULL,
+  region VARCHAR(120) NULL,
+  postal_code VARCHAR(40) NULL,
+  country VARCHAR(120) NULL,
+  inside_dhaka_label VARCHAR(255) NULL,
+  inside_dhaka_fee DECIMAL(10,2) NULL,
+  outside_dhaka_label VARCHAR(255) NULL,
+  outside_dhaka_fee DECIMAL(10,2) NULL,
+  cash_on_delivery_enabled TINYINT(1) NULL,
+  processing_time_label VARCHAR(255) NULL,
   created_at DATETIME(6) NOT NULL,
   updated_at DATETIME(6) NOT NULL,
   deleted_at DATETIME(6) NULL,
@@ -145,17 +160,72 @@ CREATE TABLE storefronts (
   UNIQUE KEY uq_storefronts_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE shipping_methods (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  uuid CHAR(36) NOT NULL,
+  code VARCHAR(96) NOT NULL,
+  name VARCHAR(191) NOT NULL,
+  suggested_fee DECIMAL(18,4) NOT NULL DEFAULT 0,
+  processing_time_label VARCHAR(80) NOT NULL DEFAULT '1-2 Business Days',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shipping_methods_uuid (uuid),
+  UNIQUE KEY uq_shipping_methods_code (code),
+  CONSTRAINT chk_shipping_methods_suggested_fee_nonneg CHECK (suggested_fee >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE seller_shipping_methods (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  seller_profile_id BIGINT UNSIGNED NOT NULL,
+  shipping_method_id BIGINT UNSIGNED NOT NULL,
+  price DECIMAL(18,4) NOT NULL DEFAULT 0,
+  processing_time_label VARCHAR(80) NOT NULL DEFAULT '1-2 Business Days',
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_seller_shipping_methods_seller_method (seller_profile_id, shipping_method_id),
+  CONSTRAINT chk_seller_shipping_methods_price_nonneg CHECK (price >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE categories (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   parent_id BIGINT UNSIGNED NULL,
   slug VARCHAR(191) NOT NULL,
   name VARCHAR(191) NOT NULL,
+  description TEXT NULL,
+  image_url VARCHAR(512) NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   sort_order INT NOT NULL DEFAULT 0,
   created_at DATETIME(6) NOT NULL,
   updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_categories_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE seller_category_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  uuid CHAR(36) NOT NULL,
+  seller_profile_id BIGINT UNSIGNED NOT NULL,
+  requested_by_user_id BIGINT UNSIGNED NOT NULL,
+  parent_id BIGINT UNSIGNED NULL,
+  name VARCHAR(191) NOT NULL,
+  slug VARCHAR(191) NOT NULL,
+  reason TEXT NULL,
+  example_product_name VARCHAR(255) NULL,
+  status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  resolved_category_id BIGINT UNSIGNED NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+  admin_note TEXT NULL,
+  reviewed_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_seller_category_requests_uuid (uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE products (
@@ -169,6 +239,9 @@ CREATE TABLE products (
   description LONGTEXT NULL,
   base_price DECIMAL(18,4) NOT NULL,
   currency CHAR(3) NOT NULL,
+  image_url VARCHAR(512) NULL,
+  images_json JSON NULL,
+  attributes_json JSON NULL,
   status ENUM('draft','active','inactive','archived','published') NOT NULL DEFAULT 'draft',
   published_at DATETIME(6) NULL,
   created_at DATETIME(6) NOT NULL,
@@ -292,7 +365,11 @@ CREATE TABLE orders (
   uuid CHAR(36) NOT NULL,
   order_number VARCHAR(64) NOT NULL,
   buyer_user_id BIGINT UNSIGNED NOT NULL,
-  status ENUM('draft','pending_payment','paid','paid_in_escrow','processing','shipped_or_delivered','completed','cancelled','refunded','disputed') NOT NULL,
+  seller_user_id BIGINT UNSIGNED NULL,
+  primary_product_id BIGINT UNSIGNED NULL,
+  product_type VARCHAR(32) NULL,
+  status ENUM('draft','pending_payment','paid','paid_in_escrow','escrow_funded','processing','delivery_submitted','buyer_review','shipped_or_delivered','completed','cancelled','refunded','disputed') NOT NULL,
+  fulfillment_state VARCHAR(64) NOT NULL DEFAULT 'not_started',
   currency CHAR(3) NOT NULL,
   gross_amount DECIMAL(18,4) NOT NULL,
   discount_amount DECIMAL(18,4) NOT NULL DEFAULT 0,
@@ -300,6 +377,22 @@ CREATE TABLE orders (
   net_amount DECIMAL(18,4) NOT NULL,
   placed_at DATETIME(6) NULL,
   completed_at DATETIME(6) NULL,
+  cancelled_at DATETIME(6) NULL,
+  seller_deadline_at DATETIME(6) NULL,
+  seller_reminder_at DATETIME(6) NULL,
+  delivery_submitted_at DATETIME(6) NULL,
+  buyer_review_started_at DATETIME(6) NULL,
+  buyer_review_expires_at DATETIME(6) NULL,
+  reminder_1_at DATETIME(6) NULL,
+  reminder_2_at DATETIME(6) NULL,
+  escalation_at DATETIME(6) NULL,
+  escalation_warning_at DATETIME(6) NULL,
+  auto_release_at DATETIME(6) NULL,
+  release_eligible_at DATETIME(6) NULL,
+  expires_at DATETIME(6) NULL,
+  unpaid_reminder_at DATETIME(6) NULL,
+  timeout_policy_snapshot_json JSON NULL,
+  cancel_reason VARCHAR(500) NULL,
   created_at DATETIME(6) NOT NULL,
   updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (id),
@@ -317,7 +410,7 @@ CREATE TABLE order_items (
   seller_profile_id BIGINT UNSIGNED NOT NULL,
   product_id BIGINT UNSIGNED NULL,
   product_variant_id BIGINT UNSIGNED NULL,
-  product_type_snapshot ENUM('physical','digital','manual_delivery') NOT NULL,
+  product_type_snapshot ENUM('physical','digital','instant_delivery','service','manual_delivery') NOT NULL,
   title_snapshot VARCHAR(255) NOT NULL,
   sku_snapshot VARCHAR(128) NULL,
   quantity INT UNSIGNED NOT NULL,
@@ -460,6 +553,49 @@ CREATE TABLE escrow_events (
   PRIMARY KEY (id),
   UNIQUE KEY uq_escrow_events_uuid (uuid),
   CONSTRAINT chk_escrow_events_amount_nonneg CHECK (amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE escrow_timeout_settings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  unpaid_order_expiration_minutes INT UNSIGNED NOT NULL DEFAULT 30,
+  unpaid_order_warning_minutes INT UNSIGNED NOT NULL DEFAULT 10,
+  seller_fulfillment_deadline_hours INT UNSIGNED NOT NULL DEFAULT 24,
+  seller_fulfillment_warning_hours INT UNSIGNED NOT NULL DEFAULT 2,
+  buyer_review_deadline_hours INT UNSIGNED NOT NULL DEFAULT 72,
+  buyer_review_reminder_1_hours INT UNSIGNED NOT NULL DEFAULT 24,
+  buyer_review_reminder_2_hours INT UNSIGNED NOT NULL DEFAULT 48,
+  escalation_warning_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+  seller_min_fulfillment_hours INT UNSIGNED NOT NULL DEFAULT 1,
+  seller_max_fulfillment_hours INT UNSIGNED NOT NULL DEFAULT 168,
+  buyer_min_review_hours INT UNSIGNED NOT NULL DEFAULT 1,
+  buyer_max_review_hours INT UNSIGNED NOT NULL DEFAULT 168,
+  auto_escalation_after_review_expiry TINYINT(1) NOT NULL DEFAULT 1,
+  auto_cancel_unpaid_orders TINYINT(1) NOT NULL DEFAULT 1,
+  auto_release_after_buyer_timeout TINYINT(1) NOT NULL DEFAULT 0,
+  auto_create_dispute_on_timeout TINYINT(1) NOT NULL DEFAULT 0,
+  dispute_review_queue_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by_user_id BIGINT UNSIGNED NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE escrow_timeout_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  uuid CHAR(36) NOT NULL,
+  order_id BIGINT UNSIGNED NOT NULL,
+  escrow_account_id BIGINT UNSIGNED NULL,
+  event_type VARCHAR(96) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'processed',
+  action_taken VARCHAR(96) NULL,
+  metadata_json JSON NULL,
+  scheduled_for DATETIME(6) NULL,
+  processed_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_escrow_timeout_events_uuid (uuid),
+  UNIQUE KEY uq_timeout_events_order_type (order_id, event_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---- Wallet & Ledger (TRANSACTION-SENSITIVE / FINANCIAL) --------------------
@@ -665,8 +801,12 @@ CREATE TABLE dispute_evidences (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   uuid CHAR(36) NOT NULL,
   dispute_case_id BIGINT UNSIGNED NOT NULL,
+  order_id BIGINT UNSIGNED NULL,
   submitted_by_user_id BIGINT UNSIGNED NOT NULL,
-  evidence_type ENUM('text','image','video','document','tracking') NOT NULL,
+  message_id BIGINT UNSIGNED NULL,
+  file_id VARCHAR(191) NULL,
+  note TEXT NULL,
+  evidence_type ENUM('text','image','video','document','tracking','chat_message','delivery_proof','screenshot','file') NOT NULL,
   content_text TEXT NULL,
   storage_path VARCHAR(512) NULL,
   checksum_sha256 CHAR(64) NULL,
@@ -815,8 +955,19 @@ ALTER TABLE kyc_documents
 ALTER TABLE storefronts
   ADD CONSTRAINT fk_storefronts_seller_profile FOREIGN KEY (seller_profile_id) REFERENCES seller_profiles(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
 
+ALTER TABLE seller_shipping_methods
+  ADD CONSTRAINT fk_seller_shipping_methods_seller FOREIGN KEY (seller_profile_id) REFERENCES seller_profiles(id) ON UPDATE RESTRICT ON DELETE CASCADE,
+  ADD CONSTRAINT fk_seller_shipping_methods_method FOREIGN KEY (shipping_method_id) REFERENCES shipping_methods(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
 ALTER TABLE categories
   ADD CONSTRAINT fk_categories_parent FOREIGN KEY (parent_id) REFERENCES categories(id) ON UPDATE RESTRICT ON DELETE SET NULL;
+
+ALTER TABLE seller_category_requests
+  ADD CONSTRAINT fk_seller_category_requests_seller FOREIGN KEY (seller_profile_id) REFERENCES seller_profiles(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  ADD CONSTRAINT fk_seller_category_requests_user FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  ADD CONSTRAINT fk_seller_category_requests_parent FOREIGN KEY (parent_id) REFERENCES categories(id) ON UPDATE RESTRICT ON DELETE SET NULL,
+  ADD CONSTRAINT fk_seller_category_requests_resolved FOREIGN KEY (resolved_category_id) REFERENCES categories(id) ON UPDATE RESTRICT ON DELETE SET NULL,
+  ADD CONSTRAINT fk_seller_category_requests_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON UPDATE RESTRICT ON DELETE SET NULL;
 
 ALTER TABLE products
   ADD CONSTRAINT fk_products_seller_profile FOREIGN KEY (seller_profile_id) REFERENCES seller_profiles(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
@@ -937,6 +1088,10 @@ ALTER TABLE audit_logs
 CREATE INDEX idx_kyc_verifications_seller_status ON kyc_verifications (seller_profile_id, status, submitted_at);
 CREATE INDEX idx_products_seller_status ON products (seller_profile_id, status, created_at);
 CREATE INDEX idx_products_category_status ON products (category_id, status, created_at);
+CREATE INDEX idx_seller_category_requests_status_created ON seller_category_requests (status, created_at);
+CREATE INDEX idx_seller_category_requests_seller_status ON seller_category_requests (seller_profile_id, status);
+CREATE INDEX idx_shipping_methods_active_sort ON shipping_methods (is_active, sort_order, name);
+CREATE INDEX idx_seller_shipping_methods_seller_enabled ON seller_shipping_methods (seller_profile_id, is_enabled, sort_order);
 
 CREATE INDEX idx_inventory_records_product ON inventory_records (product_id);
 CREATE INDEX idx_inventory_records_variant ON inventory_records (product_variant_id);
@@ -1014,4 +1169,3 @@ CREATE INDEX idx_outbox_events_aggregate ON outbox_events (aggregate_type, aggre
 -- Keep hot data: 12-18 months.
 -- Move immutable historical partitions to archive schema/storage.
 -- Financial and audit rows are append-only; never hard-delete.
-

@@ -15,12 +15,14 @@ final storefrontBrowseControllerProvider = NotifierProvider.autoDispose
   StorefrontBrowseController.new,
 );
 
-class StorefrontBrowseController extends AutoDisposeFamilyNotifier<PaginatedState<ProductDto>, int> {
+class StorefrontBrowseController
+    extends AutoDisposeFamilyNotifier<PaginatedState<ProductDto>, int> {
   static const int _perPage = 10;
 
   String _searchQuery = '';
   double _scrollOffset = 0;
   bool _bootstrapped = false;
+  bool _refreshing = false;
 
   String get persistenceKey => 'storefront_$arg';
 
@@ -41,7 +43,8 @@ class StorefrontBrowseController extends AutoDisposeFamilyNotifier<PaginatedStat
       return;
     }
     _bootstrapped = true;
-    final persisted = ref.read(listStatePersistenceProvider).load(persistenceKey);
+    final persisted =
+        ref.read(listStatePersistenceProvider).load(persistenceKey);
     if (persisted == null) {
       await loadFirstPage();
       return;
@@ -70,14 +73,15 @@ class StorefrontBrowseController extends AutoDisposeFamilyNotifier<PaginatedStat
         isInitialLoading: false,
         isAppending: false,
       );
-      await refreshIfStale();
+      await refresh();
     } else {
       await loadFirstPage();
     }
   }
 
   Future<void> refreshIfStale() async {
-    final isStale = ref.read(listStatePersistenceProvider).isStale(persistenceKey);
+    final isStale =
+        ref.read(listStatePersistenceProvider).isStale(persistenceKey);
     if (!isStale) {
       return;
     }
@@ -128,6 +132,10 @@ class StorefrontBrowseController extends AutoDisposeFamilyNotifier<PaginatedStat
   }
 
   Future<void> refresh() async {
+    if (_refreshing) {
+      return;
+    }
+    _refreshing = true;
     try {
       final result = await _fetchPage(page: 1, perPage: _perPage);
       state = state.copyWith(
@@ -140,6 +148,8 @@ class StorefrontBrowseController extends AutoDisposeFamilyNotifier<PaginatedStat
       await _persist();
     } catch (error) {
       state = state.copyWith(errorMessage: error.toString());
+    } finally {
+      _refreshing = false;
     }
   }
 

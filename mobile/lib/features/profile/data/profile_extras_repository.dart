@@ -12,6 +12,7 @@ class PaymentMethodItem {
     required this.label,
     required this.subtitle,
     required this.kind,
+    this.details = const <String, dynamic>{},
     this.isDefault = false,
   });
 
@@ -19,6 +20,7 @@ class PaymentMethodItem {
   final String label;
   final String subtitle;
   final String kind;
+  final Map<String, dynamic> details;
   final bool isDefault;
 
   PaymentMethodItem copyWith({
@@ -26,6 +28,7 @@ class PaymentMethodItem {
     String? label,
     String? subtitle,
     String? kind,
+    Map<String, dynamic>? details,
     bool? isDefault,
   }) {
     return PaymentMethodItem(
@@ -33,6 +36,7 @@ class PaymentMethodItem {
       label: label ?? this.label,
       subtitle: subtitle ?? this.subtitle,
       kind: kind ?? this.kind,
+      details: details ?? this.details,
       isDefault: isDefault ?? this.isDefault,
     );
   }
@@ -42,6 +46,7 @@ class PaymentMethodItem {
         'label': label,
         'subtitle': subtitle,
         'kind': kind,
+        'details': details,
         'is_default': isDefault,
       };
 
@@ -51,7 +56,11 @@ class PaymentMethodItem {
       label: (json['label'] ?? json['display_name'] ?? '').toString(),
       subtitle: (json['subtitle'] ?? json['meta'] ?? '').toString(),
       kind: (json['kind'] ?? json['type'] ?? 'card').toString(),
-      isDefault: json['is_default'] == true || json['is_default']?.toString() == '1',
+      details: (json['details'] is Map)
+          ? Map<String, dynamic>.from(json['details'] as Map)
+          : const <String, dynamic>{},
+      isDefault:
+          json['is_default'] == true || json['is_default']?.toString() == '1',
     );
   }
 }
@@ -77,11 +86,15 @@ class WishlistItem {
       };
 
   factory WishlistItem.fromJson(Map<String, dynamic> json) {
-    final id = (json['product_id'] as num?)?.toInt() ?? (json['id'] as num?)?.toInt() ?? 0;
+    final id = (json['product_id'] as num?)?.toInt() ??
+        (json['id'] as num?)?.toInt() ??
+        0;
     return WishlistItem(
       productId: id,
       name: (json['name'] ?? json['title'] ?? 'Untitled').toString(),
-      priceLabel: (json['price_label'] ?? json['price'] ?? json['base_price'] ?? '').toString(),
+      priceLabel:
+          (json['price_label'] ?? json['price'] ?? json['base_price'] ?? '')
+              .toString(),
       imageUrl: json['image_url']?.toString(),
     );
   }
@@ -108,10 +121,13 @@ class MyReviewItem {
     return MyReviewItem(
       id: (json['id'] ?? '').toString(),
       orderNo: (json['order_no'] ?? json['order_number'] ?? '—').toString(),
-      productName: (json['product_name'] ?? json['product_title'] ?? 'Product').toString(),
+      productName: (json['product_name'] ?? json['product_title'] ?? 'Product')
+          .toString(),
       rating: (json['rating'] as num?)?.toInt() ?? 0,
       message: (json['comment'] ?? json['message'] ?? '').toString(),
-      dateLabel: (json['created_at_label'] ?? json['date'] ?? json['created_at'] ?? '').toString(),
+      dateLabel:
+          (json['created_at_label'] ?? json['date'] ?? json['created_at'] ?? '')
+              .toString(),
     );
   }
 }
@@ -119,28 +135,39 @@ class MyReviewItem {
 class UserNotificationItem {
   const UserNotificationItem({
     required this.id,
+    required this.templateCode,
     required this.title,
     required this.body,
     required this.channel,
     required this.isRead,
     required this.createdAt,
+    required this.href,
+    required this.payload,
   });
 
   final int id;
+  final String templateCode;
   final String title;
   final String body;
   final String channel;
   final bool isRead;
   final String createdAt;
+  final String href;
+  final Map<String, dynamic> payload;
 
   factory UserNotificationItem.fromJson(Map<String, dynamic> json) {
     return UserNotificationItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
+      templateCode: (json['template_code'] ?? '').toString(),
       title: (json['title'] ?? 'Notification').toString(),
       body: (json['body'] ?? '').toString(),
       channel: (json['channel'] ?? 'in_app').toString(),
       isRead: json['is_read'] == true || json['is_read']?.toString() == '1',
       createdAt: (json['created_at'] ?? '').toString(),
+      href: (json['href'] ?? '').toString(),
+      payload: (json['payload'] is Map)
+          ? Map<String, dynamic>.from(json['payload'] as Map)
+          : const <String, dynamic>{},
     );
   }
 }
@@ -197,7 +224,8 @@ class ProfileExtrasRepository {
 
   static const String _paymentMethodsKey = 'profile_extras.v1.payment_methods';
   static const String _wishlistKey = 'profile_extras.v1.wishlist';
-  static const String _notificationPrefsKey = 'profile_extras.v1.notification_prefs';
+  static const String _notificationPrefsKey =
+      'profile_extras.v1.notification_prefs';
 
   Future<List<PaymentMethodItem>> loadPaymentMethods() async {
     try {
@@ -208,8 +236,9 @@ class ProfileExtrasRepository {
       return items;
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        return _loadPaymentMethodsLocal();
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
+        return _loadPaymentMethodsCache();
       }
       rethrow;
     }
@@ -223,81 +252,68 @@ class ProfileExtrasRepository {
     required String kind,
     required String label,
     required String subtitle,
+    required Map<String, dynamic> details,
     bool isDefault = false,
   }) async {
-    try {
-      final json = await _apiClient.post(
-        '/api/v1/me/payment-methods',
-        data: <String, dynamic>{
-          'kind': kind,
-          'label': label,
-          'subtitle': subtitle,
-          'is_default': isDefault,
-        },
-      );
-      final created = PaymentMethodItem.fromJson(parseObjectEnvelope(json).data);
-      final current = await loadPaymentMethods();
-      final next = <PaymentMethodItem>[
-        created,
-        ...current.where((e) => e.id != created.id).map((e) => e.copyWith(isDefault: created.isDefault ? false : e.isDefault)),
-      ];
-      await _savePaymentMethods(next);
-      return next;
-    } catch (e) {
-      if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        final current = _loadPaymentMethodsLocal();
-        final id = 'pm_${DateTime.now().millisecondsSinceEpoch}';
-        final next = <PaymentMethodItem>[
-          PaymentMethodItem(
-            id: id,
-            label: label,
-            subtitle: subtitle,
-            kind: kind,
-            isDefault: current.isEmpty ? true : isDefault,
-          ),
-          ...current.map((e) => e.copyWith(isDefault: isDefault ? false : e.isDefault)),
-        ];
-        await _savePaymentMethods(next);
-        return next;
-      }
-      rethrow;
-    }
+    final json = await _apiClient.post(
+      '/api/v1/me/payment-methods',
+      data: <String, dynamic>{
+        'kind': kind,
+        'label': label,
+        'subtitle': subtitle,
+        'details': details,
+        'is_default': isDefault,
+      },
+    );
+    final created = PaymentMethodItem.fromJson(parseObjectEnvelope(json).data);
+    final current = await loadPaymentMethods();
+    final next = <PaymentMethodItem>[
+      created,
+      ...current.where((e) => e.id != created.id).map((e) =>
+          e.copyWith(isDefault: created.isDefault ? false : e.isDefault)),
+    ];
+    await _savePaymentMethods(next);
+    return next;
+  }
+
+  Future<List<PaymentMethodItem>> updatePaymentMethod({
+    required String id,
+    required String kind,
+    required String label,
+    required String subtitle,
+    required Map<String, dynamic> details,
+    bool isDefault = false,
+  }) async {
+    final json = await _apiClient.patch(
+      '/api/v1/me/payment-methods/$id/edit',
+      data: <String, dynamic>{
+        'kind': kind,
+        'label': label,
+        'subtitle': subtitle,
+        'details': details,
+        'is_default': isDefault,
+      },
+    );
+    final updated = PaymentMethodItem.fromJson(parseObjectEnvelope(json).data);
+    final current = await loadPaymentMethods();
+    final next = <PaymentMethodItem>[
+      updated,
+      ...current
+          .where((e) => e.id != updated.id)
+          .map((e) => e.copyWith(isDefault: updated.isDefault ? false : e.isDefault)),
+    ];
+    await _savePaymentMethods(next);
+    return next;
   }
 
   Future<List<PaymentMethodItem>> setDefaultPaymentMethod(String id) async {
-    try {
-      await _apiClient.patch('/api/v1/me/payment-methods/$id');
-      return loadPaymentMethods();
-    } catch (e) {
-      if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        final current = _loadPaymentMethodsLocal();
-        final next = current.map((e) => e.copyWith(isDefault: e.id == id)).toList();
-        await _savePaymentMethods(next);
-        return next;
-      }
-      rethrow;
-    }
+    await _apiClient.patch('/api/v1/me/payment-methods/$id');
+    return loadPaymentMethods();
   }
 
   Future<List<PaymentMethodItem>> removePaymentMethod(String id) async {
-    try {
-      await _apiClient.delete('/api/v1/me/payment-methods/$id');
-      return loadPaymentMethods();
-    } catch (e) {
-      if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        final current = _loadPaymentMethodsLocal();
-        final next = current.where((e) => e.id != id).toList();
-        if (next.isNotEmpty && !next.any((e) => e.isDefault)) {
-          next[0] = next[0].copyWith(isDefault: true);
-        }
-        await _savePaymentMethods(next);
-        return next;
-      }
-      rethrow;
-    }
+    await _apiClient.delete('/api/v1/me/payment-methods/$id');
+    return loadPaymentMethods();
   }
 
   Future<List<WishlistItem>> loadWishlist() async {
@@ -309,7 +325,8 @@ class ProfileExtrasRepository {
       return items;
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         return _loadWishlistLocal();
       }
       rethrow;
@@ -322,11 +339,13 @@ class ProfileExtrasRepository {
 
   Future<List<WishlistItem>> addWishlistItem(int productId) async {
     try {
-      await _apiClient.post('/api/v1/me/wishlist', data: <String, dynamic>{'product_id': productId});
+      await _apiClient.post('/api/v1/me/wishlist',
+          data: <String, dynamic>{'product_id': productId});
       return loadWishlist();
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         return _loadWishlistLocal();
       }
       rethrow;
@@ -339,7 +358,8 @@ class ProfileExtrasRepository {
       return loadWishlist();
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         final current = _loadWishlistLocal();
         final next = current.where((e) => e.productId != productId).toList();
         await _saveWishlist(next);
@@ -356,7 +376,8 @@ class ProfileExtrasRepository {
       return envelope.data.map(MyReviewItem.fromJson).toList();
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         return _loadMyReviewsFromOrders();
       }
       rethrow;
@@ -369,16 +390,48 @@ class ProfileExtrasRepository {
       final envelope = parseObjectEnvelope(json);
       final data = envelope.data;
       final rawItems = (data['items'] as List?) ?? const <dynamic>[];
-      final items = rawItems.whereType<Map>().map((e) => UserNotificationItem.fromJson(Map<String, dynamic>.from(e))).toList();
+      final items = rawItems
+          .whereType<Map>()
+          .map((e) =>
+              UserNotificationItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
       final unreadCount = (data['unread_count'] as num?)?.toInt() ?? 0;
       return NotificationListResult(items: items, unreadCount: unreadCount);
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        return const NotificationListResult(items: <UserNotificationItem>[], unreadCount: 0);
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
+        return const NotificationListResult(
+            items: <UserNotificationItem>[], unreadCount: 0);
       }
       rethrow;
     }
+  }
+
+  Future<void> registerPushDevice({
+    required String deviceToken,
+    required String platform,
+    String? deviceName,
+  }) async {
+    await _apiClient.post(
+      '/api/v1/me/push-devices',
+      data: <String, dynamic>{
+        'device_token': deviceToken,
+        'platform': platform,
+        if (deviceName != null && deviceName.trim().isNotEmpty) 'device_name': deviceName.trim(),
+      },
+    );
+  }
+
+  Future<void> unregisterPushDevice({
+    required String deviceToken,
+  }) async {
+    await _apiClient.delete(
+      '/api/v1/me/push-devices',
+      data: <String, dynamic>{
+        'device_token': deviceToken,
+      },
+    );
   }
 
   Future<void> markNotificationRead(int id) async {
@@ -386,7 +439,8 @@ class ProfileExtrasRepository {
       await _apiClient.patch('/api/v1/me/notifications/$id/read');
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         return;
       }
       rethrow;
@@ -398,7 +452,8 @@ class ProfileExtrasRepository {
       await _apiClient.post('/api/v1/me/notifications/read-all');
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         return;
       }
       rethrow;
@@ -408,18 +463,22 @@ class ProfileExtrasRepository {
   Future<NotificationPreference> loadNotificationPreferences() async {
     try {
       final json = await _apiClient.get('/api/v1/me/notifications/preferences');
-      final pref = NotificationPreference.fromJson(parseObjectEnvelope(json).data);
-      await _preferences.setString(_notificationPrefsKey, jsonEncode(pref.toJson()));
+      final pref =
+          NotificationPreference.fromJson(parseObjectEnvelope(json).data);
+      await _preferences.setString(
+          _notificationPrefsKey, jsonEncode(pref.toJson()));
       return pref;
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
         final raw = _preferences.getString(_notificationPrefsKey);
         if (raw != null && raw.isNotEmpty) {
           try {
             final decoded = jsonDecode(raw);
             if (decoded is Map) {
-              return NotificationPreference.fromJson(Map<String, dynamic>.from(decoded));
+              return NotificationPreference.fromJson(
+                  Map<String, dynamic>.from(decoded));
             }
           } catch (_) {}
         }
@@ -434,16 +493,22 @@ class ProfileExtrasRepository {
     }
   }
 
-  Future<NotificationPreference> updateNotificationPreferences(NotificationPreference next) async {
+  Future<NotificationPreference> updateNotificationPreferences(
+      NotificationPreference next) async {
     try {
-      final json = await _apiClient.patch('/api/v1/me/notifications/preferences', data: next.toJson());
-      final pref = NotificationPreference.fromJson(parseObjectEnvelope(json).data);
-      await _preferences.setString(_notificationPrefsKey, jsonEncode(pref.toJson()));
+      final json = await _apiClient
+          .patch('/api/v1/me/notifications/preferences', data: next.toJson());
+      final pref =
+          NotificationPreference.fromJson(parseObjectEnvelope(json).data);
+      await _preferences.setString(
+          _notificationPrefsKey, jsonEncode(pref.toJson()));
       return pref;
     } catch (e) {
       if (e is ApiException &&
-          (e.type == ApiExceptionType.notFound || e.type == ApiExceptionType.forbidden)) {
-        await _preferences.setString(_notificationPrefsKey, jsonEncode(next.toJson()));
+          (e.type == ApiExceptionType.notFound ||
+              e.type == ApiExceptionType.forbidden)) {
+        await _preferences.setString(
+            _notificationPrefsKey, jsonEncode(next.toJson()));
         return next;
       }
       rethrow;
@@ -451,7 +516,8 @@ class ProfileExtrasRepository {
   }
 
   Future<List<MyReviewItem>> _loadMyReviewsFromOrders() async {
-    final json = await _apiClient.get('/api/v1/orders', queryParameters: <String, dynamic>{'per_page': 20});
+    final json = await _apiClient.get('/api/v1/orders',
+        queryParameters: <String, dynamic>{'per_page': 20});
     final paginated = parsePaginatedObjectList(json);
     final out = <MyReviewItem>[];
     for (final row in paginated.items) {
@@ -460,12 +526,14 @@ class ProfileExtrasRepository {
         continue;
       }
       final m = Map<String, dynamic>.from(review);
-      final orderNo = (row['order_number'] ?? row['order_no'] ?? '—').toString();
+      final orderNo =
+          (row['order_number'] ?? row['order_no'] ?? '—').toString();
       out.add(
         MyReviewItem(
           id: (m['id'] ?? '').toString(),
           orderNo: orderNo,
-          productName: (m['product_name'] ?? row['title'] ?? 'Order item').toString(),
+          productName:
+              (m['product_name'] ?? row['title'] ?? 'Order item').toString(),
           rating: (m['rating'] as num?)?.toInt() ?? 0,
           message: (m['comment'] ?? m['message'] ?? '').toString(),
           dateLabel: (m['created_at'] ?? row['created_at'] ?? '').toString(),
@@ -475,25 +543,18 @@ class ProfileExtrasRepository {
     return out;
   }
 
-  List<PaymentMethodItem> _loadPaymentMethodsLocal() {
+  List<PaymentMethodItem> _loadPaymentMethodsCache() {
     final raw = _preferences.getString(_paymentMethodsKey);
     if (raw == null || raw.isEmpty) {
-      return const <PaymentMethodItem>[
-        PaymentMethodItem(
-          id: 'pm_1',
-          label: 'Visa **** 4242',
-          subtitle: 'Expires 09/28',
-          kind: 'card',
-          isDefault: true,
-        ),
-      ];
+      return const <PaymentMethodItem>[];
     }
     try {
       final decoded = jsonDecode(raw);
       if (decoded is List) {
         return decoded
             .whereType<Map>()
-            .map((e) => PaymentMethodItem.fromJson(Map<String, dynamic>.from(e)))
+            .map(
+                (e) => PaymentMethodItem.fromJson(Map<String, dynamic>.from(e)))
             .toList();
       }
     } catch (_) {}
@@ -504,8 +565,14 @@ class ProfileExtrasRepository {
     final raw = _preferences.getString(_wishlistKey);
     if (raw == null || raw.isEmpty) {
       return const <WishlistItem>[
-        WishlistItem(productId: 1, name: 'Wireless Earbuds Pro', priceLabel: 'USD 89.00'),
-        WishlistItem(productId: 2, name: 'Bluetooth Speaker Mini', priceLabel: 'USD 49.00'),
+        WishlistItem(
+            productId: 1,
+            name: 'Wireless Earbuds Pro',
+            priceLabel: 'USD 89.00'),
+        WishlistItem(
+            productId: 2,
+            name: 'Bluetooth Speaker Mini',
+            priceLabel: 'USD 49.00'),
       ];
     }
     try {
@@ -534,4 +601,3 @@ class ProfileExtrasRepository {
     );
   }
 }
-

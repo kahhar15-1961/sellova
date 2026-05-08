@@ -219,7 +219,7 @@ class _StepDisc extends StatelessWidget {
           ),
           child: Text(
             '${index + 1}',
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w900,
               fontSize: 14,

@@ -17,13 +17,18 @@ class SellerDisputeDetailScreen extends ConsumerWidget {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Dispute Details'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded), onPressed: () => context.pop()),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => context.pop()),
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (Object e, _) => Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('$e'))),
+        error: (Object e, _) => Center(
+            child:
+                Padding(padding: const EdgeInsets.all(24), child: Text('$e'))),
         data: (DisputeDto d) {
-          final resolved = d.status.toLowerCase().contains('resolv') || d.status.toLowerCase().contains('close');
+          final resolved = d.status.toLowerCase().contains('resolv') ||
+              d.status.toLowerCase().contains('close');
           return Column(
             children: <Widget>[
               Expanded(child: _DetailScroll(dispute: d)),
@@ -35,18 +40,20 @@ class SellerDisputeDetailScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       FilledButton(
-                        onPressed: () => context.push('/seller/disputes/$disputeId/respond'),
-                        style: FilledButton.styleFrom(backgroundColor: kSellerAccent, minimumSize: const Size.fromHeight(52)),
+                        onPressed: () =>
+                            context.push('/seller/disputes/$disputeId/respond'),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: kSellerAccent,
+                            minimumSize: const Size.fromHeight(52)),
                         child: const Text('Respond to dispute'),
                       ),
                       const SizedBox(height: 8),
                       OutlinedButton(
-                        onPressed: () {
-                          final oid = d.orderId;
-                          if (oid != null) context.push('/seller/orders/$oid/chat');
-                        },
-                        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                        child: const Text('Chat with customer'),
+                        onPressed: () => context
+                            .push('/seller/disputes/chat?disputeId=$disputeId'),
+                        style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48)),
+                        child: const Text('Open conversation'),
                       ),
                     ],
                   ),
@@ -66,11 +73,20 @@ class _DetailScroll extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final idLabel = 'OSP-2025-${(dispute.id ?? 0).toString().padLeft(6, '0')}';
-    final orderNo = dispute.orderId != null ? 'ORD-2025-${(dispute.orderId!).toString().padLeft(6, '0')}' : '—';
-    final customer = (dispute.raw['customer_name'] ?? dispute.raw['buyer_name'] ?? 'Riad Hossain').toString();
+    final orderNo = dispute.orderId != null
+        ? 'ORD-2025-${(dispute.orderId!).toString().padLeft(6, '0')}'
+        : '—';
+    final customer = (dispute.raw['customer_name'] ??
+            dispute.raw['buyer_name'] ??
+            'Riad Hossain')
+        .toString();
     final issue = dispute.summary;
-    final desc = (dispute.raw['description'] ?? dispute.raw['details'] ?? 'The product quality is not good as shown in the description.').toString();
-    final openStyle = dispute.status.toLowerCase().contains('open') || dispute.status.toLowerCase().contains('new');
+    final desc = (dispute.raw['description'] ??
+            dispute.raw['details'] ??
+            'The product quality is not good as shown in the description.')
+        .toString();
+    final openStyle = dispute.status.toLowerCase().contains('open') ||
+        dispute.status.toLowerCase().contains('new');
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -81,13 +97,17 @@ class _DetailScroll extends StatelessWidget {
             Expanded(
               child: Text(
                 'Dispute #$idLabel',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: const Color(0xFF2D3748)),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF2D3748)),
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: openStyle ? const Color(0xFFFFEDD5) : const Color(0xFFE5E7EB),
+                color: openStyle
+                    ? const Color(0xFFFFEDD5)
+                    : const Color(0xFFE5E7EB),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -105,33 +125,59 @@ class _DetailScroll extends StatelessWidget {
         _kv('Order', orderNo),
         _kv('Customer', customer),
         const Divider(height: 32),
-        Text('Issue', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+        Text('Issue',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
         Text(issue, style: Theme.of(context).textTheme.bodyLarge),
         const SizedBox(height: 18),
-        Text('Description', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+        Text('Description',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
-        Text(desc, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: kSellerMuted, height: 1.45)),
+        Text(desc,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: kSellerMuted, height: 1.45)),
         const SizedBox(height: 18),
-        Text('Attachments', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900)),
+        Text('Attachments',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w900)),
         const SizedBox(height: 10),
         SizedBox(
           height: 88,
           child: dispute.evidence.isEmpty
-              ? Text('No attachments', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted))
+              ? Text('No attachments',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: kSellerMuted))
               : ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: dispute.evidence.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (BuildContext context, int i) {
                     final item = dispute.evidence[i];
-                    final path = (item['storage_path'] ?? item['url'] ?? item['file_url'] ?? '').toString();
+                    final path = (item['storage_path'] ??
+                            item['url'] ??
+                            item['file_url'] ??
+                            '')
+                        .toString();
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: AspectRatio(
                         aspectRatio: 1,
                         child: path.isNotEmpty
-                            ? Image.network(path, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _ph())
+                            ? Image.network(path,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _ph())
                             : _ph(),
                       ),
                     );
@@ -155,8 +201,14 @@ class _DetailScroll extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(width: 100, child: Text(k, style: const TextStyle(color: kSellerMuted, fontWeight: FontWeight.w600))),
-          Expanded(child: Text(v, style: const TextStyle(fontWeight: FontWeight.w700))),
+          SizedBox(
+              width: 100,
+              child: Text(k,
+                  style: const TextStyle(
+                      color: kSellerMuted, fontWeight: FontWeight.w600))),
+          Expanded(
+              child:
+                  Text(v, style: const TextStyle(fontWeight: FontWeight.w700))),
         ],
       ),
     );

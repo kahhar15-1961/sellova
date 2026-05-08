@@ -41,8 +41,10 @@ final class StoreWithdrawalRequest extends AbstractValidatedRequest
                 'currency' => [new NotBlank(), new Type('string'), new Length(exactly: 3)],
                 'idempotency_key' => [new NotBlank(), new Type('string'), new Length(min: 1, max: 191)],
                 'fee_amount' => new Optional([new Type('string'), new Length(max: 24)]),
+                'payout_method' => new Optional([new Type('string'), new Length(max: 64)]),
+                'account_number' => new Optional([new Type('string'), new Length(max: 191)]),
             ],
-            'allowMissingFields' => true,
+            'allowMissingFields' => false,
             'allowExtraFields' => false,
         ]);
     }

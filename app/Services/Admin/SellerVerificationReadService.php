@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Admin;
 
 use App\Admin\AdminPermission;
+use App\Auth\RoleCodes;
 use App\Models\AuditLog;
 use App\Models\KycDocument;
 use App\Models\KycVerification;
+use App\Models\KycVerificationNote;
 use App\Models\User;
 use App\Services\Audit\AuditLogWriter;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -20,13 +22,14 @@ use Illuminate\Support\Facades\Storage;
 final class SellerVerificationReadService
 {
     /**
-     * @return array{rows: list<array<string, mixed>>, pagination: array<string, int|string|null>}
+     * @return array{rows: list<array<string, mixed>>, pagination: array<string, int|string|null>, summary: array<string, int>}
      */
     public function paginatedQueue(Request $request): array
     {
         $tabRaw = (string) $request->query('tab', 'pending');
-        $tab = in_array($tabRaw, ['pending', 'all', 'approved', 'rejected', 'expired'], true) ? $tabRaw : 'pending';
+        $tab = in_array($tabRaw, ['pending', 'mine', 'escalated', 'all', 'approved', 'rejected', 'expired'], true) ? $tabRaw : 'pending';
         $search = trim((string) $request->query('q', ''));
+        $actorId = (int) optional($request->user())->id;
 
         $query = KycVerification::query()
             ->select([
@@ -34,6 +37,12 @@ final class SellerVerificationReadService
                 'kyc_verifications.uuid',
                 'kyc_verifications.seller_profile_id',
                 'kyc_verifications.status',
+                'kyc_verifications.assigned_to_user_id',
+                'kyc_verifications.assigned_at',
+                'kyc_verifications.sla_due_at',
+                'kyc_verifications.sla_warning_sent_at',
+                'kyc_verifications.escalated_at',
+                'kyc_verifications.escalation_reason',
                 'kyc_verifications.submitted_at',
                 'kyc_verifications.reviewed_at',
             ])
@@ -44,11 +53,20 @@ final class SellerVerificationReadService
                 'seller_profile.user' => static function ($q): void {
                     $q->select(['id', 'email', 'uuid']);
                 },
+                'assigned_to_user' => static function ($q): void {
+                    $q->select(['id', 'email', 'uuid']);
+                },
             ])
             ->orderByDesc('kyc_verifications.submitted_at');
 
         if ($tab === 'pending') {
             $query->whereIn('kyc_verifications.status', ['submitted', 'under_review']);
+        } elseif ($tab === 'mine') {
+            $query->whereIn('kyc_verifications.status', ['submitted', 'under_review'])
+                ->where('kyc_verifications.assigned_to_user_id', $actorId);
+        } elseif ($tab === 'escalated') {
+            $query->whereIn('kyc_verifications.status', ['submitted', 'under_review'])
+                ->whereNotNull('kyc_verifications.escalated_at');
         } elseif ($tab === 'approved') {
             $query->where('kyc_verifications.status', 'approved');
         } elseif ($tab === 'rejected') {
@@ -60,8 +78,13 @@ final class SellerVerificationReadService
 
         if ($search !== '') {
             $like = '%'.$search.'%';
-            $query->whereHas('seller_profile.user', static function ($uq) use ($like): void {
-                $uq->where('email', 'like', $like);
+            $query->where(static function ($q) use ($like): void {
+                $q->whereHas('seller_profile.user', static function ($uq) use ($like): void {
+                    $uq->where('email', 'like', $like);
+                })->orWhereHas('seller_profile', static function ($sq) use ($like): void {
+                    $sq->where('display_name', 'like', $like)
+                        ->orWhere('legal_name', 'like', $like);
+                });
             });
         }
 
@@ -73,6 +96,14 @@ final class SellerVerificationReadService
             $rows[] = $this->queueRow($kyc);
         }
 
+        $summary = [
+            'pending' => (int) KycVerification::query()->whereIn('status', ['submitted', 'under_review'])->count(),
+            'mine' => $actorId > 0 ? (int) KycVerification::query()->whereIn('status', ['submitted', 'under_review'])->where('assigned_to_user_id', $actorId)->count() : 0,
+            'escalated' => (int) KycVerification::query()->whereIn('status', ['submitted', 'under_review'])->whereNotNull('escalated_at')->count(),
+            'approved' => (int) KycVerification::query()->where('status', 'approved')->count(),
+            'rejected' => (int) KycVerification::query()->where('status', 'rejected')->count(),
+        ];
+
         return [
             'rows' => $rows,
             'pagination' => [
@@ -83,6 +114,7 @@ final class SellerVerificationReadService
                 'from' => $page->firstItem(),
                 'to' => $page->lastItem(),
             ],
+            'summary' => $summary,
         ];
     }
 
@@ -93,7 +125,9 @@ final class SellerVerificationReadService
     {
         $kyc->load([
             'seller_profile.user',
+            'assigned_to_user:id,email,uuid',
             'kycDocuments',
+            'notes.user:id,email',
         ]);
 
         $documents = [];
@@ -124,6 +158,20 @@ final class SellerVerificationReadService
             })
             ->all();
 
+        $notes = $kyc->notes
+            ->sortByDesc('created_at')
+            ->map(static function (KycVerificationNote $note): array {
+                return [
+                    'id' => $note->id,
+                    'note' => $note->note,
+                    'is_private' => (bool) $note->is_private,
+                    'author_email' => $note->user?->email,
+                    'created_at' => $note->created_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+
         $reviewerEmail = null;
         $reviewedById = $kyc->getAttribute('reviewed_by');
         if ($reviewedById !== null && (int) $reviewedById > 0) {
@@ -144,6 +192,13 @@ final class SellerVerificationReadService
                 'uuid' => $kyc->uuid,
                 'status' => $kyc->status,
                 'provider_ref' => $kyc->provider_ref,
+                'assigned_to_user_id' => $kyc->assigned_to_user_id,
+                'assigned_at' => $kyc->assigned_at?->toIso8601String(),
+                'assigned_to_email' => $kyc->assigned_to_user?->email,
+                'sla_due_at' => $kyc->sla_due_at?->toIso8601String(),
+                'sla_warning_sent_at' => $kyc->sla_warning_sent_at?->toIso8601String(),
+                'escalated_at' => $kyc->escalated_at?->toIso8601String(),
+                'escalation_reason' => $kyc->escalation_reason,
                 'submitted_at' => $kyc->submitted_at?->toIso8601String(),
                 'reviewed_at' => $kyc->reviewed_at?->toIso8601String(),
                 'rejection_reason' => $kyc->rejection_reason,
@@ -165,10 +220,15 @@ final class SellerVerificationReadService
                 'uuid' => $kyc->seller_profile->user->uuid,
             ],
             'documents' => $documents,
+            'notes' => $notes,
             'history' => $history,
+            'reviewers' => $this->reviewers(),
+            'document_insights' => $this->documentInsights($kyc),
             'routes' => [
                 'claim' => route('admin.sellers.kyc.claim', ['kyc' => $kyc->id]),
                 'review' => route('admin.sellers.kyc.review', ['kyc' => $kyc->id]),
+                'reassign' => route('admin.sellers.kyc.reassign', ['kyc' => $kyc->id]),
+                'note' => route('admin.sellers.kyc.note', ['kyc' => $kyc->id]),
                 'index' => route('admin.sellers.index'),
             ],
         ];
@@ -188,11 +248,61 @@ final class SellerVerificationReadService
             'status' => $kyc->status,
             'submitted_at' => $kyc->submitted_at?->toIso8601String(),
             'reviewed_at' => $kyc->reviewed_at?->toIso8601String(),
+            'assigned_at' => $kyc->assigned_at?->toIso8601String(),
             'seller_display_name' => $sp?->display_name,
             'seller_verification_status' => $sp ? (string) $sp->verification_status : null,
             'account_email' => $user?->email,
+            'assigned_to_email' => $kyc->assigned_to_user?->email,
+            'sla_state' => $this->slaState($kyc),
             'workspace_url' => route('admin.sellers.kyc.show', ['kyc' => $kyc->id]),
         ];
+    }
+
+    /**
+     * @return list<array{value: int, label: string, email: string, roles: list<string>}>
+     */
+    private function reviewers(): array
+    {
+        return User::query()
+            ->select(['id', 'email'])
+            ->whereNull('deleted_at')
+            ->whereHas('roles', static function ($q): void {
+                $q->whereIn('roles.code', [
+                    RoleCodes::SuperAdmin,
+                    RoleCodes::Admin,
+                    RoleCodes::Adjudicator,
+                    RoleCodes::KycReviewer,
+                ]);
+            })
+            ->with(['roles:id,code'])
+            ->orderBy('email')
+            ->limit(50)
+            ->get()
+            ->map(static function (User $user): array {
+                $roles = $user->roles->pluck('code')->values()->all();
+
+                return [
+                    'value' => (int) $user->id,
+                    'label' => $user->email.' · '.implode(', ', $roles),
+                    'email' => (string) $user->email,
+                    'roles' => $roles,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function slaState(KycVerification $kyc): string
+    {
+        if ($kyc->escalated_at !== null) {
+            return 'breach';
+        }
+
+        $warningHours = (int) config('admin_sla.kyc.warning_hours', 12);
+        $submittedAt = $kyc->submitted_at ?? $kyc->created_at;
+        $ageHours = $submittedAt?->diffInHours(now()) ?? 0;
+
+        return $ageHours >= $warningHours ? 'warning' : 'ok';
     }
 
     /**
@@ -210,6 +320,25 @@ final class SellerVerificationReadService
             'status' => $doc->status,
             'checksum_sha256' => $doc->checksum_sha256,
             'download_url' => $available ? route('admin.sellers.kyc.documents.download', ['document' => $doc->id]) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function documentInsights(KycVerification $kyc): array
+    {
+        $docs = $kyc->kycDocuments;
+        $uploaded = $docs->count();
+        $verified = $docs->where('status', 'verified')->count();
+        $rejected = $docs->where('status', 'rejected')->count();
+
+        return [
+            'uploaded_count' => $uploaded,
+            'verified_count' => $verified,
+            'rejected_count' => $rejected,
+            'quality_state' => $uploaded >= 2 && $rejected === 0 ? 'good' : ($uploaded === 0 ? 'missing' : 'review'),
+            'hint' => $uploaded >= 2 ? 'Documents look complete.' : 'Request additional evidence if needed.',
         ];
     }
 

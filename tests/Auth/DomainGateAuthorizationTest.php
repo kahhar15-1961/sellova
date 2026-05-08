@@ -38,7 +38,7 @@ final class DomainGateAuthorizationTest extends TestCase
         $this->gate = new DomainGate();
     }
 
-    public function test_buyer_may_open_dispute_only_on_own_paid_in_escrow_order(): void
+    public function test_buyer_may_open_dispute_on_own_funded_order_until_release(): void
     {
         [$buyer, $sellerUser, $order] = $this->seedOrderWithParticipants();
 
@@ -50,7 +50,7 @@ final class DomainGateAuthorizationTest extends TestCase
 
         $order->status = OrderStatus::Processing;
         $order->save();
-        self::assertFalse($this->gate->allows(Ability::OrderOpenDispute, $buyer, $order));
+        self::assertTrue($this->gate->allows(Ability::OrderOpenDispute, $buyer, $order));
     }
 
     public function test_payment_mutation_abilities_allow_buyer_and_admin_not_seller(): void
@@ -342,6 +342,9 @@ final class DomainGateAuthorizationTest extends TestCase
             'uuid' => (string) Str::uuid(),
             'order_number' => 'O-'.Str::random(8),
             'buyer_user_id' => $buyer->id,
+            'seller_user_id' => $sellerUser->id,
+            'product_type' => 'physical',
+            'fulfillment_state' => 'in_progress',
             'status' => OrderStatus::Processing,
             'currency' => 'USD',
             'gross_amount' => '20.0000',
@@ -413,6 +416,7 @@ final class DomainGateAuthorizationTest extends TestCase
             'role_id' => $role->id,
             'assigned_by' => null,
             'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

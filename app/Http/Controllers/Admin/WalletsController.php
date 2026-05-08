@@ -31,6 +31,7 @@ final class WalletsController extends AdminPageController
             ),
             ...$data,
             'index_url' => route('admin.wallets.index'),
+            'top_up_requests_url' => route('admin.wallet-top-ups.index'),
             'status_options' => [
                 ['value' => 'active', 'label' => 'Active'],
                 ['value' => 'frozen', 'label' => 'Frozen'],

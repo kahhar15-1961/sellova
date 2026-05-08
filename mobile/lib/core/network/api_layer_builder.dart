@@ -50,10 +50,11 @@ ApiLayer buildApiLayer({
 
   return ApiLayer(
     apiClient: apiClient,
-    authRepository: AuthRepository(apiClient: apiClient, tokenStore: tokenStore),
+    authRepository:
+        AuthRepository(apiClient: apiClient, tokenStore: tokenStore),
     categoryRepository: CategoryRepository(apiClient),
     profileRepository: ProfileRepository(apiClient),
-    productRepository: ProductRepository(apiClient),
+    productRepository: ProductRepository(apiClient, baseUrl: baseUrl),
     orderRepository: OrderRepository(apiClient),
     disputeRepository: DisputeRepository(apiClient),
     withdrawalRepository: WithdrawalRepository(apiClient),

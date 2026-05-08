@@ -30,6 +30,7 @@ export default function EscalationShow({
     const [stepSubmitting, setStepSubmitting] = useState({});
     const [commsSubmitting, setCommsSubmitting] = useState({});
     const [evidenceByStep, setEvidenceByStep] = useState({});
+    const [highlightedStepId, setHighlightedStepId] = useState(null);
 
     const mergedSteps = useMemo(() => optimisticSteps, [optimisticSteps]);
     const mergedCommsLogs = useMemo(() => optimisticComms, [optimisticComms]);
@@ -94,11 +95,18 @@ export default function EscalationShow({
         if (!errors.evidence_notes) return;
         const firstIncomplete = mergedSteps.find((s) => s.status !== 'completed');
         if (!firstIncomplete) return;
+        setHighlightedStepId(firstIncomplete.id);
         const selector = `input[data-step-evidence="${firstIncomplete.id}"]`;
         const input = document.querySelector(selector);
         if (!(input instanceof HTMLInputElement)) return;
         input.scrollIntoView({ behavior: 'smooth', block: 'center' });
         input.focus();
+
+        const timeout = window.setTimeout(() => {
+            setHighlightedStepId((current) => (current === firstIncomplete.id ? null : current));
+        }, 1800);
+
+        return () => window.clearTimeout(timeout);
     }, [errors.evidence_notes, mergedSteps]);
 
     return (
@@ -159,7 +167,10 @@ export default function EscalationShow({
                                 </div>
                                 <div className="space-y-2">
                                     {(mergedSteps || []).map((s) => (
-                                        <div key={s.id} className="rounded-md border p-3">
+                                        <div
+                                            key={s.id}
+                                            className={`rounded-md border p-3 transition-all duration-500 ${highlightedStepId === s.id ? 'border-destructive/70 ring-2 ring-destructive/30' : ''}`}
+                                        >
                                             <div className="flex items-start justify-between gap-2">
                                                 <div>
                                                     <p className="text-sm font-medium">#{s.step_order} {s.instruction}</p>

@@ -20,6 +20,8 @@ use App\Domain\Enums\WalletType;
 use App\Domain\Enums\WithdrawalRequestStatus;
 use App\Domain\Value\LedgerPostingLine;
 use App\Models\Category;
+use App\Models\AdminEscalationPolicy;
+use App\Models\AdminOnCallRotation;
 use App\Models\DisputeCase;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -27,6 +29,7 @@ use App\Models\Product;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\SellerProfile;
+use App\Models\ShippingMethod;
 use App\Models\Storefront;
 use App\Models\User;
 use App\Models\UserRole;
@@ -51,13 +54,14 @@ final class LocalAppSeeder
     private const TRUNCATE_TABLES = [
         'outbox_events', 'audit_logs', 'notifications', 'reviews', 'dispute_decisions', 'dispute_evidences',
         'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
-        'withdrawal_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
+        'withdrawal_requests', 'wallet_top_up_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
         'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',
         'payment_transactions', 'payment_intents', 'idempotency_keys', 'order_state_transitions',
         'order_items', 'orders', 'commission_rules', 'membership_plans', 'cart_items', 'carts',
-        'inventory_records', 'product_variants', 'products', 'categories', 'storefronts', 'kyc_documents',
-        'kyc_verifications', 'seller_profiles', 'role_permissions', 'user_roles', 'permissions', 'roles',
-        'user_auth_tokens', 'users',
+        'inventory_records', 'product_variants', 'products', 'seller_shipping_methods', 'shipping_methods',
+        'seller_category_requests', 'categories', 'storefronts', 'kyc_documents', 'kyc_verifications',
+        'seller_profiles', 'promotions', 'role_permissions', 'user_roles', 'permissions', 'roles', 'user_auth_tokens',
+        'users',
     ];
 
     /** @var list<DisputeCaseStatus> */
@@ -117,6 +121,31 @@ final class LocalAppSeeder
         $admin = self::makeUser('admin@example.test', $passwordHash);
         self::ensureRole($admin, RoleCodes::Admin, 'Administrator');
         self::ensureRole($admin, RoleCodes::Adjudicator, 'Adjudicator');
+        self::ensureRole($admin, RoleCodes::KycReviewer, 'KYC Reviewer');
+
+        AdminEscalationPolicy::query()->updateOrCreate(
+            ['queue_code' => 'seller_kyc'],
+            [
+                'default_severity' => 'medium',
+                'auto_assign_on_call' => true,
+                'on_call_role_code' => RoleCodes::KycReviewer,
+                'ack_sla_minutes' => 15,
+                'resolve_sla_minutes' => 1440,
+                'is_enabled' => true,
+            ],
+        );
+
+        foreach (range(0, 6) as $weekday) {
+            AdminOnCallRotation::query()->create([
+                'role_code' => RoleCodes::KycReviewer,
+                'user_id' => $admin->id,
+                'weekday' => $weekday,
+                'start_hour' => 0,
+                'end_hour' => 23,
+                'priority' => 1,
+                'is_active' => true,
+            ]);
+        }
 
         $sellers = [];
         foreach ([1, 2, 3] as $i) {
@@ -141,25 +170,8 @@ final class LocalAppSeeder
             $buyers[] = self::makeUser("buyer{$i}@example.test", $passwordHash);
         }
 
-        $categories = [];
-        foreach ([
-            'Electronics',
-            'Fashion',
-            'Digital Products',
-            'Home & Living',
-            'Books & Stationery',
-            'Sports & Outdoors',
-            'Automotive',
-            'Beauty & Health',
-        ] as $idx => $name) {
-            $categories[] = Category::query()->create([
-                'parent_id' => null,
-                'slug' => 'local-'.Str::slug($name).'-'.$idx,
-                'name' => $name,
-                'is_active' => true,
-                'sort_order' => $idx + 1,
-            ]);
-        }
+        $categories = self::seedMarketplaceCategories();
+        self::seedShippingMethods();
 
         $storefronts = [];
         foreach ($sellers as $idx => $row) {
@@ -445,6 +457,8 @@ final class LocalAppSeeder
                 'reject_reason' => $st === WithdrawalRequestStatus::Rejected ? 'Seeded rejection (demo).' : null,
             ]);
         }
+
+        PromotionSeeder::seedDefaults();
     }
 
     private static function truncateCoreTables(): void
@@ -456,6 +470,116 @@ final class LocalAppSeeder
             }
         }
         DB::statement('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    /**
+     * @return list<Category>
+     */
+    private static function seedMarketplaceCategories(): array
+    {
+        $tree = [
+            [
+                'name' => 'Electronics',
+                'description' => 'Phones, laptops, accessories, gadgets, and consumer electronics.',
+                'children' => ['Mobile Phones', 'Laptops & Computers', 'Audio & Headphones', 'Cameras', 'Accessories'],
+            ],
+            [
+                'name' => 'Fashion',
+                'description' => 'Men, women, kids, footwear, bags, and personal style products.',
+                'children' => ['Men Clothing', 'Women Clothing', 'Shoes', 'Bags & Wallets', 'Watches'],
+            ],
+            [
+                'name' => 'Digital Products',
+                'description' => 'Instant-delivery accounts, subscriptions, software, game items, and license keys.',
+                'children' => ['Game Accounts', 'Software Licenses', 'Subscription Packages', 'Gift Cards', 'Digital Courses'],
+            ],
+            [
+                'name' => 'Home & Living',
+                'description' => 'Furniture, kitchen items, decor, lighting, and home improvement essentials.',
+                'children' => ['Furniture', 'Kitchen & Dining', 'Home Decor', 'Lighting', 'Bedding'],
+            ],
+            [
+                'name' => 'Books & Stationery',
+                'description' => 'Books, office supplies, school essentials, and creative stationery.',
+                'children' => ['Books', 'Office Supplies', 'School Supplies', 'Art Supplies'],
+            ],
+            [
+                'name' => 'Sports & Outdoors',
+                'description' => 'Sports equipment, fitness gear, outdoor tools, and travel essentials.',
+                'children' => ['Fitness Equipment', 'Outdoor Gear', 'Sportswear', 'Travel Accessories'],
+            ],
+            [
+                'name' => 'Automotive',
+                'description' => 'Vehicle accessories, care products, parts, and riding essentials.',
+                'children' => ['Car Accessories', 'Motorbike Accessories', 'Vehicle Care', 'Parts'],
+            ],
+            [
+                'name' => 'Beauty & Health',
+                'description' => 'Skincare, grooming, cosmetics, wellness, and personal-care items.',
+                'children' => ['Skincare', 'Hair Care', 'Makeup', 'Personal Care', 'Health Devices'],
+            ],
+        ];
+
+        $usableCategories = [];
+        foreach ($tree as $rootIndex => $rootSpec) {
+            $root = self::upsertCategory(
+                name: $rootSpec['name'],
+                parentId: null,
+                sortOrder: ($rootIndex + 1) * 100,
+                description: $rootSpec['description'],
+            );
+            $usableCategories[] = $root;
+
+            foreach ($rootSpec['children'] as $childIndex => $childName) {
+                $usableCategories[] = self::upsertCategory(
+                    name: $childName,
+                    parentId: (int) $root->id,
+                    sortOrder: (($rootIndex + 1) * 100) + $childIndex + 1,
+                    description: $childName.' under '.$rootSpec['name'].'.',
+                );
+            }
+        }
+
+        return $usableCategories;
+    }
+
+    private static function upsertCategory(string $name, ?int $parentId, int $sortOrder, ?string $description = null): Category
+    {
+        return Category::query()->updateOrCreate(
+            ['slug' => Str::slug($name)],
+            [
+                'parent_id' => $parentId,
+                'name' => $name,
+                'description' => $description,
+                'image_url' => null,
+                'is_active' => true,
+                'sort_order' => $sortOrder,
+            ],
+        );
+    }
+
+    private static function seedShippingMethods(): void
+    {
+        foreach ([
+            ['inside_dhaka', 'Inside Dhaka', '60.00', 'Same day', 10],
+            ['outside_dhaka', 'Outside Dhaka', '120.00', '1-2 Business Days', 20],
+            ['inside_rangpur', 'Inside Rangpur', '90.00', '1-2 Business Days', 30],
+            ['inside_chattogram', 'Inside Chattogram', '90.00', '1-2 Business Days', 40],
+            ['outside_city', 'Outside City / Regional', '140.00', '3-5 Business Days', 50],
+            ['instant_digital', 'Instant Digital Delivery', '0.00', 'Instant', 60],
+        ] as [$code, $name, $fee, $processing, $sortOrder]) {
+            $method = ShippingMethod::query()->firstOrNew(['code' => $code]);
+            if (! $method->exists) {
+                $method->uuid = (string) Str::uuid();
+            }
+            $method->fill([
+                'name' => $name,
+                'suggested_fee' => $fee,
+                'processing_time_label' => $processing,
+                'is_active' => true,
+                'sort_order' => $sortOrder,
+            ])->save();
+        }
     }
 
     private static function makeUser(string $email, string $passwordHash): User

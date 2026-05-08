@@ -6,3 +6,7 @@ import '../data/order_repository.dart';
 final orderDetailProvider = FutureProvider.family<OrderDto, int>((ref, orderId) async {
   return ref.read(orderRepositoryProvider).getById(orderId);
 });
+
+final orderTrackingProvider = FutureProvider.family<OrderTrackingDto, int>((ref, orderId) async {
+  return ref.read(orderRepositoryProvider).getTracking(orderId);
+});

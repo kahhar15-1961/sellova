@@ -77,7 +77,7 @@ class _DisputeDetailContent extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           sliver: SliverList.list(
             children: <Widget>[
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.summarize_outlined,
                 title: 'Dispute summary',
                 subtitle: 'Reason and context',
@@ -85,7 +85,7 @@ class _DisputeDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _SummarySection(dispute: dispute),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.receipt_long_outlined,
                 title: 'Related order',
                 subtitle: 'Linked purchase',
@@ -93,7 +93,7 @@ class _DisputeDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _RelatedOrderSection(dispute: dispute),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.flag_outlined,
                 title: 'Current status',
                 subtitle: 'Where this case stands today',
@@ -102,7 +102,7 @@ class _DisputeDetailContent extends StatelessWidget {
               _StatusResolutionHero(dispute: dispute),
               if (isResolved) ...<Widget>[
                 const SizedBox(height: 16),
-                _SectionHeader(
+                const _SectionHeader(
                   icon: Icons.gavel,
                   title: 'Final outcome',
                   subtitle: 'Resolution result',
@@ -111,7 +111,7 @@ class _DisputeDetailContent extends StatelessWidget {
                 _OutcomeHighlight(dispute: dispute),
               ],
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.history,
                 title: 'Status timeline',
                 subtitle: 'How this case progressed',
@@ -122,7 +122,7 @@ class _DisputeDetailContent extends StatelessWidget {
               else
                 _TimelineSection(events: timeline),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.folder_open_outlined,
                 title: 'Evidence',
                 subtitle: 'Attachments submitted for review',

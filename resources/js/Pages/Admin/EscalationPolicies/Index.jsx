@@ -19,13 +19,14 @@ export default function EscalationPoliciesIndex({ header, policies, rotations, u
                                 <option value="disputes">disputes</option>
                                 <option value="withdrawals">withdrawals</option>
                                 <option value="approvals">approvals</option>
+                                <option value="seller_kyc">seller_kyc</option>
                             </select>
                             <select name="default_severity" className="h-9 w-full rounded-md border px-2 text-sm">
                                 <option value="medium">medium</option>
                                 <option value="high">high</option>
                                 <option value="critical">critical</option>
                             </select>
-                            <input name="on_call_role_code" className="h-9 w-full rounded-md border px-2 text-sm" placeholder="on_call_role_code e.g. dispute_officer" />
+                            <input name="on_call_role_code" className="h-9 w-full rounded-md border px-2 text-sm" placeholder="on_call_role_code e.g. kyc_reviewer" />
                             <select name="comms_integration_id" className="h-9 w-full rounded-md border px-2 text-sm" defaultValue="">
                                 <option value="">No comms integration</option>
                                 {(commsIntegrations || []).map((i) => (

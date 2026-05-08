@@ -15,6 +15,10 @@ final class OrderParticipant
      */
     public static function sellerUserIds(Order $order): array
     {
+        if ((int) ($order->seller_user_id ?? 0) > 0) {
+            return [(int) $order->seller_user_id];
+        }
+
         $order->loadMissing('orderItems.seller_profile');
 
         return $order->orderItems
@@ -32,7 +36,8 @@ final class OrderParticipant
 
     public static function isSellerParticipant(User $user, Order $order): bool
     {
-        return in_array((int) $user->id, self::sellerUserIds($order), true);
+        return (int) ($order->seller_user_id ?? 0) === (int) $user->id
+            || in_array((int) $user->id, self::sellerUserIds($order), true);
     }
 
     public static function isParticipant(User $user, Order $order): bool

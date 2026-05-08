@@ -234,7 +234,7 @@ final class DisputeServiceIntegrationTest extends TestCase
         );
 
         self::assertSame('released', $out['escrow_state']);
-        self::assertSame(OrderStatus::PaidInEscrow->value, $out['order_status']);
+        self::assertSame(OrderStatus::Completed->value, $out['order_status']);
 
         $escrow = EscrowAccount::query()->findOrFail($escrowId);
         self::assertSame('40.0000', (string) $escrow->refunded_amount);
@@ -299,7 +299,7 @@ final class DisputeServiceIntegrationTest extends TestCase
         );
 
         self::assertSame('released', $out['escrow_state']);
-        self::assertSame(OrderStatus::PaidInEscrow->value, $out['order_status']);
+        self::assertSame(OrderStatus::Completed->value, $out['order_status']);
         self::assertSame(EscrowState::Released, EscrowAccount::query()->findOrFail($escrowId)->state);
 
         $decision = DisputeDecision::query()->where('dispute_case_id', $caseId)->firstOrFail();
@@ -532,7 +532,7 @@ final class DisputeServiceIntegrationTest extends TestCase
         self::assertSame('refunded', $out['escrow_state']);
     }
 
-    public function test_open_dispute_rejects_non_paid_in_escrow_order(): void
+    public function test_open_dispute_rejects_unfunded_order(): void
     {
         $buyer = User::query()->create([
             'uuid' => (string) Str::uuid(),
@@ -543,7 +543,7 @@ final class DisputeServiceIntegrationTest extends TestCase
             'uuid' => (string) Str::uuid(),
             'order_number' => 'ORD-'.Str::upper(Str::random(8)),
             'buyer_user_id' => $buyer->id,
-            'status' => OrderStatus::Processing,
+            'status' => OrderStatus::PendingPayment,
             'currency' => 'USD',
             'gross_amount' => '10.0000',
             'discount_amount' => '0.0000',

@@ -1,0 +1,82 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter analyze mobile
+
+## exception
+
+_Exception: Exception: analysis server exited with code 255 and output:
+[stderr] #50     AnalysisDriverScheduler._run (package:analyzer/src/dart/analysis/driver.dart:2760:24)
+[stderr] <asynchronous suspension>
+[stderr] 
+[stderr] 
+[stderr] #0      LibraryContext._throwLibraryCycleLinkException (package:analyzer/src/dart/analysis/library_context.dart:467:5)
+[stderr] #1      LibraryContext._loadBundle (package:analyzer/src/dart/analysis/library_context.dart:339:9)
+[stderr] #2      LibraryContext._loadBundle (package:analyzer/src/dart/analysis/library_context.dart:213:7)
+[stderr] #3      LibraryContext._loadBundle (package:analyzer/src/dart/analysis/library_context.dart:213:7)
+[stderr] #4      LibraryContext._loadBundle (package:analyzer/src/dart/analysis/library_context.dart:213:7)
+[stderr] #5      LibraryContext.load.<anonymous closure> (package:analyzer/src/dart/analysis/library_context.dart:146:7)
+[stderr] #6      OperationPerformanceImpl.run (package:analyzer/src/util/performance/operation_performance.dart:182:23)
+[stderr] #7      LibraryContext.load (package:analyzer/src/dart/analysis/library_context.dart:145:17)
+[stderr] #8      AnalysisDriver._produceErrors.<anonymous closure>.<anonymous closure> (package:analyzer/src/dart/analysis/driver.dart:2137:28)
+[stderr] #9      OperationPerformanceImpl.run (package:analyzer/src/util/performance/operation_performance.dart:182:23)
+[stderr] #10     AnalysisDriver._produceErrors.<anonymous closure> (package:analyzer/src/dart/analysis/driver.dart:2136:23)
+[stderr] #11     OperationPerformanceImpl.run (package:analyzer/src/util/performance/operation_performance.dart:182:23)
+[stderr] #12     AnalysisDriver._produceErrors (package:analyzer/src/dart/analysis/driver.dart:2114:40)
+[stderr] #13     AnalysisDriver.performWork (package:analyzer/src/dart/analysis/driver.dart:1239:7)
+[stderr] #14     AnalysisDriverScheduler._run (package:analyzer/src/dart/analysis/driver.dart:2760:24)
+[stderr] <asynchronous suspension>
+
+```
+```
+
+## flutter doctor
+
+```
+[✓] Flutter (Channel stable, 3.41.7, on macOS 26.4.1 25E253 darwin-x64, locale en-GB) [145ms]
+    • Flutter version 3.41.7 on channel stable at /Users/nayeem/development/flutter
+    • Upstream repository https://github.com/flutter/flutter.git
+    • Framework revision cc0734ac71 (12 days ago), 2026-04-15 21:21:08 -0700
+    • Engine revision 59aa584fdf
+    • Dart version 3.11.5
+    • DevTools version 2.54.2
+    • Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, omit-legacy-version-file, enable-lldb-debugging, enable-uiscene-migration
+
+[!] Android toolchain - develop for Android devices (Android SDK version 35.0.0) [349ms]
+    • Android SDK at /Users/nayeem/Library/Android/sdk
+    • Emulator version unknown
+    ✗ cmdline-tools component is missing.
+      Try installing or updating Android Studio.
+      Alternatively, download the tools from https://developer.android.com/studio#command-line-tools-only and make sure to set the ANDROID_HOME environment variable.
+      See https://developer.android.com/studio/command-line for more details.
+    ✗ Android license status unknown.
+      Run `flutter doctor --android-licenses` to accept the SDK licenses.
+      See https://flutter.dev/to/macos-android-setup for more details.
+
+[✗] Xcode - develop for iOS and macOS [154ms]
+    ✗ Xcode installation is incomplete; a full installation is necessary for iOS and macOS development.
+      Download at: https://developer.apple.com/xcode/
+      Or install Xcode via the App Store.
+      Once installed, run:
+        sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+        sudo xcodebuild -runFirstLaunch
+    ✗ CocoaPods not installed.
+        CocoaPods is a package manager for iOS or macOS platform code.
+        Without CocoaPods, plugins will not work on iOS or macOS.
+        For more info, see https://flutter.dev/to/platform-plugins
+      For installation instructions, see https://guides.cocoapods.org/using/getting-started.html#installation
+
+[✓] Chrome - develop for the web [59ms]
+    • Chrome at /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+
+[✓] Connected device (2 available) [5.0s]
+    • macOS (desktop) • macos  • darwin-x64     • macOS 26.4.1 25E253 darwin-x64
+    • Chrome (web)    • chrome • web-javascript • Google Chrome 147.0.7727.116
+
+[✓] Network resources [1,503ms]
+    • All expected network resources are available.
+
+! Doctor found issues in 2 categories.
+```

@@ -14,6 +14,7 @@ import '../../features/disputes/presentation/dispute_detail_screen.dart';
 import '../../features/disputes/presentation/dispute_list_screen.dart';
 import '../../features/disputes/presentation/create_dispute_screen.dart';
 import '../../features/orders/presentation/order_detail_screen.dart';
+import '../../features/orders/presentation/order_payment_screen.dart';
 import '../../features/orders/presentation/order_list_screen.dart';
 import '../../features/orders/presentation/rate_review_screen.dart';
 import '../../features/orders/presentation/confirm_delivery_screen.dart';
@@ -31,12 +32,15 @@ import '../../features/profile/presentation/my_reviews_screen.dart';
 import '../../features/profile/presentation/notifications_screen.dart';
 import '../../features/profile/presentation/personal_information_screen.dart';
 import '../../features/profile/presentation/payment_methods_screen.dart';
+import '../../features/profile/presentation/wallet_screen.dart';
 import '../../features/profile/presentation/seller_profile_screen.dart';
 import '../../features/profile/presentation/wishlist_screen.dart';
 import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/product_list_screen.dart';
 import '../../features/storefronts/presentation/seller_storefront_screen.dart';
 import '../../features/seller/presentation/seller_dashboard_screen.dart';
+import '../../features/seller/presentation/seller_onboarding_screen.dart';
+import '../../features/seller/presentation/seller_kyc_screen.dart';
 import '../../features/seller/presentation/seller_orders_screen.dart';
 import '../../features/seller/presentation/seller_order_detail_screen.dart';
 import '../../features/seller/presentation/seller_update_order_status_screen.dart';
@@ -76,6 +80,7 @@ import '../../features/seller/presentation/seller_add_stock_in_screen.dart';
 import '../../features/seller/presentation/seller_stock_summary_screen.dart';
 import '../../features/seller/presentation/seller_add_stock_out_screen.dart';
 import '../../features/seller/presentation/seller_add_adjustment_screen.dart';
+import '../../features/seller/presentation/seller_warehouse_management_screen.dart';
 import '../../features/shell/presentation/app_shell_screen.dart';
 import '../../features/cart/presentation/cart_screen.dart';
 import '../../features/cart/presentation/checkout_payment_screen.dart';
@@ -83,7 +88,6 @@ import '../../features/cart/presentation/checkout_review_screen.dart';
 import '../../features/cart/presentation/checkout_shipping_screen.dart';
 import '../../features/cart/presentation/add_edit_address_screen.dart';
 import '../../features/cart/presentation/saved_addresses_screen.dart';
-import '../../features/cart/presentation/promo_codes_screen.dart';
 import '../../features/cart/presentation/payment_method_screens.dart';
 import '../../features/cart/presentation/checkout_guard_screen.dart';
 import '../../features/cart/presentation/order_success_screen.dart';
@@ -192,6 +196,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const PaymentMethodsScreen(),
           ),
           GoRoute(
+            path: '/profile/wallet',
+            builder: (_, __) => const WalletScreen(),
+          ),
+          GoRoute(
             path: '/profile/reviews',
             builder: (_, __) => const MyReviewsScreen(),
           ),
@@ -218,6 +226,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/seller/menu',
             builder: (_, __) => const SellerMenuScreen(),
+          ),
+          GoRoute(
+            path: '/seller/onboarding',
+            builder: (_, __) => const SellerOnboardingScreen(),
+          ),
+          GoRoute(
+            path: '/seller/kyc',
+            builder: (_, __) => const SellerKycScreen(),
           ),
           GoRoute(
             path: '/seller/withdraw',
@@ -254,6 +270,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/seller/bank-payment-methods',
             builder: (_, __) => const SellerBankPaymentMethodsScreen(),
+          ),
+          GoRoute(
+            path: '/seller/warehouses',
+            builder: (_, __) => const SellerWarehouseManagementScreen(),
           ),
           GoRoute(
             path: '/seller/returns',
@@ -430,12 +450,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/seller/disputes/chat',
-            builder: (_, __) => const SellerDisputeConversationScreen(),
+            builder: (_, state) {
+              final disputeId =
+                  int.tryParse(state.uri.queryParameters['disputeId'] ?? '');
+              final sellerView =
+                  state.uri.queryParameters['sellerView'] == '1' ||
+                      state.uri.queryParameters['sellerView'] == 'true';
+              return SellerDisputeConversationScreen(
+                sellerView: sellerView,
+                disputeId: disputeId,
+              );
+            },
           ),
           GoRoute(
             path: '/seller/disputes/chat-seller',
-            builder: (_, __) =>
-                const SellerDisputeConversationScreen(sellerView: true),
+            builder: (_, state) {
+              final disputeId =
+                  int.tryParse(state.uri.queryParameters['disputeId'] ?? '');
+              return SellerDisputeConversationScreen(
+                sellerView: true,
+                disputeId: disputeId,
+              );
+            },
           ),
           GoRoute(
             path: '/seller/disputes/resolution',
@@ -536,7 +572,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/checkout/promo',
-            builder: (_, __) => const PromoCodesScreen(),
+            redirect: (_, __) => '/checkout/review',
           ),
           GoRoute(
             path: '/checkout/payment/bkash',
@@ -553,15 +589,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/order-success',
             builder: (_, GoRouterState state) {
-              final orderId =
-                  state.uri.queryParameters['orderId'] ?? 'BS0000000000';
+              final orderId = state.uri.queryParameters['orderId'] ?? '0';
+              final orderNumber =
+                  state.uri.queryParameters['orderNumber'] ?? orderId;
               final total = state.uri.queryParameters['total'] ?? '0.00';
               final currency = (state.uri.queryParameters['currency'] ?? 'USD')
                   .toUpperCase();
               final formatted =
                   currency == 'USD' ? '\$$total' : '$currency $total';
               return OrderSuccessScreen(
-                  orderId: orderId, totalFormatted: formatted);
+                  orderId: orderId,
+                  orderNumber: orderNumber,
+                  totalFormatted: formatted);
             },
           ),
           GoRoute(
@@ -606,6 +645,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             },
           ),
           GoRoute(
+            path: '/orders/:orderId/pay',
+            builder: (_, state) {
+              final id = int.tryParse(state.pathParameters['orderId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                  body: Center(child: Text('Invalid order ID')),
+                );
+              }
+              return OrderPaymentScreen(
+                orderId: id,
+                autoPay: state.uri.queryParameters['autopay'] == '1',
+                paymentMethod: state.uri.queryParameters['method'] ?? 'wallet',
+              );
+            },
+          ),
+          GoRoute(
             path: '/orders/:orderId/review',
             builder: (_, state) {
               final id = int.tryParse(state.pathParameters['orderId'] ?? '');
@@ -640,7 +695,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/chats',
-            builder: (_, __) => const ChatInboxScreen(),
+            builder: (_, state) => ChatInboxScreen(
+              panel: state.uri.queryParameters['panel'] == 'seller'
+                  ? 'seller'
+                  : 'buyer',
+            ),
           ),
           GoRoute(
             path: '/chats/thread/:threadId',
@@ -651,7 +710,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     body: Center(child: Text('Invalid thread ID')));
               }
               final title = state.uri.queryParameters['title'] ?? 'Chat';
-              return ChatThreadScreen(threadId: id, title: title);
+              return ChatThreadScreen(
+                threadId: id,
+                title: title,
+                panel: state.uri.queryParameters['panel'] == 'seller'
+                    ? 'seller'
+                    : 'buyer',
+              );
             },
           ),
           GoRoute(

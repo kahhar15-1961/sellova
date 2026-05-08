@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $uuid
  * @property string|null $email
  * @property string|null $phone
+ * @property string|null $display_name
  * @property string|null $password_hash
  * @property string $status
  * @property string $risk_level
@@ -56,6 +57,7 @@ class User extends Model
         'uuid',
         'email',
         'phone',
+        'display_name',
         'password_hash',
         'status',
         'risk_level',

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../auth/application/auth_session_controller.dart';
 import '../../../app/providers/app_providers.dart';
 
 class CheckoutAddress {
@@ -104,76 +106,124 @@ class CheckoutAddress {
 final savedAddressesProvider = NotifierProvider<SavedAddressesController, List<CheckoutAddress>>(SavedAddressesController.new);
 
 class SavedAddressesController extends Notifier<List<CheckoutAddress>> {
-  static const String _prefsKey = 'checkout_addresses_v1';
+  static const String _legacyPrefsKey = 'checkout_addresses_v1';
+  static const String _prefsKeyPrefix = 'checkout_addresses_v2_user_';
 
   @override
-  List<CheckoutAddress> build() => _readFromPrefs();
-
-  List<CheckoutAddress> _seed() {
-    return const <CheckoutAddress>[
-      CheckoutAddress(
-        id: 'addr_home',
-        title: 'Home',
-        fullName: 'Mohammad Ashikur Rahman',
-        phone: '01912-345678',
-        line1: '123 Green Road',
-        line2: '',
-        area: 'Dhanmondi',
-        city: 'Dhaka',
-        postalCode: '1205',
-        country: 'Bangladesh',
-        isDefault: true,
-      ),
-      CheckoutAddress(
-        id: 'addr_office',
-        title: 'Office',
-        fullName: 'Mohammad Ashikur Rahman',
-        phone: '01876-543210',
-        line1: 'Level 8, 42 Gulshan Avenue',
-        line2: '',
-        area: 'Gulshan 1',
-        city: 'Dhaka',
-        postalCode: '1212',
-        country: 'Bangladesh',
-        isDefault: false,
-      ),
-      CheckoutAddress(
-        id: 'addr_parents',
-        title: 'Parents Home',
-        fullName: 'Mohammad Ashikur Rahman',
-        phone: '01711-223344',
-        line1: 'House 15, Road 7',
-        line2: '',
-        area: 'Mirpur DOHS',
-        city: 'Dhaka',
-        postalCode: '1216',
-        country: 'Bangladesh',
-        isDefault: false,
-      ),
-    ];
+  List<CheckoutAddress> build() {
+    final userId = ref.watch(authSessionControllerProvider.select(
+      (state) => state.session?.userId,
+    ));
+    return _readFromPrefs(userId);
   }
 
-  List<CheckoutAddress> _readFromPrefs() {
-    final raw = ref.read(sharedPreferencesProvider).getString(_prefsKey);
-    if (raw == null || raw.isEmpty) {
-      final seeded = _seed();
-      _persist(seeded);
-      return seeded;
+  String? _prefsKeyForUserId(int? userId) {
+    if (userId == null) {
+      return null;
+    }
+    return '$_prefsKeyPrefix$userId';
+  }
+
+  bool _looksLikeLegacyDemoSeed(List<CheckoutAddress> addresses) {
+    if (addresses.length != 3) {
+      return false;
+    }
+
+    final expected = <String, List<String>>{
+      'Home': <String>['123 Green Road', 'Dhanmondi', 'Dhaka', '1205', 'Bangladesh', '01912-345678'],
+      'Office': <String>['Level 8, 42 Gulshan Avenue', 'Gulshan 1', 'Dhaka', '1212', 'Bangladesh', '01876-543210'],
+      'Parents Home': <String>['House 15, Road 7', 'Mirpur DOHS', 'Dhaka', '1216', 'Bangladesh', '01711-223344'],
+    };
+
+    for (final address in addresses) {
+      final values = expected[address.title];
+      if (values == null) {
+        return false;
+      }
+      final actual = <String>[
+        address.line1,
+        address.area,
+        address.city,
+        address.postalCode,
+        address.country,
+        address.phone,
+      ];
+      if (!_listEquals(values, actual)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool _listEquals(List<String> expected, List<String> actual) {
+    if (expected.length != actual.length) {
+      return false;
+    }
+    for (var i = 0; i < expected.length; i++) {
+      if (expected[i] != actual[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<CheckoutAddress> _readFromPrefs(int? userId) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final prefsKey = _prefsKeyForUserId(userId);
+    if (prefsKey == null) {
+      return const <CheckoutAddress>[];
+    }
+
+    final raw = prefs.getString(prefsKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map>()
+              .map((e) => CheckoutAddress.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+      } catch (_) {
+        // Fall through to legacy migration or empty state.
+      }
+    }
+
+    final legacyRaw = prefs.getString(_legacyPrefsKey);
+    if (legacyRaw == null || legacyRaw.isEmpty) {
+      return const <CheckoutAddress>[];
     }
     try {
-      final decoded = jsonDecode(raw);
+      final decoded = jsonDecode(legacyRaw);
       if (decoded is! List) {
-        return _seed();
+        unawaited(prefs.remove(_legacyPrefsKey));
+        return const <CheckoutAddress>[];
       }
-      return decoded.whereType<Map>().map((e) => CheckoutAddress.fromJson(Map<String, dynamic>.from(e))).toList();
+      final legacyAddresses = decoded
+          .whereType<Map>()
+          .map((e) => CheckoutAddress.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      if (legacyAddresses.isEmpty || _looksLikeLegacyDemoSeed(legacyAddresses)) {
+        unawaited(prefs.remove(_legacyPrefsKey));
+        return const <CheckoutAddress>[];
+      }
+      unawaited(prefs.setString(prefsKey, jsonEncode(legacyAddresses.map((e) => e.toJson()).toList())));
+      unawaited(prefs.remove(_legacyPrefsKey));
+      return legacyAddresses;
     } catch (_) {
-      return _seed();
+      unawaited(prefs.remove(_legacyPrefsKey));
+      return const <CheckoutAddress>[];
     }
   }
 
   Future<void> _persist(List<CheckoutAddress> next) async {
+    final prefsKey = _prefsKeyForUserId(ref.read(authSessionControllerProvider).session?.userId);
+    if (prefsKey == null) {
+      return;
+    }
     final encoded = jsonEncode(next.map((e) => e.toJson()).toList());
-    await ref.read(sharedPreferencesProvider).setString(_prefsKey, encoded);
+    await ref.read(sharedPreferencesProvider).setString(prefsKey, encoded);
   }
 
   CheckoutAddress? defaultAddress() {

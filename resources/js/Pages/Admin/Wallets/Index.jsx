@@ -1,4 +1,4 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { AdminFilterBar } from '@/components/admin/AdminFilterBar';
@@ -6,16 +6,26 @@ import { AdminPagination } from '@/components/admin/AdminPagination';
 import { DataTableShell } from '@/components/admin/DataTableShell';
 import { StatCard } from '@/components/admin/StatCard';
 import { StatusBadge } from '@/components/admin/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-export default function WalletsIndex({ header, rows, pagination, filters, index_url, summary, status_options }) {
+export default function WalletsIndex({ header, rows, pagination, filters, index_url, summary, status_options, top_up_requests_url }) {
     const f = filters || {};
     const status = f.status ?? '';
 
     return (
         <AdminLayout>
             <Head title={header.title} />
-            <PageHeader title={header.title} description={header.description} breadcrumbs={header.breadcrumbs} />
+            <PageHeader
+                title={header.title}
+                description={header.description}
+                breadcrumbs={header.breadcrumbs}
+                actions={top_up_requests_url ? (
+                    <Button asChild variant="outline" size="sm">
+                        <Link href={top_up_requests_url}>Top-up requests</Link>
+                    </Button>
+                ) : null}
+            />
             <div className="space-y-6">
                 <div className="grid gap-3 sm:grid-cols-4">
                     <StatCard label="Total" value={String(summary?.total ?? 0)} />

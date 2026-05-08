@@ -743,18 +743,22 @@ class EscrowService
             currency: (string) $escrow->currency,
         );
 
-        $sellerProfileIds = $order->orderItems->pluck('seller_profile_id')->filter()->unique()->values();
-        if ($sellerProfileIds->count() !== 1) {
-            throw new EscrowReleaseConflictException($escrow->id, 'multi_seller_release_not_supported_yet');
-        }
+        $sellerUserId = (int) ($order->seller_user_id ?? 0);
+        if ($sellerUserId <= 0) {
+            $sellerProfileIds = $order->orderItems->pluck('seller_profile_id')->filter()->unique()->values();
+            if ($sellerProfileIds->count() !== 1) {
+                throw new EscrowReleaseConflictException($escrow->id, 'multi_seller_release_not_supported_yet');
+            }
 
-        $sellerProfile = SellerProfile::query()->whereKey((int) $sellerProfileIds->first())->lockForUpdate()->first();
-        if ($sellerProfile === null) {
-            throw new EscrowReleaseConflictException($escrow->id, 'seller_profile_not_found');
+            $sellerProfile = SellerProfile::query()->whereKey((int) $sellerProfileIds->first())->lockForUpdate()->first();
+            if ($sellerProfile === null) {
+                throw new EscrowReleaseConflictException($escrow->id, 'seller_profile_not_found');
+            }
+            $sellerUserId = (int) $sellerProfile->user_id;
         }
 
         $sellerWalletId = $this->resolveWalletIdByUser(
-            userId: (int) $sellerProfile->user_id,
+            userId: $sellerUserId,
             walletType: WalletType::Seller,
             currency: (string) $escrow->currency,
         );

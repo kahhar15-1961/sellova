@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
         }
 
         LocalAppSeeder::seedAll();
+        PromotionSeeder::seedDefaults();
 
         $this->command?->newLine();
         $this->command?->info('Local dataset seeded (core tables were truncated).');

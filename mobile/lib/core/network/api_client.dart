@@ -42,6 +42,12 @@ class ApiClient {
       final response = await _dio.get<Map<String, dynamic>>(
         path,
         queryParameters: queryParameters,
+        options: Options(
+          headers: const <String, dynamic>{
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        ),
       );
       return response.data ?? <String, dynamic>{};
     } catch (error) {
@@ -100,6 +106,7 @@ class ApiClient {
     String path, {
     required FormData data,
     Map<String, dynamic>? queryParameters,
+    ProgressCallback? onSendProgress,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -107,6 +114,7 @@ class ApiClient {
         data: data,
         queryParameters: queryParameters,
         options: Options(contentType: 'multipart/form-data'),
+        onSendProgress: onSendProgress,
       );
       return response.data ?? <String, dynamic>{};
     } catch (error) {

@@ -11,7 +11,8 @@ final readonly class AdvanceOrderFulfillmentCommand
 {
     public function __construct(
         public int $orderId,
-        public OrderStatus $toState,
+        public int $actorUserId,
+        public ?string $correlationId = null,
     ) {
     }
 }

@@ -142,9 +142,28 @@ final class ApiV1IntegrationTest extends TestCase
         $patchSeller = $this->legacyApiJson('PATCH', '/api/v1/me/seller', [
             'display_name' => 'Seller Updated',
             'legal_name' => 'Seller Updated LLC',
+            'store_logo_url' => 'seller-uploads/1/store_media/logo.png',
+            'banner_image_url' => 'seller-uploads/1/store_media/banner.png',
+            'contact_email' => 'store-contact@example.test',
+            'contact_phone' => '+8801711111111',
+            'address_line' => 'House 12, Road 7',
+            'city' => 'Dhaka',
+            'region' => 'Dhaka Division',
+            'postal_code' => '1207',
+            'country' => 'Bangladesh',
         ], $sellerToken);
         self::assertSame(200, $patchSeller['status']);
         self::assertSame('Seller Updated', $patchSeller['json']['data']['display_name']);
+        self::assertSame('seller-uploads/1/store_media/logo.png', $patchSeller['json']['data']['store_logo_url']);
+        self::assertSame('seller-uploads/1/store_media/banner.png', $patchSeller['json']['data']['banner_image_url']);
+        self::assertSame('store-contact@example.test', $patchSeller['json']['data']['contact_email']);
+        self::assertSame('+8801711111111', $patchSeller['json']['data']['contact_phone']);
+        self::assertSame('House 12, Road 7, Dhaka, Dhaka Division, 1207, Bangladesh', $patchSeller['json']['data']['store_address']);
+
+        $getSellerAgain = $this->legacyApiJson('GET', '/api/v1/me/seller', token: $sellerToken);
+        self::assertSame(200, $getSellerAgain['status']);
+        self::assertSame('seller-uploads/1/store_media/banner.png', $getSellerAgain['json']['data']['banner_image_url']);
+        self::assertSame('+8801711111111', $getSellerAgain['json']['data']['contact_phone']);
 
         $buyerReg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
             'account_type' => 'buyer',
@@ -187,6 +206,8 @@ final class ApiV1IntegrationTest extends TestCase
         $show = $this->legacyApiJson('GET', '/api/v1/products/'.$publishedA->id);
         self::assertSame(200, $show['status']);
         self::assertSame($publishedA->id, $show['json']['data']['id']);
+        self::assertArrayHasKey('seller_summary', $show['json']['data']);
+        self::assertArrayHasKey('review_summary', $show['json']['data']);
 
         $notFound = $this->legacyApiJson('GET', '/api/v1/products/999999');
         self::assertSame(404, $notFound['status']);
@@ -197,8 +218,257 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame($publishedB->id > 0, true);
     }
 
+    public function test_product_write_endpoints_cover_create_update_and_delete(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $sellerToken = $this->issueAccessTokenForUser($seller->user);
+
+        $created = $this->legacyApiJson('POST', '/api/v1/products', [
+            'title' => 'Backend Widget',
+            'currency' => 'USD',
+            'base_price' => '19.9900',
+            'category_id' => $category->id,
+            'storefront_id' => $storefront->id,
+            'product_type' => 'physical',
+            'description' => 'Created through the API',
+        ], $sellerToken);
+        self::assertSame(201, $created['status']);
+        self::assertSame('published', $created['json']['data']['status']);
+        self::assertSame('Backend Widget', $created['json']['data']['title']);
+
+        $productId = (int) $created['json']['data']['id'];
+        $updated = $this->legacyApiJson('PATCH', '/api/v1/products/'.$productId, [
+            'title' => 'Backend Widget Plus',
+            'currency' => 'USD',
+            'base_price' => '24.9900',
+            'category_id' => $category->id,
+            'storefront_id' => $storefront->id,
+            'product_type' => 'physical',
+            'description' => 'Updated through the API',
+        ], $sellerToken);
+        self::assertSame(200, $updated['status'], json_encode($updated['json'], JSON_PRETTY_PRINT));
+        self::assertSame('Backend Widget Plus', $updated['json']['data']['title']);
+
+        $deleted = $this->legacyApiJson('DELETE', '/api/v1/products/'.$productId, [
+            'correlation_id' => 'delete-'.Str::random(8),
+        ], $sellerToken);
+        self::assertSame(200, $deleted['status']);
+        self::assertTrue((bool) $deleted['json']['data']['deleted']);
+    }
+
+    public function test_wallet_checkout_endpoint_sets_paid_in_escrow(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $product = $this->seedProduct($seller, $storefront, $category, 'Wallet Checkout Widget', 'published', now());
+        $buyer = $this->createUser('wallet-checkout-'.Str::random(8).'@example.test');
+        $buyerToken = $this->issueAccessTokenForUser($buyer);
+
+        $created = $this->legacyApiJson('POST', '/api/v1/orders', [
+            'correlation_id' => 'wallet-create-'.Str::random(8),
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                    'unit_price' => '12.0000',
+                    'currency' => 'USD',
+                ],
+            ],
+        ], $buyerToken);
+        self::assertSame(200, $created['status']);
+        $orderId = (int) $created['json']['data']['id'];
+
+        $paid = $this->legacyApiJson('POST', '/api/v1/orders/'.$orderId.'/pay/wallet', [
+            'correlation_id' => 'wallet-pay-'.Str::random(8),
+        ], $buyerToken);
+        self::assertSame(200, $paid['status']);
+        self::assertSame('escrow_funded', $paid['json']['data']['status']);
+
+        $show = $this->legacyApiJson('GET', '/api/v1/orders/'.$orderId, token: $buyerToken);
+        self::assertSame(200, $show['status']);
+        self::assertSame('escrow_funded', $show['json']['data']['status']);
+    }
+
+    public function test_seller_product_routes_cover_list_create_update_and_toggle(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $sellerToken = $this->issueAccessTokenForUser($seller->user);
+
+        $listEmpty = $this->legacyApiJson('GET', '/api/v1/seller/products', token: $sellerToken);
+        self::assertSame(200, $listEmpty['status']);
+        self::assertArrayHasKey('data', $listEmpty['json']);
+        self::assertIsArray($listEmpty['json']['data']);
+
+        $created = $this->legacyApiJson('POST', '/api/v1/seller/products', [
+            'title' => 'Seller Route Widget',
+            'currency' => 'USD',
+            'base_price' => '19.9900',
+            'category_id' => $category->id,
+            'stock' => 6,
+            'product_type' => 'physical',
+            'description' => 'Created through seller routes',
+            'image_url' => 'seller-uploads/1/product_image/widget.png',
+            'attributes' => [
+                'brand' => 'Codex',
+                'condition' => 'Like new',
+                'warranty_status' => 'Seller warranty',
+                'warranty_period' => '7 days',
+                'product_location' => 'Dhaka',
+                'tags' => ['premium', 'tested'],
+            ],
+        ], $sellerToken);
+        self::assertSame(201, $created['status']);
+        self::assertSame(6, (int) $created['json']['data']['stock']);
+        self::assertSame('published', $created['json']['data']['status']);
+        self::assertSame('seller-uploads/1/product_image/widget.png', $created['json']['data']['image_url']);
+        self::assertContains('seller-uploads/1/product_image/widget.png', $created['json']['data']['images']);
+        self::assertSame('Codex', $created['json']['data']['attributes']['brand']);
+        self::assertSame('Like new', $created['json']['data']['attributes']['condition']);
+
+        $productId = (int) $created['json']['data']['id'];
+        $listed = $this->legacyApiJson('GET', '/api/v1/seller/products', token: $sellerToken);
+        self::assertSame(200, $listed['status']);
+        self::assertGreaterThanOrEqual(1, count($listed['json']['data']));
+        self::assertSame('seller-uploads/1/product_image/widget.png', $listed['json']['data'][0]['thumbnail_url']);
+        self::assertSame('Codex', $listed['json']['data'][0]['attributes']['brand']);
+
+        $catalog = $this->legacyApiJson('GET', '/api/v1/products?search=Seller');
+        self::assertSame(200, $catalog['status']);
+        self::assertGreaterThanOrEqual(1, count($catalog['json']['data']));
+
+        $updated = $this->legacyApiJson('PATCH', '/api/v1/seller/products/'.$productId, [
+            'title' => 'Seller Route Widget Plus',
+            'currency' => 'USD',
+            'base_price' => '24.9900',
+            'category_id' => $category->id,
+            'stock' => 9,
+            'product_type' => 'physical',
+            'description' => 'Updated through seller routes',
+            'image_url' => 'seller-uploads/1/product_image/widget.png',
+            'attributes' => [
+                'brand' => 'Codex Pro',
+                'condition' => 'Good',
+                'warranty_status' => 'Brand warranty',
+                'product_location' => 'Rangpur',
+                'tags' => 'updated,featured',
+            ],
+        ], $sellerToken);
+        self::assertSame(200, $updated['status'], json_encode($updated['json'], JSON_PRETTY_PRINT));
+        self::assertSame(9, (int) $updated['json']['data']['stock']);
+        self::assertSame('Codex Pro', $updated['json']['data']['attributes']['brand']);
+        self::assertSame('Good', $updated['json']['data']['attributes']['condition']);
+
+        $toggleOff = $this->legacyApiJson('POST', '/api/v1/seller/products/'.$productId.'/toggle', [
+            'active' => false,
+        ], $sellerToken);
+        self::assertSame(200, $toggleOff['status']);
+        self::assertSame('inactive', $toggleOff['json']['data']['status']);
+
+        $toggleOn = $this->legacyApiJson('POST', '/api/v1/seller/products/'.$productId.'/toggle', [
+            'active' => true,
+        ], $sellerToken);
+        self::assertSame(200, $toggleOn['status']);
+        self::assertSame('published', $toggleOn['json']['data']['status']);
+    }
+
+    public function test_fresh_seller_can_create_digital_product_without_existing_storefront(): void
+    {
+        $sellerReg = $this->legacyApiJson('POST', '/api/v1/auth/register', [
+            'account_type' => 'seller',
+            'email' => 'fresh-digital-seller@example.test',
+            'password' => 'secret1234',
+            'display_name' => 'Fresh Digital Seller',
+            'legal_name' => 'Fresh Digital LLC',
+            'country_code' => 'BD',
+            'default_currency' => 'BDT',
+        ]);
+        self::assertSame(201, $sellerReg['status']);
+        $sellerToken = (string) $sellerReg['json']['data']['access_token'];
+        $seller = SellerProfile::query()->where('display_name', 'Fresh Digital Seller')->firstOrFail();
+        self::assertNull($seller->storefront);
+        $category = Category::query()->create([
+            'slug' => 'digital-accounts',
+            'name' => 'Digital Accounts',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $created = $this->legacyApiJson('POST', '/api/v1/seller/products', [
+            'title' => 'ChatGPT Subscription Package',
+            'currency' => 'BDT',
+            'base_price' => '1200.0000',
+            'category_id' => $category->id,
+            'stock' => 1,
+            'product_type' => 'digital',
+            'description' => 'Instant delivery after payment.',
+            'attributes' => [
+                'digital_product_kind' => 'ChatGPT account subscription',
+                'access_type' => 'Subscription package',
+                'subscription_duration' => '30 days',
+                'platform' => 'OpenAI',
+                'account_region' => 'Global',
+                'warranty_status' => 'Seller warranty',
+                'delivery_note' => 'Credentials delivered instantly.',
+                'tags' => ['instant', 'subscription'],
+            ],
+        ], $sellerToken);
+        self::assertSame(201, $created['status']);
+        self::assertSame('published', $created['json']['data']['status']);
+        self::assertSame('digital', $created['json']['data']['product_type']);
+        self::assertGreaterThan(0, (int) $created['json']['data']['storefront_id']);
+        self::assertSame('instant', $created['json']['data']['attributes']['delivery_mode']);
+        self::assertSame('OpenAI', $created['json']['data']['attributes']['platform']);
+        self::assertNotNull($seller->fresh()->storefront);
+
+        $catalog = $this->legacyApiJson('GET', '/api/v1/products/search?search=ChatGPT');
+        self::assertSame(200, $catalog['status']);
+        self::assertGreaterThanOrEqual(1, count($catalog['json']['data']));
+        self::assertSame('OpenAI', $catalog['json']['data'][0]['attributes']['platform']);
+    }
+
     public function test_orders_endpoints_cover_list_detail_policy_and_payment_transitions(): void
     {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $product = $this->seedProduct($seller, $storefront, $category, 'Checkout Widget', 'published', now());
+        $buyerForCreate = $this->createUser('buyer-create-'.Str::random(8).'@example.test');
+        $buyerForCreateToken = $this->issueAccessTokenForUser($buyerForCreate);
+
+        $create = $this->legacyApiJson('POST', '/api/v1/orders', [
+            'correlation_id' => 'checkout-'.Str::random(10),
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 2,
+                    'unit_price' => '12.0000',
+                    'currency' => 'USD',
+                ],
+            ],
+        ], $buyerForCreateToken);
+        self::assertSame(200, $create['status']);
+        self::assertSame('pending_payment', $create['json']['data']['status']);
+        self::assertSame($buyerForCreate->id, $create['json']['data']['buyer_user_id']);
+        self::assertCount(1, $create['json']['data']['items']);
+        self::assertSame('24.0000', (string) $create['json']['data']['net_amount']);
+
+        $selfPurchase = $this->legacyApiJson('POST', '/api/v1/orders', [
+            'correlation_id' => 'self-checkout-'.Str::random(10),
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                    'unit_price' => '12.0000',
+                    'currency' => 'USD',
+                ],
+            ],
+        ], $this->issueAccessTokenForUser($seller->user));
+        self::assertSame(422, $selfPurchase['status']);
+        self::assertSame('validation_failed', $selfPurchase['json']['error']);
+        self::assertSame('self_purchase_not_allowed', $selfPurchase['json']['reason_code']);
+
+        $createdOrderId = (int) $create['json']['data']['id'];
+        $createdOrderShow = $this->legacyApiJson('GET', '/api/v1/orders/'.$createdOrderId, token: $buyerForCreateToken);
+        self::assertSame(200, $createdOrderShow['status']);
+        self::assertSame(1, count($createdOrderShow['json']['data']['items']));
+
         [$buyer, $sellerProfile, $order] = $this->seedOrder(OrderStatus::Draft, '35.0000');
         [, , $order2] = $this->seedOrder(OrderStatus::Draft, '20.0000', $buyer, $sellerProfile);
         $buyerToken = $this->issueAccessTokenForUser($buyer);
@@ -234,14 +504,104 @@ final class ApiV1IntegrationTest extends TestCase
             'payment_transaction_id' => $txn->id,
         ], $buyerToken);
         self::assertSame(200, $paid['status']);
-        self::assertSame('paid_in_escrow', $paid['json']['data']['status']);
+        self::assertSame('escrow_funded', $paid['json']['data']['status']);
+
+        [$cancelBuyer, $cancelSellerProfile, $cancelOrder] = $this->seedOrder(OrderStatus::Draft, '19.0000');
+        $cancelBuyerToken = $this->issueAccessTokenForUser($cancelBuyer);
+        $cancelPending = $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/mark-pending-payment', [], $cancelBuyerToken);
+        self::assertSame(200, $cancelPending['status']);
+        [, $cancelTxn] = $this->seedCapturedPayment($cancelOrder, '19.0000');
+        $cancelPaid = $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/mark-paid', [
+            'payment_transaction_id' => $cancelTxn->id,
+        ], $cancelBuyerToken);
+        self::assertSame(200, $cancelPaid['status']);
+        $cancelled = $this->legacyApiJson('POST', '/api/v1/orders/'.$cancelOrder->id.'/cancel', [
+            'reason' => 'Buyer changed their mind',
+        ], $cancelBuyerToken);
+        self::assertSame(200, $cancelled['status']);
+        self::assertSame('cancelled', $cancelled['json']['data']['status']);
+        self::assertSame(false, $cancelled['json']['data']['can_cancel']);
+        self::assertSame('refunded', $cancelled['json']['data']['escrow_state']);
+        self::assertSame('Buyer changed their mind', $cancelled['json']['data']['cancel_reason']);
+        self::assertSame($cancelSellerProfile->id > 0, true);
 
         $sellerToken = $this->issueAccessTokenForUser($sellerProfile->user);
+        $advanceOne = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/advance-fulfillment', [
+            'correlation_id' => 'advance-'.Str::random(8),
+        ], $sellerToken);
+        self::assertSame(200, $advanceOne['status']);
+        self::assertSame('processing', $advanceOne['json']['data']['status']);
+
+        $cancelProcessing = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/cancel', [
+            'reason' => 'Too late',
+        ], $buyerToken);
+        self::assertSame(409, $cancelProcessing['status']);
+        self::assertSame('invalid_state_transition', $cancelProcessing['json']['error']);
+
+        $advanceTwo = $this->legacyApiJson('POST', '/api/v1/seller/orders/'.$order->id.'/shipping', [
+            'courier_company' => 'Contract Courier',
+            'tracking_id' => 'TRACK'.Str::upper(Str::random(6)),
+            'correlation_id' => 'shipping-'.Str::random(8),
+        ], $sellerToken);
+        self::assertSame(200, $advanceTwo['status']);
+        self::assertSame('buyer_review', $advanceTwo['json']['data']['status']);
+
+        $complete = $this->legacyApiJson('POST', '/api/v1/orders/'.$order->id.'/complete', [
+            'correlation_id' => 'complete-'.Str::random(8),
+        ], $buyerToken);
+        self::assertSame(200, $complete['status']);
+        self::assertSame('completed', $complete['json']['data']['status']);
+        self::assertGreaterThan(0, (int) $complete['json']['data']['escrow_account_id']);
+
         $sellerDenied = $this->legacyApiJson('POST', '/api/v1/orders/'.$order2->id.'/mark-pending-payment', [], $sellerToken);
         self::assertSame(403, $sellerDenied['status']);
         self::assertSame('forbidden', $sellerDenied['json']['error']);
 
         self::assertSame($intent->id > 0, true);
+    }
+
+    public function test_promo_code_endpoints_cover_listing_validation_and_discounted_order_totals(): void
+    {
+        [$seller, $storefront, $category] = $this->seedCatalogOwner();
+        $product = $this->seedProduct($seller, $storefront, $category, 'Promo Widget', 'published', now());
+        $buyer = $this->createUser('buyer-promo-'.Str::random(8).'@example.test');
+        $token = $this->issueAccessTokenForUser($buyer);
+
+        $list = $this->legacyApiJson('GET', '/api/v1/promo-codes?subtotal=1200&currency=USD&shipping_method=standard', token: $token);
+        self::assertSame(200, $list['status']);
+        self::assertArrayHasKey('items', $list['json']['data']);
+        self::assertNotEmpty($list['json']['data']['items']);
+
+        $validate = $this->legacyApiJson('POST', '/api/v1/promo-codes/validate', [
+            'code' => 'WELCOME10',
+            'subtotal' => '1200.0000',
+            'shipping_fee' => '20.0000',
+            'currency' => 'USD',
+            'shipping_method' => 'standard',
+        ], $token);
+        self::assertSame(200, $validate['status']);
+        self::assertSame('WELCOME10', $validate['json']['data']['promo']['code']);
+        self::assertSame('25.0000', (string) $validate['json']['data']['promo']['estimated_discount_amount']);
+
+        $create = $this->legacyApiJson('POST', '/api/v1/orders', [
+            'correlation_id' => 'promo-'.Str::random(10),
+            'shipping_method' => 'standard',
+            'promo_code' => 'WELCOME10',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 2,
+                    'unit_price' => '600.0000',
+                    'currency' => 'USD',
+                ],
+            ],
+        ], $token);
+        self::assertSame(200, $create['status']);
+        self::assertSame('1200.0000', (string) $create['json']['data']['gross_amount']);
+        self::assertSame('20.0000', (string) $create['json']['data']['fee_amount']);
+        self::assertSame('25.0000', (string) $create['json']['data']['discount_amount']);
+        self::assertSame('1195.0000', (string) $create['json']['data']['net_amount']);
+        self::assertSame('WELCOME10', (string) $create['json']['data']['promo_code']);
     }
 
     public function test_disputes_endpoints_cover_full_http_lifecycle_and_policy_checks(): void
@@ -792,7 +1152,7 @@ final class ApiV1IntegrationTest extends TestCase
             'sla_due_at' => now()->subHours(1),
         ]);
         $autoEscalate = $this->legacyApiJson('POST', '/api/v1/admin/returns/auto-escalate', [], $adminToken);
-        self::assertSame(200, $autoEscalate['status']);
+        self::assertSame(200, $autoEscalate['status'], json_encode($autoEscalate['json'], JSON_PRETTY_PRINT));
         self::assertGreaterThanOrEqual(1, (int) $autoEscalate['json']['data']['updated']);
 
         $oldOrder = $this->seedOrder(OrderStatus::Completed, '15.0000', $buyer, $sellerProfile)[2];
@@ -945,6 +1305,9 @@ final class ApiV1IntegrationTest extends TestCase
             'uuid' => (string) Str::uuid(),
             'order_number' => 'ORD-'.Str::upper(Str::random(10)),
             'buyer_user_id' => $buyer->id,
+            'seller_user_id' => $sellerProfile->user_id,
+            'product_type' => 'physical',
+            'fulfillment_state' => 'not_started',
             'status' => $status,
             'currency' => 'USD',
             'gross_amount' => $netAmount,
@@ -1107,4 +1470,3 @@ final class ApiV1IntegrationTest extends TestCase
         return [$sellerUser, $seller, $walletId];
     }
 }
-

@@ -26,6 +26,7 @@ final class BulkProductModerationRequest extends FormRequest
             'filters' => ['nullable', 'array'],
             'filters.q' => ['nullable', 'string', 'max:255'],
             'filters.status' => ['nullable', Rule::in(['draft', 'active', 'inactive', 'archived', 'published'])],
+            'filters.type' => ['nullable', Rule::in(['physical', 'digital', 'instant_delivery', 'service'])],
             'status' => ['required', Rule::in(['draft', 'active', 'inactive', 'archived', 'published'])],
             'reason' => ['nullable', 'string', 'max:1000'],
         ];

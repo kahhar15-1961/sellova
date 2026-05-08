@@ -19,7 +19,12 @@ use Illuminate\Support\Carbon;
  * @property string|null $title
  * @property string|null $description
  * @property string $base_price
+ * @property string $discount_percentage
+ * @property string|null $discount_label
  * @property string|null $currency
+ * @property string|null $image_url
+ * @property array<int, string>|null $images_json
+ * @property array<string, mixed>|null $attributes_json
  * @property string $status
  * @property Carbon|null $published_at
  * @property Carbon|null $created_at
@@ -49,7 +54,12 @@ class Product extends Model
         'title',
         'description',
         'base_price',
+        'discount_percentage',
+        'discount_label',
         'currency',
+        'image_url',
+        'images_json',
+        'attributes_json',
         'status',
         'published_at',
     ];
@@ -60,6 +70,9 @@ class Product extends Model
         'category_id' => 'integer',
         'product_type' => 'string',
         'base_price' => 'decimal:4',
+        'discount_percentage' => 'decimal:2',
+        'images_json' => 'array',
+        'attributes_json' => 'array',
         'status' => 'string',
         'published_at' => 'datetime',
         'created_at' => 'datetime',

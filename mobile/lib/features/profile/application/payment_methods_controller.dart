@@ -12,14 +12,40 @@ class PaymentMethodsController extends AsyncNotifier<List<PaymentMethodItem>> {
     return ref.read(profileExtrasRepositoryProvider).loadPaymentMethods();
   }
 
-  Future<void> addMockCard() async {
-    final current = state.valueOrNull ?? <PaymentMethodItem>[];
-    final count = current.length + 1;
+  Future<void> addPaymentMethod({
+    required String kind,
+    required String label,
+    required String subtitle,
+    required Map<String, dynamic> details,
+    bool isDefault = false,
+  }) async {
     final next = await ref.read(profileExtrasRepositoryProvider).addPaymentMethod(
-          kind: 'card',
-          label: 'Card **** ${1000 + count * 7}',
-          subtitle: 'Expires 12/30',
-          isDefault: false,
+          kind: kind,
+          label: label,
+          subtitle: subtitle,
+          details: details,
+          isDefault: isDefault,
+        );
+    state = AsyncData(next);
+  }
+
+  Future<void> updatePaymentMethod({
+    required String id,
+    required String kind,
+    required String label,
+    required String subtitle,
+    required Map<String, dynamic> details,
+    bool isDefault = false,
+  }) async {
+    final next = await ref
+        .read(profileExtrasRepositoryProvider)
+        .updatePaymentMethod(
+          id: id,
+          kind: kind,
+          label: label,
+          subtitle: subtitle,
+          details: details,
+          isDefault: isDefault,
         );
     state = AsyncData(next);
   }
@@ -34,4 +60,3 @@ class PaymentMethodsController extends AsyncNotifier<List<PaymentMethodItem>> {
     state = AsyncData(next);
   }
 }
-

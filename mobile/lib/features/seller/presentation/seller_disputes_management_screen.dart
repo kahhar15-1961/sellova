@@ -14,17 +14,20 @@ class SellerDisputesManagementScreen extends ConsumerStatefulWidget {
   const SellerDisputesManagementScreen({super.key});
 
   @override
-  ConsumerState<SellerDisputesManagementScreen> createState() => _SellerDisputesManagementScreenState();
+  ConsumerState<SellerDisputesManagementScreen> createState() =>
+      _SellerDisputesManagementScreenState();
 }
 
-class _SellerDisputesManagementScreenState extends ConsumerState<SellerDisputesManagementScreen> {
+class _SellerDisputesManagementScreenState
+    extends ConsumerState<SellerDisputesManagementScreen> {
   final ScrollController _scroll = ScrollController();
-  _SellerDisputeTab _tab = _SellerDisputeTab.open;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    Future<void>.microtask(() => ref.read(disputeListControllerProvider.notifier).refreshIfStale());
+    Future<void>.microtask(
+      () => ref.read(disputeListControllerProvider.notifier).refreshIfStale(),
+    );
   }
 
   @override
@@ -38,14 +41,18 @@ class _SellerDisputesManagementScreenState extends ConsumerState<SellerDisputesM
 
   @override
   void dispose() {
-    _scroll.removeListener(_onScroll);
-    _scroll.dispose();
+    _scroll
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    ref.read(disputeListControllerProvider.notifier).updateScrollOffset(_scroll.offset);
-    if (_scroll.hasClients && _scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+    ref
+        .read(disputeListControllerProvider.notifier)
+        .updateScrollOffset(_scroll.offset);
+    if (_scroll.hasClients &&
+        _scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
       ref.read(disputeListControllerProvider.notifier).loadNextPage();
     }
   }
@@ -53,111 +60,250 @@ class _SellerDisputesManagementScreenState extends ConsumerState<SellerDisputesM
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(disputeListControllerProvider);
-    final filtered = state.items.where((e) => _matchesTab(_tab, _stage(e))).toList();
-    final openC = state.items.where((e) => _matchesTab(_SellerDisputeTab.open, _stage(e))).length;
-    final revC = state.items.where((e) => _matchesTab(_SellerDisputeTab.review, _stage(e))).length;
+    final openC = state.items
+        .where((e) => _matchesTab(_SellerDisputeTab.open, _stage(e)))
+        .length;
+    final reviewC = state.items
+        .where((e) => _matchesTab(_SellerDisputeTab.review, _stage(e)))
+        .length;
+    final resolvedC = state.items
+        .where((e) => _matchesTab(_SellerDisputeTab.resolved, _stage(e)))
+        .length;
 
     return SellerScaffold(
       selectedNavIndex: null,
       appBar: AppBar(
         title: const Text('Disputes'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded), onPressed: () => context.pop()),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => context.pop(),
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              ref.read(disputeListControllerProvider.notifier).refresh();
+            },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: kSellerAccent, borderRadius: BorderRadius.circular(999)),
-              child: Text(
-                'DISPUTES MANAGEMENT',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.6),
+      body: RefreshIndicator(
+        onRefresh: () =>
+            ref.read(disputeListControllerProvider.notifier).refresh(),
+        child: CustomScrollView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: <Widget>[
+            SliverToBoxAdapter(
+              child: _DisputesHeader(
+                total: state.items.length,
+                openCount: openC,
+                reviewCount: reviewC,
+                resolvedCount: resolvedC,
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-            child: Text('${state.items.length} Disputes', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900, color: kSellerNavy)),
-          ),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: <Widget>[
-                _pillTab(context, _SellerDisputeTab.open, 'Open ($openC)'),
-                const SizedBox(width: 8),
-                _pillTab(context, _SellerDisputeTab.review, 'Under Review ($revC)'),
-                const SizedBox(width: 8),
-                _pillTab(context, _SellerDisputeTab.resolved, 'Resolved'),
-              ],
+            if (state.isInitialLoading && state.items.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (state.errorMessage != null && state.items.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _DisputeErrorState(
+                  message: state.errorMessage!,
+                  onRetry: () => ref
+                      .read(disputeListControllerProvider.notifier)
+                      .loadFirstPage(),
+                ),
+              )
+            else if (state.items.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: _SellerDisputeEmptyState(),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                sliver: SliverList.separated(
+                  itemCount: state.items.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (BuildContext context, int i) {
+                    if (i == state.items.length) {
+                      return _LoadMoreFooter(isAppending: state.isAppending);
+                    }
+                    return _SellerDisputeRow(dispute: state.items[i]);
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DisputesHeader extends StatelessWidget {
+  const _DisputesHeader({
+    required this.total,
+    required this.openCount,
+    required this.reviewCount,
+    required this.resolvedCount,
+  });
+
+  final int total;
+  final int openCount;
+  final int reviewCount;
+  final int resolvedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: kSellerPrimaryGradient,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: <BoxShadow>[sellerGradientShadow()],
             ),
-          ),
-          Expanded(
-            child: state.isInitialLoading && state.items.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : state.errorMessage != null && state.items.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(state.errorMessage!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              FilledButton(onPressed: () => ref.read(disputeListControllerProvider.notifier).loadFirstPage(), child: const Text('Retry')),
-                            ],
-                          ),
-                        ),
-                      )
-                    : filtered.isEmpty
-                        ? Center(child: Text('No disputes in this tab.', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: kSellerMuted)))
-                        : RefreshIndicator(
-                            onRefresh: () => ref.read(disputeListControllerProvider.notifier).refresh(),
-                            child: ListView.builder(
-                              controller: _scroll,
-                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                              itemCount: filtered.length + 1,
-                              itemBuilder: (BuildContext context, int i) {
-                                if (i == filtered.length) {
-                                  if (state.isAppending) {
-                                    return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
-                                  }
-                                  return const SizedBox(height: 8);
-                                }
-                                final d = filtered[i];
-                                return _SellerDisputeRow(dispute: d);
-                              },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.14)),
+                      ),
+                      child:
+                          const Icon(Icons.gavel_rounded, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'DISPUTES MANAGEMENT',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
                             ),
                           ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$total Disputes',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF14B8A6).withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color:
+                              const Color(0xFF5EEAD4).withValues(alpha: 0.32),
+                        ),
+                      ),
+                      child: Text(
+                        '${openCount + reviewCount} Active',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: const Color(0xFFCCFBF1),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _SummaryChip(
+                      label: 'Open',
+                      value: openCount,
+                      color: const Color(0xFFF97316),
+                    ),
+                    _SummaryChip(
+                      label: 'Review',
+                      value: reviewCount,
+                      color: const Color(0xFF38BDF8),
+                    ),
+                    _SummaryChip(
+                      label: 'Resolved',
+                      value: resolvedCount,
+                      color: const Color(0xFF22C55E),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _pillTab(BuildContext context, _SellerDisputeTab tab, String label) {
-    final selected = _tab == tab;
-    return GestureDetector(
-      onTap: () => setState(() => _tab = tab),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? kSellerAccent : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? kSellerAccent : const Color(0xFFE5E7EB)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 13,
-            color: selected ? Colors.white : kSellerMuted,
+class _SummaryChip extends StatelessWidget {
+  const _SummaryChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-        ),
+          const SizedBox(width: 6),
+          Text(
+            '$label $value',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.84),
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -166,8 +312,12 @@ class _SellerDisputesManagementScreenState extends ConsumerState<SellerDisputesM
 _DisputeStage _stage(DisputeDto d) {
   final s = d.status.toLowerCase();
   if (s.contains('review')) return _DisputeStage.review;
-  if (s.contains('resolv') || s.contains('close') || s.contains('settl')) return _DisputeStage.resolved;
-  if (s.contains('open') || s.contains('new') || s.contains('pending')) return _DisputeStage.open;
+  if (s.contains('resolv') || s.contains('close') || s.contains('settl')) {
+    return _DisputeStage.resolved;
+  }
+  if (s.contains('open') || s.contains('new') || s.contains('pending')) {
+    return _DisputeStage.open;
+  }
   return _DisputeStage.other;
 }
 
@@ -191,66 +341,285 @@ class _SellerDisputeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stage = _stage(dispute);
-    final (String label, Color bg, Color fg) = switch (stage) {
-      _DisputeStage.open => ('Open', const Color(0xFFFFE4E6), const Color(0xFFBE123C)),
-      _DisputeStage.review => ('Under Review', const Color(0xFFE0F2FE), const Color(0xFF0369A1)),
-      _DisputeStage.resolved => ('Resolved', const Color(0xFFD1FAE5), const Color(0xFF047857)),
-      _DisputeStage.other => ('Open', const Color(0xFFFFE4E6), const Color(0xFFBE123C)),
-    };
-    final orderLabel = dispute.orderId != null ? 'ORD-${dispute.orderId}' : 'Order';
-    final customer = (dispute.raw['customer_name'] ?? dispute.raw['buyer_name'] ?? 'Customer').toString();
-    final dateStr = dispute.createdAt != null ? sellerShortDate(dispute.createdAt!) : dispute.createdDateLabel;
+    final style = _statusStyle(stage);
+    final orderLabel =
+        dispute.orderId != null ? 'ORD-${dispute.orderId}' : 'Order';
+    final customer = (dispute.raw['customer_name'] ??
+            dispute.raw['buyer_name'] ??
+            'Customer')
+        .toString();
+    final dateStr = dispute.createdAt != null
+        ? sellerShortDate(dispute.createdAt!)
+        : dispute.createdDateLabel;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+      decoration: sellerCardDecoration(Theme.of(context).colorScheme).copyWith(
+        borderRadius: BorderRadius.circular(20),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(20),
         onTap: () {
           HapticFeedback.lightImpact();
           final id = dispute.id;
           if (id != null) context.push('/seller/disputes/$id');
         },
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.headphones_rounded),
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: style.bg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: style.fg.withValues(alpha: 0.16)),
+                ),
+                child: Icon(style.icon, color: style.fg),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(orderLabel, style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text(customer, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            orderLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        _StagePill(style: style),
+                      ],
+                    ),
                     const SizedBox(height: 4),
-                    Text(dispute.summary, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted)),
+                    Text(
+                      customer,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
                     const SizedBox(height: 6),
-                    Text(dateStr, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted)),
+                    Text(
+                      dispute.summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: kSellerMuted),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Icon(Icons.schedule_rounded,
+                            size: 15,
+                            color: kSellerMuted.withValues(alpha: 0.82)),
+                        const SizedBox(width: 5),
+                        Text(
+                          dateStr,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  color: kSellerMuted,
+                                  fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        Icon(Icons.chevron_right_rounded,
+                            color: kSellerMuted.withValues(alpha: 0.72)),
+                      ],
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-                child: Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 11)),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _StagePill extends StatelessWidget {
+  const _StagePill({required this.style});
+
+  final _StageStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: style.bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: style.fg.withValues(alpha: 0.18)),
+      ),
+      child: Text(
+        style.label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: style.fg,
+              fontWeight: FontWeight.w900,
+            ),
+      ),
+    );
+  }
+}
+
+class _StageStyle {
+  const _StageStyle(this.label, this.bg, this.fg, this.icon);
+
+  final String label;
+  final Color bg;
+  final Color fg;
+  final IconData icon;
+}
+
+_StageStyle _statusStyle(_DisputeStage stage) {
+  return switch (stage) {
+    _DisputeStage.open => const _StageStyle(
+        'Open',
+        Color(0xFFFFF1E7),
+        Color(0xFFEA580C),
+        Icons.priority_high_rounded,
+      ),
+    _DisputeStage.review => const _StageStyle(
+        'Review',
+        Color(0xFFE0F2FE),
+        Color(0xFF0369A1),
+        Icons.rate_review_rounded,
+      ),
+    _DisputeStage.resolved => const _StageStyle(
+        'Resolved',
+        Color(0xFFDCFCE7),
+        Color(0xFF15803D),
+        Icons.verified_rounded,
+      ),
+    _DisputeStage.other => const _StageStyle(
+        'Open',
+        Color(0xFFFFF1E7),
+        Color(0xFFEA580C),
+        Icons.priority_high_rounded,
+      ),
+  };
+}
+
+class _SellerDisputeEmptyState extends StatelessWidget {
+  const _SellerDisputeEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: sellerCardDecoration(Theme.of(context).colorScheme),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 70,
+                height: 70,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEDE9FE),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.gavel_rounded,
+                  color: kSellerAccent,
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No disputes yet',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: kSellerNavy,
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Everything is clear in this queue.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: kSellerMuted),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DisputeErrorState extends StatelessWidget {
+  const _DisputeErrorState({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: sellerCardDecoration(Theme.of(context).colorScheme),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.error_outline_rounded,
+                  size: 42, color: Color(0xFFDC2626)),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: kSellerMuted),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter({required this.isAppending});
+
+  final bool isAppending;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isAppending) return const SizedBox(height: 8);
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 16),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 }

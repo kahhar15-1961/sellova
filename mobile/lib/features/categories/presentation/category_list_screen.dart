@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shell/presentation/buyer_page_header.dart';
 import '../application/category_list_provider.dart';
 import '../data/category_repository.dart';
 
@@ -13,37 +14,52 @@ class CategoryListScreen extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoryListProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Categories'),
-        centerTitle: true,
-      ),
-      body: categoriesAsync.when(
-        data: (items) {
-          if (items.isEmpty) {
-            return const _CategoryEmptyState();
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final category = items[index];
-              return _CategoryTile(
-                category: category,
-                onTap: () {
-                  final id = category.id;
-                  if (id != null) {
-                    context.push('/categories/$id');
+      backgroundColor: const Color(0xFFF8FAFD),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(10, 12, 10, 0),
+              child: BuyerPageHeader(
+                title: 'Categories',
+                showSearch: false,
+                showFilter: false,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: categoriesAsync.when(
+                data: (items) {
+                  if (items.isEmpty) {
+                    return const _CategoryEmptyState();
                   }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final category = items[index];
+                      return _CategoryTile(
+                        category: category,
+                        onTap: () {
+                          final id = category.id;
+                          if (id != null) {
+                            context.push('/categories/$id');
+                          }
+                        },
+                      );
+                    },
+                  );
                 },
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _CategoryErrorState(
-          message: error.toString(),
-          onRetry: () => ref.invalidate(categoryListProvider),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => _CategoryErrorState(
+                  message: error.toString(),
+                  onRetry: () => ref.invalidate(categoryListProvider),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -92,12 +108,14 @@ class _CategoryTile extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     category.name,
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${category.productsCount} Products',
-                    style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -130,7 +148,8 @@ class _CategoryErrorState extends StatelessWidget {
           children: <Widget>[
             const Icon(Icons.category_outlined, size: 40),
             const SizedBox(height: 10),
-            Text('Failed to load categories', style: theme.textTheme.titleMedium),
+            Text('Failed to load categories',
+                style: theme.textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
               message,
@@ -179,7 +198,9 @@ IconData _categoryIcon(String label) {
   if (normalized.contains('book')) return Icons.menu_book_outlined;
   if (normalized.contains('sport')) return Icons.sports_basketball_outlined;
   if (normalized.contains('auto')) return Icons.directions_car_outlined;
-  if (normalized.contains('beauty') || normalized.contains('health')) return Icons.spa_outlined;
+  if (normalized.contains('beauty') || normalized.contains('health')) {
+    return Icons.spa_outlined;
+  }
   return Icons.category_outlined;
 }
 
@@ -192,7 +213,8 @@ Color _categoryTint(String label) {
   if (normalized.contains('book')) return const Color(0xFFEDEBFF);
   if (normalized.contains('sport')) return const Color(0xFFEAFCEF);
   if (normalized.contains('auto')) return const Color(0xFFFFEAEA);
-  if (normalized.contains('beauty') || normalized.contains('health')) return const Color(0xFFF2EAFF);
+  if (normalized.contains('beauty') || normalized.contains('health')) {
+    return const Color(0xFFF2EAFF);
+  }
   return const Color(0xFFF0F2F6);
 }
-

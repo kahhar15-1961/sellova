@@ -1,10 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'address_book_controller.dart';
+import '../../../app/providers/app_providers.dart';
+import '../../../app/providers/repository_providers.dart';
+import '../../profile/data/wallet_repository.dart';
 import '../domain/cart_line.dart';
-
-/// Mock wallet balance for payment UI until wallet API exists.
-const double kMockWalletBalance = 120.50;
 
 enum CheckoutShippingMethod {
   standard,
@@ -41,6 +43,32 @@ extension CheckoutPaymentMethodX on CheckoutPaymentMethod {
       };
 }
 
+final buyerWalletBalanceProvider =
+    FutureProvider.family<double?, String>((ref, currency) async {
+  final wallets = await ref.read(walletRepositoryProvider).listWallets();
+  final normalizedCurrency = currency.trim().toUpperCase();
+  WalletDto? match;
+  for (final wallet in wallets) {
+    if (wallet.walletType == 'buyer' &&
+        (normalizedCurrency.isEmpty || wallet.currency == normalizedCurrency)) {
+      match = wallet;
+      break;
+    }
+  }
+  if (match == null) {
+    for (final wallet in wallets) {
+      if (wallet.walletType == 'buyer') {
+        match = wallet;
+        break;
+      }
+    }
+  }
+  if (match == null) {
+    return null;
+  }
+  return double.tryParse(match.availableBalance);
+});
+
 class CheckoutDraft {
   static const Object _noPromoCodeChange = Object();
 
@@ -68,9 +96,56 @@ class CheckoutDraft {
   final double promoDiscount;
   final bool termsAccepted;
 
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'lines': lines.map((CartLine e) => e.toJson()).toList(),
+        'address_id': addressId,
+        'recipient_name': recipientName,
+        'address_line': addressLine,
+        'phone': phone,
+        'shipping_method': shippingMethod.name,
+        'payment_method': paymentMethod.name,
+        'promo_code': promoCode,
+        'promo_discount': promoDiscount,
+        'terms_accepted': termsAccepted,
+      };
+
+  factory CheckoutDraft.fromJson(Map<String, dynamic> json) {
+    final linesRaw = json['lines'];
+    final lines = linesRaw is List
+        ? linesRaw
+            .whereType<Map>()
+            .map((e) => CartLine.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : const <CartLine>[];
+    final shippingMethod = switch ((json['shipping_method'] ?? '').toString()) {
+      'express' => CheckoutShippingMethod.express,
+      _ => CheckoutShippingMethod.standard,
+    };
+    final paymentMethod = switch ((json['payment_method'] ?? '').toString()) {
+      'card' => CheckoutPaymentMethod.card,
+      'bkash' => CheckoutPaymentMethod.bkash,
+      'nagad' => CheckoutPaymentMethod.nagad,
+      'bank' => CheckoutPaymentMethod.bank,
+      _ => CheckoutPaymentMethod.wallet,
+    };
+    return CheckoutDraft(
+      lines: lines,
+      addressId: (json['address_id'] ?? '').toString(),
+      recipientName: (json['recipient_name'] ?? '').toString(),
+      addressLine: (json['address_line'] ?? '').toString(),
+      phone: (json['phone'] ?? '').toString(),
+      shippingMethod: shippingMethod,
+      paymentMethod: paymentMethod,
+      promoCode: json['promo_code']?.toString(),
+      promoDiscount: (json['promo_discount'] as num?)?.toDouble() ?? 0,
+      termsAccepted: json['terms_accepted'] == true,
+    );
+  }
+
   bool get needsShipping => lines.any((CartLine e) => e.isPhysical);
 
-  double get subtotal => lines.fold<double>(0, (s, CartLine e) => s + e.lineTotal);
+  double get subtotal =>
+      lines.fold<double>(0, (s, CartLine e) => s + e.lineTotal);
 
   double get shippingFee => needsShipping ? shippingMethod.feeUsd : 0;
 
@@ -79,7 +154,7 @@ class CheckoutDraft {
     return raw < 0 ? 0 : raw;
   }
 
-  bool get walletCoversTotal => paymentMethod != CheckoutPaymentMethod.wallet || total <= kMockWalletBalance;
+  bool get walletCoversTotal => paymentMethod != CheckoutPaymentMethod.wallet;
 
   CheckoutDraft copyWith({
     List<CartLine>? lines,
@@ -101,32 +176,75 @@ class CheckoutDraft {
       phone: phone ?? this.phone,
       shippingMethod: shippingMethod ?? this.shippingMethod,
       paymentMethod: paymentMethod ?? this.paymentMethod,
-      promoCode: identical(promoCode, _noPromoCodeChange) ? this.promoCode : promoCode as String?,
+      promoCode: identical(promoCode, _noPromoCodeChange)
+          ? this.promoCode
+          : promoCode as String?,
       promoDiscount: promoDiscount ?? this.promoDiscount,
       termsAccepted: termsAccepted ?? this.termsAccepted,
     );
   }
 }
 
-final checkoutDraftProvider = NotifierProvider<CheckoutDraftController, CheckoutDraft?>(CheckoutDraftController.new);
+final checkoutDraftProvider =
+    NotifierProvider<CheckoutDraftController, CheckoutDraft?>(
+        CheckoutDraftController.new);
 
 class CheckoutDraftController extends Notifier<CheckoutDraft?> {
+  static const String _prefsKey = 'checkout_draft_v1';
+
   @override
-  CheckoutDraft? build() => null;
+  CheckoutDraft? build() => _readFromPrefs();
+
+  CheckoutDraft? _readFromPrefs() {
+    final raw = ref.read(sharedPreferencesProvider).getString(_prefsKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return null;
+      }
+      return CheckoutDraft.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _persist(CheckoutDraft? draft) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    if (draft == null) {
+      await prefs.remove(_prefsKey);
+      return;
+    }
+    await prefs.setString(_prefsKey, jsonEncode(draft.toJson()));
+  }
 
   void beginFromCart(List<CartLine> lines) {
     if (lines.isEmpty) {
       state = null;
+      _persist(null);
       return;
     }
-    final defaultAddress = ref.read(savedAddressesProvider.notifier).defaultAddress();
+    final defaultAddress =
+        ref.read(savedAddressesProvider.notifier).defaultAddress();
     state = CheckoutDraft(
       lines: List<CartLine>.from(lines),
       addressId: defaultAddress?.id ?? 'address_missing',
       recipientName: defaultAddress?.fullName ?? 'Address not set',
-      addressLine: defaultAddress?.compactAddress ?? 'Please add a delivery address',
+      addressLine:
+          defaultAddress?.compactAddress ?? 'Please add a delivery address',
       phone: defaultAddress?.phone ?? '',
     );
+    _persist(state);
+  }
+
+  bool restoreFromCart(List<CartLine> lines) {
+    if (state != null || lines.isEmpty) {
+      return state != null;
+    }
+    beginFromCart(lines);
+    return state != null;
   }
 
   void updateShipping(CheckoutShippingMethod method) {
@@ -135,6 +253,7 @@ class CheckoutDraftController extends Notifier<CheckoutDraft?> {
       return;
     }
     state = s.copyWith(shippingMethod: method);
+    _persist(state);
   }
 
   void updatePayment(CheckoutPaymentMethod method) {
@@ -143,6 +262,7 @@ class CheckoutDraftController extends Notifier<CheckoutDraft?> {
       return;
     }
     state = s.copyWith(paymentMethod: method);
+    _persist(state);
   }
 
   void selectAddress(String addressId) {
@@ -156,33 +276,19 @@ class CheckoutDraftController extends Notifier<CheckoutDraft?> {
       addressLine: address.compactAddress,
       phone: address.phone,
     );
+    _persist(state);
   }
 
-  static const Map<String, ({String title, String description, String minSpend, String badge})> promoCatalog =
-      <String, ({String title, String description, String minSpend, String badge})>{
-        'WELCOME10': (title: 'WELCOME10', description: '10% off on orders above ৳1,000', minSpend: 'Min. spend ৳1,000', badge: '10% OFF'),
-        'SAVE50': (title: 'SAVE50', description: '৳50 off on orders above ৳500', minSpend: 'Min. spend ৳500', badge: '৳50 OFF'),
-        'FREESHIP': (title: 'FREESHIP', description: 'Free shipping on orders above ৳800', minSpend: 'Min. spend ৳800', badge: 'FREE'),
-      };
-
-  bool applyPromoCode(String rawCode) {
+  bool applyPromoCode(String rawCode, double discount) {
     final s = state;
     if (s == null) return false;
     final code = rawCode.trim().toUpperCase();
-    if (!promoCatalog.containsKey(code)) return false;
-
-    final subtotal = s.subtotal;
-    final shipping = s.shippingFee;
-    final discount = switch (code) {
-      'WELCOME10' => subtotal >= 1000 ? subtotal * 0.10 : -1,
-      'SAVE50' => subtotal >= 500 ? 50 : -1,
-      'FREESHIP' => subtotal >= 800 ? shipping : -1,
-      _ => -1,
-    };
-    if (discount < 0) return false;
-    final maxDiscount = subtotal + shipping;
-    final safeDiscount = (discount > maxDiscount ? maxDiscount : discount).toDouble();
+    if (code.isEmpty) return false;
+    final maxDiscount = s.subtotal + s.shippingFee;
+    final safeDiscount =
+        discount < 0 ? 0.0 : (discount > maxDiscount ? maxDiscount : discount);
     state = s.copyWith(promoCode: code, promoDiscount: safeDiscount);
+    _persist(state);
     return true;
   }
 
@@ -190,6 +296,7 @@ class CheckoutDraftController extends Notifier<CheckoutDraft?> {
     final s = state;
     if (s == null) return;
     state = s.copyWith(promoCode: null, promoDiscount: 0);
+    _persist(state);
   }
 
   void setTermsAccepted(bool value) {
@@ -198,10 +305,12 @@ class CheckoutDraftController extends Notifier<CheckoutDraft?> {
       return;
     }
     state = s.copyWith(termsAccepted: value);
+    _persist(state);
   }
 
   void clear() {
     state = null;
+    _persist(null);
   }
 
   static String generateOrderId() {

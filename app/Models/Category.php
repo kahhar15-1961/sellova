@@ -13,6 +13,8 @@ use Illuminate\Support\Carbon;
  * @property int $parent_id
  * @property string|null $slug
  * @property string|null $name
+ * @property string|null $description
+ * @property string|null $image_url
  * @property bool $is_active
  * @property int $sort_order
  * @property Carbon|null $created_at
@@ -29,6 +31,8 @@ class Category extends Model
         'parent_id',
         'slug',
         'name',
+        'description',
+        'image_url',
         'is_active',
         'sort_order',
     ];

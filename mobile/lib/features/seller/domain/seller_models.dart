@@ -1,11 +1,21 @@
 import 'package:flutter/foundation.dart';
 
-enum SellerOrderStatus { toShip, processing, shipped, delivered, cancelled }
+enum SellerOrderStatus {
+  toShip,
+  processing,
+  deliverySubmitted,
+  buyerReview,
+  shipped,
+  delivered,
+  cancelled,
+}
 
 extension SellerOrderStatusX on SellerOrderStatus {
   String get label => switch (this) {
         SellerOrderStatus.toShip => 'To Ship',
         SellerOrderStatus.processing => 'Processing',
+        SellerOrderStatus.deliverySubmitted => 'Proof Submitted',
+        SellerOrderStatus.buyerReview => 'Buyer Review',
         SellerOrderStatus.shipped => 'Shipped',
         SellerOrderStatus.delivered => 'Delivered',
         SellerOrderStatus.cancelled => 'Cancelled',
@@ -31,6 +41,9 @@ class SellerOrder {
     this.shippingNote,
     this.shippingDate,
     this.deliveredOn,
+    this.productType = 'physical',
+    this.fulfillmentState,
+    this.timeoutState = const <String, dynamic>{},
   });
 
   final int id;
@@ -49,10 +62,19 @@ class SellerOrder {
   final String? shippingNote;
   final DateTime? shippingDate;
   final DateTime? deliveredOn;
+  final String productType;
+  final String? fulfillmentState;
+  final Map<String, dynamic> timeoutState;
+
+  bool get isPhysical => productType.toLowerCase() == 'physical';
+
+  bool get usesProofDelivery => !isPhysical;
 
   String get totalLabel {
     final t = totalAmount.toStringAsFixed(2);
-    return currency.toUpperCase() == 'USD' ? '\$$t' : '${currency.toUpperCase()} $t';
+    return currency.toUpperCase() == 'USD'
+        ? '\$$t'
+        : '${currency.toUpperCase()} $t';
   }
 
   SellerOrder copyWith({
@@ -62,6 +84,9 @@ class SellerOrder {
     String? shippingNote,
     DateTime? shippingDate,
     DateTime? deliveredOn,
+    String? productType,
+    String? fulfillmentState,
+    Map<String, dynamic>? timeoutState,
   }) {
     return SellerOrder(
       id: id,
@@ -80,6 +105,9 @@ class SellerOrder {
       shippingNote: shippingNote ?? this.shippingNote,
       shippingDate: shippingDate ?? this.shippingDate,
       deliveredOn: deliveredOn ?? this.deliveredOn,
+      productType: productType ?? this.productType,
+      fulfillmentState: fulfillmentState ?? this.fulfillmentState,
+      timeoutState: timeoutState ?? this.timeoutState,
     );
   }
 }
@@ -161,7 +189,9 @@ class SellerProduct {
     required this.views,
     required this.sold,
     this.imageUrl,
+    this.imageUrls = const <String>[],
     this.productType = 'physical',
+    this.attributes = const <String, dynamic>{},
     this.warehouseStocks = const <String, int>{},
   });
 
@@ -177,12 +207,16 @@ class SellerProduct {
   final int views;
   final int sold;
   final String? imageUrl;
+  final List<String> imageUrls;
   final String productType;
+  final Map<String, dynamic> attributes;
   final Map<String, int> warehouseStocks;
 
   String get priceLabel {
     final t = price.toStringAsFixed(2);
-    return currency.toUpperCase() == 'USD' ? '\$$t' : '${currency.toUpperCase()} $t';
+    return currency.toUpperCase() == 'USD'
+        ? '\$$t'
+        : '${currency.toUpperCase()} $t';
   }
 
   SellerProduct copyWith({
@@ -197,7 +231,9 @@ class SellerProduct {
     int? views,
     int? sold,
     String? imageUrl,
+    List<String>? imageUrls,
     String? productType,
+    Map<String, dynamic>? attributes,
     Map<String, int>? warehouseStocks,
   }) {
     return SellerProduct(
@@ -213,10 +249,81 @@ class SellerProduct {
       views: views ?? this.views,
       sold: sold ?? this.sold,
       imageUrl: imageUrl ?? this.imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
       productType: productType ?? this.productType,
+      attributes: attributes ?? this.attributes,
       warehouseStocks: warehouseStocks ?? this.warehouseStocks,
     );
   }
+}
+
+@immutable
+class SellerWarehouse {
+  const SellerWarehouse({
+    required this.id,
+    required this.name,
+    this.code = '',
+    this.city = '',
+    this.isActive = true,
+  });
+
+  final int id;
+  final String name;
+  final String code;
+  final String city;
+  final bool isActive;
+
+  factory SellerWarehouse.fromJson(Map<String, dynamic> json) {
+    return SellerWarehouse(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name'] as String? ?? '',
+      code: json['code'] as String? ?? '',
+      city: json['city'] as String? ?? '',
+      isActive: json['is_active'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'name': name,
+      'code': code,
+      'city': city,
+      'is_active': isActive,
+    };
+  }
+
+  SellerWarehouse copyWith({
+    String? name,
+    String? code,
+    String? city,
+    bool? isActive,
+  }) {
+    return SellerWarehouse(
+      id: id,
+      name: name ?? this.name,
+      code: code ?? this.code,
+      city: city ?? this.city,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+}
+
+@immutable
+class SellerUploadResult {
+  const SellerUploadResult({
+    required this.storagePath,
+    required this.originalName,
+    required this.checksumSha256,
+    required this.mimeType,
+    this.size,
+  });
+
+  final String storagePath;
+  final String originalName;
+  final String checksumSha256;
+  final String mimeType;
+  final int? size;
 }
 
 enum SellerMovementType { stockIn, stockOut, adjustment }
@@ -334,6 +441,12 @@ class SellerStoreSettings {
     this.bannerImageUrl,
     this.contactEmail,
     this.contactPhone,
+    this.addressLine,
+    this.city,
+    this.region,
+    this.postalCode,
+    this.country,
+    this.storeAddress,
   });
 
   final String storeName;
@@ -342,6 +455,12 @@ class SellerStoreSettings {
   final String? bannerImageUrl;
   final String? contactEmail;
   final String? contactPhone;
+  final String? addressLine;
+  final String? city;
+  final String? region;
+  final String? postalCode;
+  final String? country;
+  final String? storeAddress;
 
   SellerStoreSettings copyWith({
     String? storeName,
@@ -350,6 +469,12 @@ class SellerStoreSettings {
     String? bannerImageUrl,
     String? contactEmail,
     String? contactPhone,
+    String? addressLine,
+    String? city,
+    String? region,
+    String? postalCode,
+    String? country,
+    String? storeAddress,
   }) {
     return SellerStoreSettings(
       storeName: storeName ?? this.storeName,
@@ -358,8 +483,56 @@ class SellerStoreSettings {
       bannerImageUrl: bannerImageUrl ?? this.bannerImageUrl,
       contactEmail: contactEmail ?? this.contactEmail,
       contactPhone: contactPhone ?? this.contactPhone,
+      addressLine: addressLine ?? this.addressLine,
+      city: city ?? this.city,
+      region: region ?? this.region,
+      postalCode: postalCode ?? this.postalCode,
+      country: country ?? this.country,
+      storeAddress: storeAddress ?? this.storeAddress,
     );
   }
+}
+
+@immutable
+class SellerShippingMethodOption {
+  const SellerShippingMethodOption({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.suggestedFee,
+    required this.processingTimeLabel,
+    required this.sortOrder,
+  });
+
+  final int id;
+  final String code;
+  final String name;
+  final double suggestedFee;
+  final String processingTimeLabel;
+  final int sortOrder;
+}
+
+@immutable
+class SellerShippingMethodSelection {
+  const SellerShippingMethodSelection({
+    required this.shippingMethodId,
+    required this.methodCode,
+    required this.methodName,
+    required this.suggestedFee,
+    required this.price,
+    required this.processingTimeLabel,
+    required this.isEnabled,
+    required this.sortOrder,
+  });
+
+  final int shippingMethodId;
+  final String methodCode;
+  final String methodName;
+  final double suggestedFee;
+  final double price;
+  final String processingTimeLabel;
+  final bool isEnabled;
+  final int sortOrder;
 }
 
 @immutable
@@ -371,6 +544,10 @@ class SellerShippingSettings {
     required this.outsideDhakaFee,
     required this.cashOnDeliveryEnabled,
     required this.processingTimeLabel,
+    this.isConfigured = false,
+    this.availableMethods = const <SellerShippingMethodOption>[],
+    this.shippingMethods = const <SellerShippingMethodSelection>[],
+    this.processingTimeOptions = const <String>[],
   });
 
   final String insideDhakaLabel;
@@ -379,6 +556,10 @@ class SellerShippingSettings {
   final double outsideDhakaFee;
   final bool cashOnDeliveryEnabled;
   final String processingTimeLabel;
+  final bool isConfigured;
+  final List<SellerShippingMethodOption> availableMethods;
+  final List<SellerShippingMethodSelection> shippingMethods;
+  final List<String> processingTimeOptions;
 
   SellerShippingSettings copyWith({
     String? insideDhakaLabel,
@@ -387,16 +568,42 @@ class SellerShippingSettings {
     double? outsideDhakaFee,
     bool? cashOnDeliveryEnabled,
     String? processingTimeLabel,
+    bool? isConfigured,
+    List<SellerShippingMethodOption>? availableMethods,
+    List<SellerShippingMethodSelection>? shippingMethods,
+    List<String>? processingTimeOptions,
   }) {
     return SellerShippingSettings(
       insideDhakaLabel: insideDhakaLabel ?? this.insideDhakaLabel,
       insideDhakaFee: insideDhakaFee ?? this.insideDhakaFee,
       outsideDhakaLabel: outsideDhakaLabel ?? this.outsideDhakaLabel,
       outsideDhakaFee: outsideDhakaFee ?? this.outsideDhakaFee,
-      cashOnDeliveryEnabled: cashOnDeliveryEnabled ?? this.cashOnDeliveryEnabled,
+      cashOnDeliveryEnabled:
+          cashOnDeliveryEnabled ?? this.cashOnDeliveryEnabled,
       processingTimeLabel: processingTimeLabel ?? this.processingTimeLabel,
+      isConfigured: isConfigured ?? this.isConfigured,
+      availableMethods: availableMethods ?? this.availableMethods,
+      shippingMethods: shippingMethods ?? this.shippingMethods,
+      processingTimeOptions:
+          processingTimeOptions ?? this.processingTimeOptions,
     );
   }
+}
+
+@immutable
+class SellerWithdrawalSettings {
+  const SellerWithdrawalSettings({
+    required this.minimumWithdrawalAmount,
+    required this.currency,
+  });
+
+  final double minimumWithdrawalAmount;
+  final String currency;
+
+  static const fallback = SellerWithdrawalSettings(
+    minimumWithdrawalAmount: 500,
+    currency: 'BDT',
+  );
 }
 
 @immutable
@@ -408,6 +615,7 @@ class SellerNotificationItem {
     required this.timeAgoLabel,
     required this.kind,
     required this.read,
+    required this.href,
   });
 
   final String id;
@@ -416,6 +624,7 @@ class SellerNotificationItem {
   final String timeAgoLabel;
   final String kind;
   final bool read;
+  final String href;
 
   SellerNotificationItem copyWith({bool? read}) {
     return SellerNotificationItem(
@@ -425,6 +634,7 @@ class SellerNotificationItem {
       timeAgoLabel: timeAgoLabel,
       kind: kind,
       read: read ?? this.read,
+      href: href,
     );
   }
 }

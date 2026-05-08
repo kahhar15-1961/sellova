@@ -9,6 +9,8 @@ final readonly class CompleteOrderCommand
 {
     public function __construct(
         public int $orderId,
+        public int $actorUserId,
+        public ?string $correlationId = null,
     ) {
     }
 }

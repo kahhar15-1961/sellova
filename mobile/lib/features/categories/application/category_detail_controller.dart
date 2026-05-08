@@ -12,7 +12,8 @@ final categoryDetailControllerProvider = NotifierProvider.autoDispose
   CategoryDetailController.new,
 );
 
-class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<ProductDto>, int> {
+class CategoryDetailController
+    extends AutoDisposeFamilyNotifier<PaginatedState<ProductDto>, int> {
   static const int _perPage = 10;
 
   String _searchQuery = '';
@@ -22,6 +23,7 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
   bool _onlyWithImages = false;
   bool _onlyWithRating = false;
   bool _bootstrapped = false;
+  bool _refreshing = false;
 
   String get persistenceKey => 'category_detail_$arg';
   String get search => _searchQuery;
@@ -43,7 +45,8 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
       return;
     }
     _bootstrapped = true;
-    final persisted = ref.read(listStatePersistenceProvider).load(persistenceKey);
+    final persisted =
+        ref.read(listStatePersistenceProvider).load(persistenceKey);
     if (persisted == null) {
       await loadFirstPage();
       return;
@@ -76,14 +79,15 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
         isInitialLoading: false,
         isAppending: false,
       );
-      await refreshIfStale();
+      await refresh();
     } else {
       await loadFirstPage();
     }
   }
 
   Future<void> refreshIfStale() async {
-    final isStale = ref.read(listStatePersistenceProvider).isStale(persistenceKey);
+    final isStale =
+        ref.read(listStatePersistenceProvider).isStale(persistenceKey);
     if (!isStale) {
       return;
     }
@@ -113,6 +117,10 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
   }
 
   Future<void> refresh() async {
+    if (_refreshing) {
+      return;
+    }
+    _refreshing = true;
     try {
       final result = await _fetchPage(page: 1, perPage: _perPage);
       state = state.copyWith(
@@ -125,6 +133,8 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
       await _persist();
     } catch (error) {
       state = state.copyWith(errorMessage: error.toString());
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -240,4 +250,3 @@ class CategoryDetailController extends AutoDisposeFamilyNotifier<PaginatedState<
     }
   }
 }
-

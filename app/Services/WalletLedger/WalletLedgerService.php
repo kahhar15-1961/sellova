@@ -558,8 +558,52 @@ class WalletLedgerService
                 'wallet_id' => $wallet->id,
                 'currency' => $wallet->currency,
                 'available_balance' => $snapshot->available_balance,
+                'locked_balance' => $snapshot->held_balance,
                 'held_balance' => $snapshot->held_balance,
+                'pending_balance' => '0.0000',
+                'total_balance' => $this->fromScale($ledger),
                 'as_of' => optional($snapshot->as_of)?->toISOString(),
+            ];
+        });
+    }
+
+    public function topUpWallet(int $walletId, string $amount, string $idempotencyKey, ?string $description = null): array
+    {
+        return DB::transaction(function () use ($walletId, $amount, $idempotencyKey, $description): array {
+            $wallet = $this->lockWalletOrFail($walletId);
+            $amountScale = $this->toScale($amount);
+            if ($amountScale <= 0) {
+                throw new InvalidLedgerOperationException('top_up_amount_must_be_positive');
+            }
+
+            $batch = $this->postLedgerBatch(new PostLedgerBatchCommand(
+                eventName: LedgerPostingEventName::Deposit,
+                referenceType: 'wallet_top_up',
+                referenceId: $wallet->id,
+                idempotencyKey: $idempotencyKey,
+                entries: [
+                    new LedgerPostingLine(
+                        walletId: $wallet->id,
+                        entrySide: WalletLedgerEntrySide::Credit,
+                        entryType: WalletLedgerEntryType::DepositCredit,
+                        amount: $this->fromScale($amountScale),
+                        currency: (string) $wallet->currency,
+                        referenceType: 'wallet_top_up',
+                        referenceId: $wallet->id,
+                        counterpartyWalletId: null,
+                        description: $description !== null && trim($description) !== ''
+                            ? trim($description)
+                            : 'wallet_top_up',
+                    ),
+                ],
+            ));
+
+            return [
+                'wallet_id' => $wallet->id,
+                'batch_id' => $batch['batch_id'],
+                'status' => $batch['status'],
+                'amount' => $this->fromScale($amountScale),
+                'currency' => (string) $wallet->currency,
             ];
         });
     }

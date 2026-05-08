@@ -19,6 +19,7 @@ const STAT_DEFS = [
     { key: 'orders_in_escrow', label: 'Orders in escrow' },
     { key: 'open_disputes', label: 'Open disputes' },
     { key: 'pending_withdrawals', label: 'Pending withdrawals' },
+    { key: 'pending_wallet_top_ups', label: 'Wallet top-ups' },
     { key: 'escalated_cases', label: 'Escalated cases' },
     { key: 'total_gmv', label: 'Total GMV' },
     { key: 'released_funds', label: 'Released funds' },
@@ -87,6 +88,7 @@ export default function Dashboard({
     recent_orders: recentOrders,
     open_disputes: openDisputes,
     pending_withdrawals: pendingWithdrawals,
+    pending_wallet_top_ups: pendingWalletTopUps,
     seller_verification_queue: sellerVerificationQueue,
     product_moderation: productModeration,
     system_alerts: systemAlerts,
@@ -99,7 +101,7 @@ export default function Dashboard({
     const authEmail = page.props.auth?.user?.email ?? '';
 
     const setRange = (range) => {
-        router.get(route('admin.dashboard'), { range }, { preserveState: true, preserveScroll: true, replace: true });
+        router.get('/admin/dashboard', { range }, { preserveState: true, preserveScroll: true, replace: true });
     };
 
     return (
@@ -166,9 +168,15 @@ export default function Dashboard({
                                 )}
                             </DashboardQueuePanel>
 
+                            <DashboardQueuePanel title="Wallet top-ups" description="Manual wallet funding requests awaiting finance review." href={links.wallet_top_ups} locked={!sectionAccess.pending_wallet_top_ups}>
+                                {!pendingWalletTopUps?.length ? <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">No wallet top-ups pending review.</p> : (
+                                    <Table><TableHeader><TableRow><TableHead>User</TableHead><TableHead>Method</TableHead><TableHead>Amount</TableHead><TableHead>Submitted</TableHead><TableHead className="text-right">Review</TableHead></TableRow></TableHeader><TableBody>{pendingWalletTopUps.map((row) => <TableRow key={row.id}><TableCell className="max-w-[160px] truncate font-medium">{row.user ?? '—'}</TableCell><TableCell><Badge variant="outline" className="font-normal">{row.method ?? '—'}</Badge></TableCell><TableCell className="tabular-nums">{row.amount ?? '—'}</TableCell><TableCell className="text-muted-foreground">{fmtDate(row.created_at)}</TableCell><TableCell className="text-right">{row.href ? <Button variant="outline" size="sm" asChild><Link href={row.href}>Open</Link></Button> : '—'}</TableCell></TableRow>)}</TableBody></Table>
+                                )}
+                            </DashboardQueuePanel>
+
                             <DashboardQueuePanel title="Seller verification queue" description="KYC submissions awaiting review." href={links.sellers} locked={!sectionAccess.seller_verification_queue}>
                                 {!sellerVerificationQueue?.length ? <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">Verification queue is clear.</p> : (
-                                    <Table><TableHeader><TableRow><TableHead>Seller</TableHead><TableHead>KYC</TableHead><TableHead>Profile</TableHead><TableHead>Submitted</TableHead><TableHead className="text-right">Workspace</TableHead></TableRow></TableHeader><TableBody>{sellerVerificationQueue.map((row) => <TableRow key={row.id}><TableCell className="max-w-[160px] truncate font-medium">{row.seller_display_name ?? '—'}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell><Badge variant="outline" className="font-normal">{row.seller_verification_status ?? '—'}</Badge></TableCell><TableCell className="text-muted-foreground">{fmtDate(row.submitted_at)}</TableCell><TableCell className="text-right">{row.workspace_url ? <Button variant="outline" size="sm" asChild><Link href={row.workspace_url}>Open</Link></Button> : '—'}</TableCell></TableRow>)}</TableBody></Table>
+                                    <Table><TableHeader><TableRow><TableHead>Seller</TableHead><TableHead>KYC</TableHead><TableHead>Profile</TableHead><TableHead>Assignee</TableHead><TableHead>SLA</TableHead><TableHead>Submitted</TableHead><TableHead className="text-right">Workspace</TableHead></TableRow></TableHeader><TableBody>{sellerVerificationQueue.map((row) => <TableRow key={row.id}><TableCell className="max-w-[160px] truncate font-medium">{row.seller_display_name ?? '—'}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell><Badge variant="outline" className="font-normal">{row.seller_verification_status ?? '—'}</Badge></TableCell><TableCell className="max-w-[180px] truncate text-muted-foreground">{row.assigned_to_email ?? 'Unassigned'}</TableCell><TableCell><Badge variant={row.sla_state === 'breach' ? 'danger' : row.sla_state === 'warning' ? 'secondary' : 'outline'} className="font-normal">{row.sla_state === 'breach' ? 'Escalated' : row.sla_state === 'warning' ? 'Due soon' : 'On track'}</Badge></TableCell><TableCell className="text-muted-foreground">{fmtDate(row.submitted_at)}</TableCell><TableCell className="text-right">{row.workspace_url ? <Button variant="outline" size="sm" asChild><Link href={row.workspace_url}>Open</Link></Button> : '—'}</TableCell></TableRow>)}</TableBody></Table>
                                 )}
                             </DashboardQueuePanel>
 
@@ -196,6 +204,54 @@ export default function Dashboard({
                                 </Card>
                             ))}
                         </div>
+                    </section>
+
+                    <section>
+                        <div className="mb-4 flex items-end justify-between gap-4">
+                            <div>
+                                <h2 className="text-lg font-semibold tracking-tight">Finance inbox</h2>
+                                <p className="text-sm text-muted-foreground">Funding requests and ledger-related actions in one place.</p>
+                            </div>
+                            <Button variant="outline" asChild>
+                                <Link href={links.wallet_top_ups}>Open wallet top-ups</Link>
+                            </Button>
+                        </div>
+                        <Card className="border-border/80 bg-card shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Wallet funding queue</CardTitle>
+                                <CardDescription>Manual wallet top-ups are reviewed here before any balance credit is posted.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {!pendingWalletTopUps?.length ? (
+                                    <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+                                        No wallet top-ups pending review.
+                                    </p>
+                                ) : (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>User</TableHead>
+                                                <TableHead>Method</TableHead>
+                                                <TableHead>Amount</TableHead>
+                                                <TableHead>Submitted</TableHead>
+                                                <TableHead className="text-right">Review</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {pendingWalletTopUps.map((row) => (
+                                                <TableRow key={row.id}>
+                                                    <TableCell className="max-w-[220px] truncate font-medium">{row.user ?? '—'}</TableCell>
+                                                    <TableCell><Badge variant="outline" className="font-normal">{row.method ?? '—'}</Badge></TableCell>
+                                                    <TableCell className="tabular-nums">{row.amount ?? '—'}</TableCell>
+                                                    <TableCell className="text-muted-foreground">{fmtDate(row.created_at)}</TableCell>
+                                                    <TableCell className="text-right">{row.href ? <Button variant="outline" size="sm" asChild><Link href={row.href}>Open</Link></Button> : '—'}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                )}
+                            </CardContent>
+                        </Card>
                     </section>
                 </TabsContent>
 

@@ -46,11 +46,14 @@ export default function SellerProfilesIndex({ header, rows, pagination, filters,
                 </div>
 
                 <DataTableShell
-                    columns={['seller', 'display_name', 'account', 'verification', 'store', 'products', 'pending_withdrawals']}
+                    columns={['seller', 'user', 'display_name', 'account', 'verification', 'store', 'products', 'pending_withdrawals']}
                     rows={rows}
                     emptyTitle="No sellers"
                     renderers={{
                         seller: (value, row) => <Link href={row.href} className="font-medium text-primary hover:underline">{String(value)}</Link>,
+                        user: (value, row) => (
+                            row.user_href ? <Link href={row.user_href} className="text-primary hover:underline">{String(value)}</Link> : <span className="text-muted-foreground">—</span>
+                        ),
                         verification: (value) => <StatusBadge status={String(value)} />,
                         store: (value) => <StatusBadge status={String(value)} />,
                     }}

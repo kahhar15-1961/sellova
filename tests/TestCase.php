@@ -20,12 +20,16 @@ abstract class TestCase extends BaseTestCase
 
         $this->ensureSchemaApplied();
         $this->truncateAllTables();
-        $this->ensureOrdersStatusEnumIncludesPaidInEscrow();
+        $this->ensureEscrowMarketplaceOrderSchema();
         $this->ensureProductsStatusEnumIncludesPublished();
+        $this->ensureProductsAttributesJsonColumn();
+        $this->ensureOrderCancellationColumns();
+        $this->ensureSellerProfileContactColumns();
         $this->ensureUserRolesUpdatedAtColumn();
         $this->ensureEscrowEventsUpdatedAtColumn();
         $this->ensureWalletBalanceSnapshotsUpdatedAtColumn();
         $this->ensureWithdrawalRequestsIdempotencyKeyColumn();
+        $this->ensureEscrowTimeoutTables();
     }
 
     private function mysqlTestsAreAvailable(): bool
@@ -56,13 +60,14 @@ abstract class TestCase extends BaseTestCase
     {
         $tables = [
             'cache', 'cache_locks', 'sessions',
-            'outbox_events', 'audit_logs', 'notifications', 'reviews', 'dispute_decisions', 'dispute_evidences',
+            'outbox_events', 'audit_logs', 'notifications', 'escrow_timeout_events', 'reviews', 'dispute_decisions', 'dispute_evidences',
             'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
-            'withdrawal_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
+            'withdrawal_requests', 'wallet_top_up_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
             'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',
             'payment_transactions', 'payment_intents', 'idempotency_keys', 'order_state_transitions',
             'order_items', 'orders', 'commission_rules', 'membership_plans', 'cart_items', 'carts',
-            'inventory_records', 'product_variants', 'products', 'categories', 'storefronts', 'kyc_documents',
+            'inventory_records', 'product_variants', 'products', 'seller_shipping_methods', 'shipping_methods',
+            'seller_category_requests', 'categories', 'storefronts', 'kyc_documents',
             'kyc_verifications', 'seller_profiles', 'role_permissions', 'user_roles', 'permissions', 'roles',
             'user_auth_tokens', 'users',
         ];
@@ -80,7 +85,7 @@ abstract class TestCase extends BaseTestCase
     /**
      * Keeps integration tests working against databases bootstrapped from an older CANONICAL_SCHEMA snapshot.
      */
-    private function ensureOrdersStatusEnumIncludesPaidInEscrow(): void
+    private function ensureEscrowMarketplaceOrderSchema(): void
     {
         $schema = DB::connection()->getSchemaBuilder();
         if (! $schema->hasTable('orders')) {
@@ -89,11 +94,59 @@ abstract class TestCase extends BaseTestCase
 
         try {
             DB::connection()->statement("ALTER TABLE orders MODIFY COLUMN status ENUM(
-                'draft','pending_payment','paid','paid_in_escrow',
-                'processing','shipped_or_delivered','completed','cancelled','refunded','disputed'
+                'draft','pending_payment','paid','paid_in_escrow','escrow_funded',
+                'processing','delivery_submitted','buyer_review','shipped_or_delivered','completed','cancelled','refunded','disputed'
             ) NOT NULL");
         } catch (\Throwable) {
             // Definition may already match; ignore.
+        }
+
+        foreach ([
+            'seller_user_id' => 'BIGINT UNSIGNED NULL AFTER buyer_user_id',
+            'primary_product_id' => 'BIGINT UNSIGNED NULL AFTER seller_user_id',
+            'product_type' => 'VARCHAR(32) NULL AFTER primary_product_id',
+            'fulfillment_state' => "VARCHAR(64) NOT NULL DEFAULT 'not_started' AFTER status",
+            'seller_deadline_at' => 'DATETIME(6) NULL AFTER delivered_at',
+            'seller_reminder_at' => 'DATETIME(6) NULL AFTER seller_deadline_at',
+            'delivery_submitted_at' => 'DATETIME(6) NULL AFTER delivered_at',
+            'buyer_review_started_at' => 'DATETIME(6) NULL AFTER delivery_submitted_at',
+            'buyer_review_expires_at' => 'DATETIME(6) NULL AFTER buyer_review_started_at',
+            'reminder_1_at' => 'DATETIME(6) NULL AFTER buyer_review_expires_at',
+            'reminder_2_at' => 'DATETIME(6) NULL AFTER reminder_1_at',
+            'escalation_at' => 'DATETIME(6) NULL AFTER reminder_2_at',
+            'escalation_warning_at' => 'DATETIME(6) NULL AFTER escalation_at',
+            'auto_release_at' => 'DATETIME(6) NULL AFTER escalation_at',
+            'release_eligible_at' => 'DATETIME(6) NULL AFTER buyer_review_started_at',
+            'expires_at' => 'DATETIME(6) NULL AFTER release_eligible_at',
+            'unpaid_reminder_at' => 'DATETIME(6) NULL AFTER expires_at',
+            'timeout_policy_snapshot_json' => 'JSON NULL AFTER auto_release_at',
+        ] as $column => $definition) {
+            if ($schema->hasColumn('orders', $column)) {
+                continue;
+            }
+            try {
+                DB::connection()->statement("ALTER TABLE orders ADD COLUMN {$column} {$definition}");
+            } catch (\Throwable) {
+                // Column may already exist.
+            }
+        }
+
+        try {
+            DB::connection()->statement("ALTER TABLE order_items MODIFY COLUMN product_type_snapshot ENUM(
+                'physical','digital','instant_delivery','service','manual_delivery'
+            ) NOT NULL");
+        } catch (\Throwable) {
+            // Definition may already match; ignore.
+        }
+
+        if ($schema->hasTable('dispute_evidences')) {
+            try {
+                DB::connection()->statement("ALTER TABLE dispute_evidences MODIFY COLUMN evidence_type ENUM(
+                    'text','image','video','document','tracking','chat_message','delivery_proof','screenshot','file'
+                ) NOT NULL");
+            } catch (\Throwable) {
+                // Definition may already match; ignore.
+            }
         }
     }
 
@@ -110,6 +163,66 @@ abstract class TestCase extends BaseTestCase
             ) NOT NULL DEFAULT 'draft'");
         } catch (\Throwable) {
             // Definition may already match; ignore.
+        }
+    }
+
+    private function ensureProductsAttributesJsonColumn(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('products') || $schema->hasColumn('products', 'attributes_json')) {
+            return;
+        }
+
+        try {
+            DB::connection()->statement('ALTER TABLE products ADD COLUMN attributes_json JSON NULL AFTER images_json');
+        } catch (\Throwable) {
+            // Column may already exist.
+        }
+    }
+
+    private function ensureOrderCancellationColumns(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('orders')) {
+            return;
+        }
+
+        try {
+            if (! $schema->hasColumn('orders', 'cancelled_at')) {
+                DB::connection()->statement('ALTER TABLE orders ADD COLUMN cancelled_at DATETIME(6) NULL AFTER completed_at');
+            }
+            if (! $schema->hasColumn('orders', 'cancel_reason')) {
+                DB::connection()->statement('ALTER TABLE orders ADD COLUMN cancel_reason VARCHAR(500) NULL AFTER cancelled_at');
+            }
+        } catch (\Throwable) {
+            // Columns may already exist or the test database may apply the latest migrations directly.
+        }
+    }
+
+    private function ensureSellerProfileContactColumns(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('seller_profiles')) {
+            return;
+        }
+
+        foreach ([
+            'contact_email' => 'VARCHAR(191) NULL AFTER banner_image_url',
+            'contact_phone' => 'VARCHAR(40) NULL AFTER contact_email',
+            'address_line' => 'VARCHAR(255) NULL AFTER contact_phone',
+            'city' => 'VARCHAR(120) NULL AFTER address_line',
+            'region' => 'VARCHAR(120) NULL AFTER city',
+            'postal_code' => 'VARCHAR(40) NULL AFTER region',
+            'country' => 'VARCHAR(120) NULL AFTER postal_code',
+        ] as $column => $definition) {
+            if ($schema->hasColumn('seller_profiles', $column)) {
+                continue;
+            }
+            try {
+                DB::connection()->statement("ALTER TABLE seller_profiles ADD COLUMN {$column} {$definition}");
+            } catch (\Throwable) {
+                // Column may already exist; ignore.
+            }
         }
     }
 
@@ -176,6 +289,67 @@ abstract class TestCase extends BaseTestCase
             $conn->statement('ALTER TABLE withdrawal_requests ADD UNIQUE KEY uq_withdrawal_requests_idempotency_key (idempotency_key)');
         } catch (\Throwable) {
             // Index may already exist.
+        }
+    }
+
+    private function ensureEscrowTimeoutTables(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('escrow_timeout_settings')) {
+            DB::connection()->statement("CREATE TABLE escrow_timeout_settings (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                unpaid_order_expiration_minutes INT UNSIGNED NOT NULL DEFAULT 30,
+                unpaid_order_warning_minutes INT UNSIGNED NOT NULL DEFAULT 10,
+                seller_fulfillment_deadline_hours INT UNSIGNED NOT NULL DEFAULT 24,
+                seller_fulfillment_warning_hours INT UNSIGNED NOT NULL DEFAULT 2,
+                buyer_review_deadline_hours INT UNSIGNED NOT NULL DEFAULT 72,
+                buyer_review_reminder_1_hours INT UNSIGNED NOT NULL DEFAULT 24,
+                buyer_review_reminder_2_hours INT UNSIGNED NOT NULL DEFAULT 48,
+                escalation_warning_minutes INT UNSIGNED NOT NULL DEFAULT 60,
+                seller_min_fulfillment_hours INT UNSIGNED NOT NULL DEFAULT 1,
+                seller_max_fulfillment_hours INT UNSIGNED NOT NULL DEFAULT 168,
+                buyer_min_review_hours INT UNSIGNED NOT NULL DEFAULT 1,
+                buyer_max_review_hours INT UNSIGNED NOT NULL DEFAULT 168,
+                auto_escalation_after_review_expiry TINYINT(1) NOT NULL DEFAULT 1,
+                auto_cancel_unpaid_orders TINYINT(1) NOT NULL DEFAULT 1,
+                auto_release_after_buyer_timeout TINYINT(1) NOT NULL DEFAULT 0,
+                auto_create_dispute_on_timeout TINYINT(1) NOT NULL DEFAULT 0,
+                dispute_review_queue_enabled TINYINT(1) NOT NULL DEFAULT 1,
+                updated_by_user_id BIGINT UNSIGNED NULL,
+                created_at TIMESTAMP NULL,
+                updated_at TIMESTAMP NULL
+            )");
+        }
+        foreach ([
+            'unpaid_order_warning_minutes' => 'INT UNSIGNED NOT NULL DEFAULT 10 AFTER unpaid_order_expiration_minutes',
+            'seller_fulfillment_warning_hours' => 'INT UNSIGNED NOT NULL DEFAULT 2 AFTER seller_fulfillment_deadline_hours',
+            'escalation_warning_minutes' => 'INT UNSIGNED NOT NULL DEFAULT 60 AFTER buyer_review_reminder_2_hours',
+        ] as $column => $definition) {
+            if ($schema->hasColumn('escrow_timeout_settings', $column)) {
+                continue;
+            }
+            try {
+                DB::connection()->statement("ALTER TABLE escrow_timeout_settings ADD COLUMN {$column} {$definition}");
+            } catch (\Throwable) {
+                // Column may already exist.
+            }
+        }
+        if (! $schema->hasTable('escrow_timeout_events')) {
+            DB::connection()->statement("CREATE TABLE escrow_timeout_events (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                uuid VARCHAR(191) NOT NULL UNIQUE,
+                order_id BIGINT UNSIGNED NOT NULL,
+                escrow_account_id BIGINT UNSIGNED NULL,
+                event_type VARCHAR(96) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'processed',
+                action_taken VARCHAR(96) NULL,
+                metadata_json JSON NULL,
+                scheduled_for TIMESTAMP NULL,
+                processed_at TIMESTAMP NULL,
+                created_at TIMESTAMP NULL,
+                updated_at TIMESTAMP NULL,
+                UNIQUE KEY uq_timeout_events_order_type (order_id, event_type)
+            )");
         }
     }
 }

@@ -5,39 +5,67 @@ import 'package:go_router/go_router.dart';
 import '../application/seller_inventory_controller.dart';
 import '../application/seller_product_controller.dart';
 import '../domain/seller_models.dart';
+import 'seller_product_thumbnail.dart';
+import 'seller_scaffold.dart';
 import 'seller_ui.dart';
 
 class SellerInventoryOverviewScreen extends ConsumerStatefulWidget {
   const SellerInventoryOverviewScreen({super.key});
 
   @override
-  ConsumerState<SellerInventoryOverviewScreen> createState() => _SellerInventoryOverviewScreenState();
+  ConsumerState<SellerInventoryOverviewScreen> createState() =>
+      _SellerInventoryOverviewScreenState();
 }
 
-class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryOverviewScreen> {
+class _SellerInventoryOverviewScreenState
+    extends ConsumerState<SellerInventoryOverviewScreen> {
   String _warehouse = 'All Warehouses';
 
   @override
   Widget build(BuildContext context) {
     final products = ref.watch(sellerProductsProvider);
     final moves = ref.watch(sellerInventoryProvider);
+    final warehouseNames =
+        ref.watch(sellerWarehouseProvider.notifier).names(includeAll: true);
+    final selectedWarehouse =
+        warehouseNames.contains(_warehouse) ? _warehouse : warehouseNames.first;
     int stockFor(SellerProduct p) {
-      if (_warehouse == 'All Warehouses') return p.stock;
-      return p.warehouseStocks[_warehouse] ?? 0;
+      if (selectedWarehouse == 'All Warehouses') return p.stock;
+      return p.warehouseStocks[selectedWarehouse] ?? 0;
     }
 
     final totalStock = products.fold<int>(0, (s, e) => s + stockFor(e));
-    final totalValue = products.fold<double>(0, (s, e) => s + (e.price * stockFor(e)));
-    final lowStock = products.where((e) => stockFor(e) > 0 && stockFor(e) <= 5).length;
+    final totalValue =
+        products.fold<double>(0, (s, e) => s + (e.price * stockFor(e)));
+    final lowStock =
+        products.where((e) => stockFor(e) > 0 && stockFor(e) <= 5).length;
     final outStock = products.where((e) => stockFor(e) <= 0).length;
-    final filteredMoves = _warehouse == 'All Warehouses' ? moves : moves.where((m) => m.warehouse == _warehouse).toList();
+    final filteredMoves = selectedWarehouse == 'All Warehouses'
+        ? moves
+        : moves.where((m) => m.warehouse == selectedWarehouse).toList();
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
+    return SellerScaffold(
+      selectedNavIndex: 2,
       appBar: AppBar(
         title: const Text('Inventory'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/seller/products'),
+        ),
         actions: <Widget>[
-          IconButton(onPressed: () => context.push('/seller/inventory/summary'), icon: const Icon(Icons.insert_chart_outlined_rounded)),
+          IconButton(
+              tooltip: 'Products',
+              onPressed: () => context.go('/seller/products'),
+              icon: const Icon(Icons.storefront_outlined)),
+          IconButton(
+              tooltip: 'History',
+              onPressed: () => context.push('/seller/inventory/history'),
+              icon: const Icon(Icons.history_rounded)),
+          IconButton(
+              tooltip: 'Summary',
+              onPressed: () => context.push('/seller/inventory/summary'),
+              icon: const Icon(Icons.insert_chart_outlined_rounded)),
         ],
       ),
       body: ListView(
@@ -47,18 +75,37 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(colors: <Color>[Color(0xFF5B4AD9), Color(0xFF4F46E5)]),
+              gradient: kSellerPrimaryGradient,
+              boxShadow: <BoxShadow>[sellerGradientShadow(alpha: 0.16)],
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-              const Text('Total Products', style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 4),
-              Text('${products.length}', style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
-              Row(children: <Widget>[
-                Expanded(child: Text('Active Listings\n${products.where((e) => e.status == SellerProductStatus.active).length}', style: const TextStyle(color: Colors.white))),
-                Expanded(child: Text('Out of Stock\n$outStock', style: const TextStyle(color: Colors.white))),
-              ]),
-            ]),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Total Products',
+                      style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 4),
+                  Text('${products.length}',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 8),
+                  Row(children: <Widget>[
+                    Expanded(
+                        child: Text(
+                            'Active Listings\n${products.where((e) => e.status == SellerProductStatus.active).length}',
+                            style: const TextStyle(color: Colors.white))),
+                    Expanded(
+                        child: Text('Out of Stock\n$outStock',
+                            style: const TextStyle(color: Colors.white))),
+                  ]),
+                ]),
+          ),
+          const SizedBox(height: 12),
+          _InventoryNavigationTabs(
+            onProducts: () => context.go('/seller/products'),
+            onHistory: () => context.push('/seller/inventory/history'),
+            onDashboard: () => context.go('/seller/dashboard'),
           ),
           const SizedBox(height: 12),
           Container(
@@ -68,10 +115,15 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Expanded(child: Text('Stock Summary', style: TextStyle(fontWeight: FontWeight.w800))),
+                    const Expanded(
+                        child: Text('Stock Summary',
+                            style: TextStyle(fontWeight: FontWeight.w800))),
                     DropdownButton<String>(
-                      value: _warehouse,
-                      items: kSellerWarehouses.map((e) => DropdownMenuItem<String>(value: e, child: Text(e))).toList(),
+                      value: selectedWarehouse,
+                      items: warehouseNames
+                          .map((e) => DropdownMenuItem<String>(
+                              value: e, child: Text(e)))
+                          .toList(),
                       onChanged: (v) {
                         if (v != null) setState(() => _warehouse = v);
                       },
@@ -89,16 +141,28 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
           const SizedBox(height: 14),
           Row(
             children: <Widget>[
-              Expanded(child: Text('Recent Movements', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900))),
-              TextButton(onPressed: () => context.push('/seller/inventory/history'), child: const Text('View All')),
+              Expanded(
+                  child: Text('Recent Movements',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w900))),
+              TextButton(
+                  onPressed: () => context.push('/seller/inventory/history'),
+                  child: const Text('View All')),
             ],
           ),
           ...filteredMoves.take(3).map((e) => ListTile(
                 onTap: () => context.push('/seller/inventory/movement/${e.id}'),
-                leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
-                title: Text(e.productName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text('${e.type.label}  •  ${e.quantity > 0 ? '+' : ''}${e.quantity}'),
-                trailing: Text(_ago(e.at), style: const TextStyle(color: kSellerMuted)),
+                leading: SellerProductThumbnail(
+                  product: _productFor(products, e.productId),
+                ),
+                title: Text(e.productName,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                    '${e.type.label}  •  ${e.quantity > 0 ? '+' : ''}${e.quantity}'),
+                trailing: Text(_ago(e.at),
+                    style: const TextStyle(color: kSellerMuted)),
               )),
           const SizedBox(height: 10),
           FilledButton(
@@ -110,7 +174,8 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
             onPressed: () {
               final products = ref.read(sellerProductsProvider);
               if (products.isNotEmpty) {
-                context.push('/seller/inventory/add-stock-in?productId=${products.first.id}');
+                context.push(
+                    '/seller/inventory/add-stock-in?productId=${products.first.id}');
               }
             },
             child: const Text('Add Stock In'),
@@ -120,7 +185,8 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
             onPressed: () {
               final products = ref.read(sellerProductsProvider);
               if (products.isNotEmpty) {
-                context.push('/seller/inventory/add-stock-out?productId=${products.first.id}');
+                context.push(
+                    '/seller/inventory/add-stock-out?productId=${products.first.id}');
               }
             },
             child: const Text('Add Stock Out'),
@@ -130,7 +196,8 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
             onPressed: () {
               final products = ref.read(sellerProductsProvider);
               if (products.isNotEmpty) {
-                context.push('/seller/inventory/add-adjustment?productId=${products.first.id}');
+                context.push(
+                    '/seller/inventory/add-adjustment?productId=${products.first.id}');
               }
             },
             child: const Text('Add Adjustment'),
@@ -142,8 +209,61 @@ class _SellerInventoryOverviewScreenState extends ConsumerState<SellerInventoryO
 
   Widget _kv(String k, String v) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: Row(children: <Widget>[Expanded(child: Text(k, style: const TextStyle(color: kSellerMuted))), Text(v, style: const TextStyle(fontWeight: FontWeight.w800))]),
+        child: Row(children: <Widget>[
+          Expanded(child: Text(k, style: const TextStyle(color: kSellerMuted))),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w800))
+        ]),
       );
+}
+
+class _InventoryNavigationTabs extends StatelessWidget {
+  const _InventoryNavigationTabs({
+    required this.onProducts,
+    required this.onHistory,
+    required this.onDashboard,
+  });
+
+  final VoidCallback onProducts;
+  final VoidCallback onHistory;
+  final VoidCallback onDashboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onProducts,
+            icon: const Icon(Icons.storefront_outlined, size: 18),
+            label: const Text('Products'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: onHistory,
+            icon: const Icon(Icons.history_rounded, size: 18),
+            label: const Text('History'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(
+          tooltip: 'Dashboard',
+          onPressed: onDashboard,
+          icon: const Icon(Icons.home_outlined),
+        ),
+      ],
+    );
+  }
+}
+
+SellerProduct? _productFor(List<SellerProduct> products, int productId) {
+  for (final product in products) {
+    if (product.id == productId) {
+      return product;
+    }
+  }
+  return null;
 }
 
 String _ago(DateTime d) {

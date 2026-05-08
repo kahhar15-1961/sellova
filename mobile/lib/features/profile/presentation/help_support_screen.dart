@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/providers/app_providers.dart';
 import '../../../app/providers/repository_providers.dart';
 import '../../auth/presentation/auth_ui_constants.dart';
 
@@ -24,7 +23,7 @@ class HelpSupportScreen extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => context.pop(),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/profile'),
         ),
         title: const Text('Help & Support'),
       ),
@@ -34,94 +33,52 @@ class HelpSupportScreen extends ConsumerWidget {
           _HelpTile(
             icon: Icons.chat_bubble_outline_rounded,
             title: 'Help Center',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Help center articles are coming soon.')),
+            onTap: () => _infoDialog(
+              context,
+              'Help Center',
+              'Support articles, guides, and account help live here.',
             ),
           ),
           _HelpTile(
             icon: Icons.help_outline_rounded,
             title: 'How it works',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Guides for buyers and sellers are coming soon.')),
+            onTap: () => _infoDialog(
+              context,
+              'How it works',
+              'Browse orders, payouts, chats, and support from one account.',
             ),
           ),
           _HelpTile(
             icon: Icons.article_outlined,
             title: 'FAQ',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('FAQ is coming soon.')),
+            onTap: () => _infoDialog(
+              context,
+              'FAQ',
+              'Common account, order, and payout questions are answered here.',
             ),
           ),
           _HelpTile(
             icon: Icons.gavel_outlined,
             title: 'Terms & Conditions',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Terms will be published here soon.')),
+            onTap: () => _infoDialog(
+              context,
+              'Terms & Conditions',
+              'Terms are shown here until the web policy page is linked.',
             ),
           ),
           _HelpTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Privacy policy is coming soon.')),
+            onTap: () => _infoDialog(
+              context,
+              'Privacy Policy',
+              'Privacy details are shown here until the browser page is linked.',
             ),
           ),
           _HelpTile(
             icon: Icons.headset_mic_outlined,
             title: 'Contact Support',
-            onTap: () async {
-              final subjectCtrl = TextEditingController();
-              final messageCtrl = TextEditingController();
-              final submit = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Open support ticket'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          TextField(
-                            controller: subjectCtrl,
-                            decoration: const InputDecoration(labelText: 'Subject'),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: messageCtrl,
-                            decoration: const InputDecoration(labelText: 'Message'),
-                            minLines: 3,
-                            maxLines: 5,
-                          ),
-                        ],
-                      ),
-                      actions: <Widget>[
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Submit')),
-                      ],
-                    ),
-                  ) ??
-                  false;
-              if (!submit) {
-                return;
-              }
-              try {
-                await ref.read(orderRepositoryProvider).createSupportTicket(
-                      subject: subjectCtrl.text.trim(),
-                      message: messageCtrl.text.trim(),
-                    );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Support ticket created.')),
-                  );
-                  context.push('/chats');
-                }
-              } catch (_) {
-                await Clipboard.setData(const ClipboardData(text: _kSupportEmail));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Could not create ticket. Support email copied.')),
-                  );
-                }
-              }
-            },
+            onTap: () => _openSupportTicketSheet(context, ref),
           ),
           const SizedBox(height: 20),
           Container(
@@ -129,7 +86,8 @@ class HelpSupportScreen extends ConsumerWidget {
             decoration: BoxDecoration(
               color: kAuthAccentPurple.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: kAuthAccentPurple.withValues(alpha: 0.18)),
+              border:
+                  Border.all(color: kAuthAccentPurple.withValues(alpha: 0.18)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,7 +98,8 @@ class HelpSupportScreen extends ConsumerWidget {
                     color: cs.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.support_agent_rounded, color: cs.primary, size: 28),
+                  child: Icon(Icons.support_agent_rounded,
+                      color: cs.primary, size: 28),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -157,7 +116,8 @@ class HelpSupportScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       Text(
                         'We are here to help you.',
-                        style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFF475569)),
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: const Color(0xFF475569)),
                       ),
                       const SizedBox(height: 12),
                       SelectableText(
@@ -176,37 +136,209 @@ class HelpSupportScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Clear saved browsing state?'),
-                      content: const Text(
-                        'Resets saved list state for products, orders, disputes, and withdrawals.',
-                      ),
-                      actions: <Widget>[
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
-                      ],
-                    ),
-                  ) ??
-                  false;
-              if (!ok || !context.mounted) {
-                return;
-              }
-              await ref.read(listStatePersistenceProvider).clearAllBrowsingState();
-              await ref.read(navigationStatePersistenceProvider).resetToHome();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved browsing state cleared.')));
-              }
-            },
-            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
-            label: const Text('Clear saved browsing state'),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _infoDialog(
+    BuildContext context,
+    String title,
+    String body,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openSupportTicketSheet(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final cs = Theme.of(context).colorScheme;
+    final subjectCtrl = TextEditingController(text: 'Seller support');
+    final messageCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    try {
+      final submitted = await showModalBottomSheet<bool>(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (ctx) {
+              final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+              return Padding(
+                padding: EdgeInsets.only(bottom: bottomInset),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFDFDFF),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+                      child: Form(
+                        key: formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Center(
+                              child: Container(
+                                width: 42,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD7DEEA),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              children: <Widget>[
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: cs.primary.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Icon(Icons.headset_mic_rounded,
+                                      color: cs.primary),
+                                ),
+                                const SizedBox(width: 14),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        'Open support ticket',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Send the issue details and we will route it to support.',
+                                        style: TextStyle(
+                                          color: Color(0xFF475569),
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 18),
+                            TextFormField(
+                              controller: subjectCtrl,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                labelText: 'Subject',
+                                hintText: 'What do you need help with?',
+                              ),
+                              validator: (value) {
+                                if ((value ?? '').trim().isEmpty) {
+                                  return 'Subject is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: messageCtrl,
+                              minLines: 4,
+                              maxLines: 6,
+                              textInputAction: TextInputAction.newline,
+                              decoration: const InputDecoration(
+                                labelText: 'Message',
+                                hintText: 'Describe the issue briefly',
+                              ),
+                              validator: (value) {
+                                if ((value ?? '').trim().isEmpty) {
+                                  return 'Message is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: () {
+                                      if (formKey.currentState?.validate() ??
+                                          false) {
+                                        Navigator.pop(ctx, true);
+                                      }
+                                    },
+                                    child: const Text('Submit ticket'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ) ??
+          false;
+
+      if (!submitted) {
+        return;
+      }
+
+      await ref.read(orderRepositoryProvider).createSupportTicket(
+            subject: subjectCtrl.text.trim(),
+            message: messageCtrl.text.trim(),
+          );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Support ticket created.')),
+        );
+        context.push('/chats');
+      }
+    } catch (_) {
+      await Clipboard.setData(const ClipboardData(text: _kSupportEmail));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not create ticket. Support email copied.'),
+          ),
+        );
+      }
+    } finally {
+      subjectCtrl.dispose();
+      messageCtrl.dispose();
+    }
   }
 }
 

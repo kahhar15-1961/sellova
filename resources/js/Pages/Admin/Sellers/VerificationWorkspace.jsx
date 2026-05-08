@@ -38,17 +38,33 @@ export default function VerificationWorkspace({ header, workspace }) {
         decision: 'approved',
         reason: '',
     });
+    const noteForm = useForm({
+        note: '',
+    });
 
     const flags = workspace?.flags ?? {};
     const kyc = workspace?.kyc ?? {};
     const seller = workspace?.seller ?? null;
     const account = workspace?.account ?? null;
     const documents = workspace?.documents ?? [];
+    const notes = workspace?.notes ?? [];
     const history = workspace?.history ?? [];
+    const reviewers = workspace?.reviewers ?? [];
+    const documentInsights = workspace?.document_insights ?? {};
     const routes = workspace?.routes ?? {};
+    const [reassignTo, setReassignTo] = useState(() => String(kyc.assigned_to_user_id ?? reviewers[0]?.value ?? ''));
 
     const postClaim = () => {
         router.post(routes.claim ?? '', {}, { preserveScroll: true });
+    };
+
+    const postReassign = () => {
+        if (!reassignTo) return;
+        router.post(
+            routes.reassign ?? '',
+            { assignee_user_id: Number(reassignTo) },
+            { preserveScroll: true },
+        );
     };
 
     const postReview = (decision) => {
@@ -63,6 +79,14 @@ export default function VerificationWorkspace({ header, workspace }) {
                     setApproveOpen(false);
                 }
             },
+        });
+    };
+
+    const postNote = () => {
+        if (!noteForm.data.note.trim()) return;
+        noteForm.post(routes.note ?? '', {
+            preserveScroll: true,
+            onSuccess: () => noteForm.reset('note'),
         });
     };
 
@@ -112,6 +136,92 @@ export default function VerificationWorkspace({ header, workspace }) {
                 </div>
             </div>
 
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card className="border-border/80 bg-card shadow-sm md:col-span-2">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Case operations</CardTitle>
+                        <CardDescription>Claiming locks the case, review records the final outcome, and every action is audited.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current state</p>
+                            <p className="mt-1 text-sm font-semibold">{kyc.status ?? '—'}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reviewer</p>
+                            <p className="mt-1 text-sm font-semibold">{kyc.reviewer_email ?? 'Unassigned'}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Assignee</p>
+                            <p className="mt-1 text-sm font-semibold">{kyc.assigned_to_email ?? 'Unassigned'}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SLA</p>
+                            <p className="mt-1 text-sm font-semibold">{kyc.escalated_at ? 'Escalated' : kyc.sla_warning_sent_at ? 'Warning sent' : 'On track'}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SLA due</p>
+                            <p className="mt-1 text-sm font-semibold">{fmtDate(kyc.sla_due_at)}</p>
+                        </div>
+                        <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Automation</p>
+                            <p className="mt-1 text-sm font-semibold">Notifications active</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card className="border-border/80 bg-card shadow-sm">
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Workflow</CardTitle>
+                        <CardDescription>Standard review sequence.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm text-muted-foreground">
+                        <p>1. Claim the case</p>
+                        <p>2. Review evidence</p>
+                        <p>3. Approve or reject</p>
+                    </CardContent>
+                </Card>
+            </div>
+
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                <Card className="border-border/80 shadow-sm lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle className="text-base">Seller summary</CardTitle>
+                        <CardDescription>Identity, account, and case status in one view.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Seller</p>
+                            <p className="text-sm font-semibold">{seller?.display_name ?? '—'}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Profile status</p>
+                            <p className="text-sm font-semibold">{seller?.verification_status ?? '—'}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Account</p>
+                            <p className="text-sm font-semibold">{account?.email ?? '—'}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submitted</p>
+                            <p className="text-sm font-semibold">{fmtDate(kyc.submitted_at)}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Assigned</p>
+                            <p className="text-sm font-semibold">{fmtDate(kyc.assigned_at)}</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card className="border-border/80 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-base">Case note</CardTitle>
+                        <CardDescription>Internal guidance for the operator.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                        Verify the uploaded documents, then keep the decision concise and policy-based.
+                    </CardContent>
+                </Card>
+            </div>
+
             <div className="grid gap-6 xl:grid-cols-3">
                 <div className="space-y-6 xl:col-span-2">
                     <Card className="border-border/80 shadow-sm">
@@ -157,8 +267,7 @@ export default function VerificationWorkspace({ header, workspace }) {
                         <CardHeader>
                             <CardTitle className="text-base">Evidence bundle</CardTitle>
                             <CardDescription>
-                                Authenticated same-origin downloads. Files must exist under the application disk — paths are
-                                normalized server-side.
+                                Authenticated same-origin downloads. Files must exist under the application disk and are normalized server-side.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -197,6 +306,30 @@ export default function VerificationWorkspace({ header, workspace }) {
                                     ))}
                                 </div>
                             )}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-border/80 shadow-sm">
+                        <CardHeader>
+                            <CardTitle className="text-base">Document intelligence</CardTitle>
+                            <CardDescription>Lightweight quality checks based on the submitted evidence bundle.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Uploaded</p>
+                                <p className="mt-1 text-sm font-semibold">{documentInsights.uploaded_count ?? 0}</p>
+                            </div>
+                            <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Verified</p>
+                                <p className="mt-1 text-sm font-semibold">{documentInsights.verified_count ?? 0}</p>
+                            </div>
+                            <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quality</p>
+                                <p className="mt-1 text-sm font-semibold">{documentInsights.quality_state ?? 'unknown'}</p>
+                            </div>
+                            <div className="sm:col-span-3 rounded-lg border border-border/80 bg-muted/20 p-3 text-sm text-muted-foreground">
+                                {documentInsights.hint ?? 'Upload documents to unlock review insight.'}
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -246,12 +379,81 @@ export default function VerificationWorkspace({ header, workspace }) {
                                 <>
                                     <p className="font-medium">{account.email}</p>
                                     <p className="mt-1 font-mono text-xs text-muted-foreground">{account.uuid}</p>
-                                </>
-                            ) : (
-                                <p className="text-muted-foreground">No linked user.</p>
-                            )}
+                        </>
+                    ) : (
+                        <p className="text-muted-foreground">No linked user.</p>
+                    )}
+                </CardContent>
+                    </Card>
+
+                    <Card className="border-border/80 shadow-sm">
+                        <CardHeader>
+                            <CardTitle className="text-base">Internal notes</CardTitle>
+                            <CardDescription>Private reviewer notes stay attached to the case.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="space-y-2">
+                                <Textarea
+                                    value={noteForm.data.note}
+                                    onChange={(e) => noteForm.setData('note', e.target.value)}
+                                    rows={4}
+                                    placeholder="Add a concise review note..."
+                                />
+                                {noteForm.errors.note ? <p className="text-sm text-red-600">{noteForm.errors.note}</p> : null}
+                            </div>
+                            <Button type="button" variant="secondary" className="w-full" onClick={postNote} disabled={noteForm.processing || !noteForm.data.note.trim()}>
+                                Add note
+                            </Button>
+                            <div className="max-h-[280px] space-y-2 overflow-auto pr-1">
+                                {notes.length ? notes.map((note) => (
+                                    <div key={note.id} className="rounded-lg border border-border/80 bg-muted/20 p-3 text-sm">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="font-medium">{note.author_email ?? '—'}</p>
+                                            <p className="text-xs text-muted-foreground">{fmtDate(note.created_at)}</p>
+                                        </div>
+                                        <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{note.note}</p>
+                                    </div>
+                                )) : (
+                                    <p className="text-sm text-muted-foreground">No notes yet.</p>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
+
+                    {flags.can_review && !flags.is_terminal ? (
+                        <Card className="border-border/80 shadow-sm">
+                            <CardHeader>
+                                <CardTitle className="text-base">Reassign</CardTitle>
+                                <CardDescription>Move this case to another reviewer with full audit tracking.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground" htmlFor="kyc-reassign-to">
+                                        Reviewer
+                                    </label>
+                                    <select
+                                        id="kyc-reassign-to"
+                                        value={reassignTo}
+                                        onChange={(e) => setReassignTo(e.target.value)}
+                                        className="h-10 w-full rounded-md border border-border/80 bg-background px-3 text-sm"
+                                    >
+                                        <option value="">Select reviewer</option>
+                                        {reviewers.map((reviewer) => (
+                                            <option key={reviewer.value} value={reviewer.value}>
+                                                {reviewer.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <Button type="button" variant="secondary" className="w-full" onClick={postReassign} disabled={!reassignTo || reviewForm.processing}>
+                                    Reassign case
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                    Use this when the active reviewer changes or the queue needs manual balancing.
+                                </p>
+                            </CardContent>
+                        </Card>
+                    ) : null}
 
                     {flags.can_review && !flags.is_terminal ? (
                         <Card className="border-border/80 shadow-sm">

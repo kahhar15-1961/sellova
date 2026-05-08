@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../categories/application/category_list_provider.dart';
 import '../../categories/data/category_repository.dart';
+import '../../profile/application/wishlist_controller.dart';
+import '../../shell/presentation/buyer_page_header.dart';
 import '../application/product_list_controller.dart';
 import '../data/product_repository.dart';
 
@@ -16,9 +18,11 @@ class ProductListScreen extends ConsumerStatefulWidget {
   ConsumerState<ProductListScreen> createState() => _ProductListScreenState();
 }
 
-class _ProductListScreenState extends ConsumerState<ProductListScreen> {
+class _ProductListScreenState extends ConsumerState<ProductListScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
 
   @override
@@ -32,14 +36,17 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future<void>.microtask(
       () async {
         await ref.read(productListControllerProvider.notifier).initialize();
-        final saved = ref.read(productListControllerProvider.notifier).scrollOffset;
+        final saved =
+            ref.read(productListControllerProvider.notifier).scrollOffset;
         if (saved > 0 && mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_scrollController.hasClients) {
-              _scrollController.jumpTo(saved.clamp(0, _scrollController.position.maxScrollExtent));
+              _scrollController.jumpTo(
+                  saved.clamp(0, _scrollController.position.maxScrollExtent));
             }
           });
         }
@@ -50,17 +57,31 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchDebounce?.cancel();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      Future<void>.microtask(
+        () => ref.read(productListControllerProvider.notifier).refresh(),
+      );
+    }
+  }
+
   void _onScroll() {
-    ref.read(productListControllerProvider.notifier).updateScrollOffset(_scrollController.offset);
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+    ref
+        .read(productListControllerProvider.notifier)
+        .updateScrollOffset(_scrollController.offset);
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
       ref.read(productListControllerProvider.notifier).loadNextPage();
     }
   }
@@ -68,7 +89,8 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   Future<void> _submitSearch() async {
     await ref.read(productListControllerProvider.notifier).applyQuery(
           search: _searchController.text,
-          categoryId: ref.read(productListControllerProvider.notifier).categoryId,
+          categoryId:
+              ref.read(productListControllerProvider.notifier).categoryId,
           storefrontId: null,
         );
   }
@@ -101,7 +123,8 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     final categoriesAsync = ref.watch(categoryListProvider);
     final activeCategoryId = controller.categoryId;
     String? activeCategoryName;
-    final loadedCategories = categoriesAsync.valueOrNull ?? const <CategoryDto>[];
+    final loadedCategories =
+        categoriesAsync.valueOrNull ?? const <CategoryDto>[];
     if (activeCategoryId != null) {
       for (final category in loadedCategories) {
         if (category.id == activeCategoryId) {
@@ -119,34 +142,32 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(productListControllerProvider.notifier).refresh(),
+      onRefresh: () =>
+          ref.read(productListControllerProvider.notifier).refresh(),
       child: CustomScrollView(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: <Widget>[
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
             sliver: SliverToBoxAdapter(
-              child: _HomeTopRow(
-                onNotificationsTap: () {},
-                onCartTap: () => context.go('/withdrawals'),
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            sliver: SliverToBoxAdapter(
-              child: _HomeSearchField(
-                controller: _searchController,
-                onSubmit: _submitSearch,
-                onChanged: _onSearchChanged,
+              child: BuyerPageHeader(
+                title: 'Sellova',
+                isSearchActive: controller.search.isNotEmpty,
+                showFilter: false,
+                onSearch: () => _searchFocusNode.requestFocus(),
               ),
             ),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             sliver: SliverToBoxAdapter(
-              child: const _EscrowPromoBanner(),
+              child: _HomeHeroPanel(
+                searchController: _searchController,
+                searchFocusNode: _searchFocusNode,
+                onSearchSubmit: _submitSearch,
+                onSearchChanged: _onSearchChanged,
+              ),
             ),
           ),
           SliverPadding(
@@ -194,22 +215,25 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
             ),
           ),
           if (state.isInitialLoading && state.items.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-              sliver: const _HomeProductSkeletonGrid(),
+            const SliverPadding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 24),
+              sliver: _HomeProductSkeletonGrid(),
             )
           else if (state.errorMessage != null && state.items.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
               child: _CatalogErrorState(
                 message: state.errorMessage!,
-                onRetry: () => ref.read(productListControllerProvider.notifier).loadFirstPage(),
+                onRetry: () => ref
+                    .read(productListControllerProvider.notifier)
+                    .loadFirstPage(),
               ),
             )
           else if (state.items.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
-              child: _CatalogEmptyState(hasActiveQuery: controller.hasActiveQuery),
+              child:
+                  _CatalogEmptyState(hasActiveQuery: controller.hasActiveQuery),
             )
           else ...<Widget>[
             SliverPadding(
@@ -254,58 +278,72 @@ class _ProductListScreenState extends ConsumerState<ProductListScreen> {
   }
 }
 
-class _HomeTopRow extends StatelessWidget {
-  const _HomeTopRow({
-    required this.onNotificationsTap,
-    required this.onCartTap,
+class _HomeHeroPanel extends StatelessWidget {
+  const _HomeHeroPanel({
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.onSearchSubmit,
+    required this.onSearchChanged,
   });
 
-  final VoidCallback onNotificationsTap;
-  final VoidCallback onCartTap;
+  final TextEditingController searchController;
+  final FocusNode searchFocusNode;
+  final Future<void> Function() onSearchSubmit;
+  final ValueChanged<String> onSearchChanged;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return SafeArea(
-      bottom: false,
-      child: Row(
-      children: <Widget>[
-        Icon(Icons.location_on_outlined, color: cs.primary, size: 20),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            'Dhaka, Bangladesh',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: LinearGradient(
+          colors: <Color>[
+            cs.surface,
+            cs.primaryContainer.withValues(alpha: 0.34),
+            const Color(0xFFF9FBFF),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            'Premium marketplace',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  height: 1.08,
                 ),
           ),
-        ),
-        IconButton(
-          onPressed: onNotificationsTap,
-          icon: const Icon(Icons.notifications_none_outlined),
-        ),
-        Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            IconButton(
-              onPressed: onCartTap,
-              icon: const Icon(Icons.shopping_cart_outlined),
-            ),
-            Positioned(
-              right: 8,
-              top: 8,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(999),
+          const SizedBox(height: 6),
+          Text(
+            'Premium picks, protected checkout.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  height: 1.45,
                 ),
-              ),
-            ),
-          ],
-        ),
-      ],
+          ),
+          const SizedBox(height: 16),
+          _HomeSearchField(
+            controller: searchController,
+            focusNode: searchFocusNode,
+            onSubmit: onSearchSubmit,
+            onChanged: onSearchChanged,
+          ),
+          const SizedBox(height: 14),
+          const _EscrowPromoBanner(),
+        ],
       ),
     );
   }
@@ -314,11 +352,13 @@ class _HomeTopRow extends StatelessWidget {
 class _HomeSearchField extends StatelessWidget {
   const _HomeSearchField({
     required this.controller,
+    required this.focusNode,
     required this.onSubmit,
     required this.onChanged,
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final Future<void> Function() onSubmit;
   final ValueChanged<String> onChanged;
 
@@ -327,15 +367,16 @@ class _HomeSearchField extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       textInputAction: TextInputAction.search,
       onChanged: onChanged,
       onSubmitted: (_) => onSubmit(),
       decoration: InputDecoration(
-        hintText: 'Search products, categories...',
-        prefixIcon: const Icon(Icons.search),
+        hintText: 'Search products',
+        prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: IconButton(
           onPressed: onSubmit,
-          icon: Icon(Icons.radio_button_unchecked, color: cs.outline),
+          icon: Icon(Icons.tune_rounded, color: cs.outline),
         ),
       ),
     );
@@ -349,14 +390,21 @@ class _EscrowPromoBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      height: 120,
+      height: 124,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
           colors: <Color>[Color(0xFF0B1A60), Color(0xFF102A95)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFF0B1A60).withValues(alpha: 0.2),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -368,7 +416,7 @@ class _EscrowPromoBanner extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   Text(
-                    'Secure Trading\nwith Escrow',
+                    'Protected',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w800,
@@ -377,7 +425,7 @@ class _EscrowPromoBanner extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your money is safe with us!',
+                    'Funds release after completion.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.white.withValues(alpha: 0.85),
                         ),
@@ -389,10 +437,11 @@ class _EscrowPromoBanner extends StatelessWidget {
               width: 66,
               height: 66,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
+                color: Colors.white.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(999),
               ),
-              child: Icon(Icons.shield_outlined, color: cs.tertiaryContainer, size: 34),
+              child: Icon(Icons.shield_outlined,
+                  color: cs.tertiaryContainer, size: 34),
             ),
           ],
         ),
@@ -420,14 +469,20 @@ class _SectionHeading extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
         TextButton(
           onPressed: onActionTap,
           child: Text(
             actionLabel,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(color: cs.primary),
+            style: Theme.of(context)
+                .textTheme
+                .labelLarge
+                ?.copyWith(color: cs.primary),
           ),
         ),
       ],
@@ -489,7 +544,9 @@ class _CategoriesStrip extends StatelessWidget {
                   child: isLoading
                       ? Icon(Icons.more_horiz, color: cs.outline)
                       : Icon(
-                          isAll ? Icons.grid_view_rounded : _categoryIcon(item!.name),
+                          isAll
+                              ? Icons.grid_view_rounded
+                              : _categoryIcon(item!.name),
                           color: cs.primary,
                         ),
                 ),
@@ -564,7 +621,7 @@ class _ActiveCategoryFilterPill extends StatelessWidget {
   }
 }
 
-class _HomeProductCard extends StatelessWidget {
+class _HomeProductCard extends ConsumerWidget {
   const _HomeProductCard({
     required this.product,
     required this.onTap,
@@ -574,10 +631,19 @@ class _HomeProductCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final imageUrl = product.primaryImageUrl;
+    final imageUrls = product.imageUrls;
+    final rating = product.rating;
+    final reviewCount = product.reviewCount;
+    final isInstantDelivery = product.isInstantDelivery;
+    final isSaved = ref.watch(wishlistControllerProvider).maybeWhen(
+          data: (items) =>
+              product.id != null &&
+              items.any((item) => item.productId == product.id),
+          orElse: () => false,
+        );
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -600,54 +666,180 @@ class _HomeProductCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                  child: imageUrl == null
-                      ? Container(
-                          color: cs.surfaceContainerHighest,
-                          alignment: Alignment.center,
-                          child: Icon(Icons.image_not_supported_outlined, color: cs.outline),
-                        )
-                      : Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: cs.surfaceContainerHighest,
-                            alignment: Alignment.center,
-                            child: Icon(Icons.broken_image_outlined, color: cs.outline),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    ClipRRect(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(14)),
+                      child: _AutoProductImageCarousel(imageUrls: imageUrls),
+                    ),
+                    if (isInstantDelivery)
+                      const Positioned(
+                        left: 8,
+                        top: 8,
+                        child: _InstantImageBadge(),
+                      ),
+                    if (imageUrls.length > 1)
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.54),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const Icon(Icons.auto_awesome_motion_rounded,
+                                  size: 12, color: Colors.white),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${imageUrls.length}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Material(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () async {
+                            final id = product.id;
+                            if (id == null || id <= 0) {
+                              return;
+                            }
+                            final notifier =
+                                ref.read(wishlistControllerProvider.notifier);
+                            try {
+                              if (isSaved) {
+                                await notifier.remove(id);
+                              } else {
+                                await notifier.add(id);
+                              }
+                              if (!context.mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(isSaved
+                                      ? 'Removed from wishlist'
+                                      : 'Saved to wishlist'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('Unable to update wishlist: $e'),
+                                ),
+                              );
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(
+                              isSaved
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 18,
+                              color: isSaved ? cs.error : cs.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-                child: Text(
-                  product.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'Home',
-                  style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      product.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          rating == null
+                              ? Icons.star_border_rounded
+                              : Icons.star_rounded,
+                          size: 15,
+                          color: const Color(0xFFF59E0B),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          rating == null
+                              ? 'No reviews'
+                              : '${rating.toStringAsFixed(1)} ($reviewCount)',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text(
-                      product.priceLabel,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            product.priceLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: cs.primaryContainer.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'Secure',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const Spacer(),
-                    const Icon(Icons.star, size: 14, color: Color(0xFFFFB800)),
-                    const SizedBox(width: 4),
-                    Text('4.8', style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    _ProductFeatureSlider(features: product.homeFeatures),
                   ],
                 ),
               ),
@@ -657,6 +849,185 @@ class _HomeProductCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InstantImageBadge extends StatelessWidget {
+  const _InstantImageBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F2FF),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 5, 12, 6),
+        child: Text(
+          'Instant',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: const Color(0xFF12182D),
+                fontWeight: FontWeight.w900,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProductFeatureSlider extends StatefulWidget {
+  const _ProductFeatureSlider({required this.features});
+
+  final List<ProductFeature> features;
+
+  @override
+  State<_ProductFeatureSlider> createState() => _ProductFeatureSliderState();
+}
+
+class _ProductFeatureSliderState extends State<_ProductFeatureSlider> {
+  late final PageController _controller;
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProductFeatureSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.features.length != widget.features.length) {
+      _page = 0;
+      _syncTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    if (widget.features.length < 2) {
+      return;
+    }
+    _timer = Timer.periodic(const Duration(milliseconds: 2800), (_) {
+      if (!mounted || !_controller.hasClients || widget.features.length < 2) {
+        return;
+      }
+      final next = (_page + 1) % widget.features.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.features.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SizedBox(
+          height: 28,
+          child: PageView.builder(
+            controller: _controller,
+            physics: widget.features.length > 1
+                ? const PageScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            itemCount: widget.features.length,
+            onPageChanged: (value) => setState(() => _page = value),
+            itemBuilder: (context, index) =>
+                _ProductFeaturePill(feature: widget.features[index]),
+          ),
+        ),
+        if (widget.features.length > 1) ...<Widget>[
+          const SizedBox(height: 5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List<Widget>.generate(
+              widget.features.length,
+              (index) => AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: index == _page ? 7 : 6,
+                height: 6,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: index == _page
+                      ? const Color(0xFF88BFB5)
+                      : const Color(0xFFC8D8D5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ProductFeaturePill extends StatelessWidget {
+  const _ProductFeaturePill({required this.feature});
+
+  final ProductFeature feature;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color(feature.foregroundColor);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Color(feature.backgroundColor),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(_featureIcon(feature.icon), size: 15, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              feature.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+IconData _featureIcon(String icon) {
+  return switch (icon) {
+    'bolt' => Icons.bolt_rounded,
+    'shield' => Icons.verified_user_outlined,
+    'lock' => Icons.lock_outline_rounded,
+    _ => Icons.check_circle_outline_rounded,
+  };
 }
 
 class _HomeProductSkeletonGrid extends StatelessWidget {
@@ -674,6 +1045,94 @@ class _HomeProductSkeletonGrid extends StatelessWidget {
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
         childAspectRatio: 0.75,
+      ),
+    );
+  }
+}
+
+class _AutoProductImageCarousel extends StatefulWidget {
+  const _AutoProductImageCarousel({required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  State<_AutoProductImageCarousel> createState() =>
+      _AutoProductImageCarouselState();
+}
+
+class _AutoProductImageCarouselState extends State<_AutoProductImageCarousel> {
+  late final PageController _controller;
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoProductImageCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrls.length != widget.imageUrls.length) {
+      _page = 0;
+      _syncTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    if (widget.imageUrls.length < 2) {
+      return;
+    }
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || !_controller.hasClients) {
+        return;
+      }
+      final next = (_page + 1) % widget.imageUrls.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final images = widget.imageUrls;
+    if (images.isEmpty) {
+      return Container(
+        color: cs.surfaceContainerHighest,
+        alignment: Alignment.center,
+        child: Icon(Icons.image_not_supported_outlined, color: cs.outline),
+      );
+    }
+    return PageView.builder(
+      controller: _controller,
+      physics: images.length > 1
+          ? const PageScrollPhysics()
+          : const NeverScrollableScrollPhysics(),
+      itemCount: images.length,
+      onPageChanged: (value) => setState(() => _page = value),
+      itemBuilder: (context, index) => Image.network(
+        images[index],
+        fit: BoxFit.cover,
+        width: double.infinity,
+        errorBuilder: (_, __, ___) => Container(
+          color: cs.surfaceContainerHighest,
+          alignment: Alignment.center,
+          child: Icon(Icons.broken_image_outlined, color: cs.outline),
+        ),
       ),
     );
   }
@@ -697,7 +1156,8 @@ class _HomeProductSkeletonCard extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: cs.surfaceContainerHighest,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(14)),
               ),
             ),
           ),
@@ -762,12 +1222,18 @@ class _CatalogEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.inventory_2_outlined, size: 52, color: Theme.of(context).colorScheme.outline),
+            Icon(Icons.inventory_2_outlined,
+                size: 52, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 14),
             Text(
-              hasActiveQuery ? 'No products match your filters.' : 'No products available yet.',
+              hasActiveQuery
+                  ? 'No products match your filters.'
+                  : 'No products available yet.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -813,26 +1279,58 @@ class _CatalogErrorState extends StatelessWidget {
 
 IconData _categoryIcon(String label) {
   final normalized = label.toLowerCase();
-  if (normalized.contains('electronic')) return Icons.computer_outlined;
-  if (normalized.contains('fashion')) return Icons.checkroom_outlined;
-  if (normalized.contains('digital')) return Icons.tablet_android_outlined;
-  if (normalized.contains('home')) return Icons.home_outlined;
-  if (normalized.contains('book')) return Icons.menu_book_outlined;
-  if (normalized.contains('sport')) return Icons.sports_basketball_outlined;
-  if (normalized.contains('auto')) return Icons.directions_car_outlined;
-  if (normalized.contains('beauty') || normalized.contains('health')) return Icons.spa_outlined;
+  if (normalized.contains('electronic')) {
+    return Icons.computer_outlined;
+  }
+  if (normalized.contains('fashion')) {
+    return Icons.checkroom_outlined;
+  }
+  if (normalized.contains('digital')) {
+    return Icons.tablet_android_outlined;
+  }
+  if (normalized.contains('home')) {
+    return Icons.home_outlined;
+  }
+  if (normalized.contains('book')) {
+    return Icons.menu_book_outlined;
+  }
+  if (normalized.contains('sport')) {
+    return Icons.sports_basketball_outlined;
+  }
+  if (normalized.contains('auto')) {
+    return Icons.directions_car_outlined;
+  }
+  if (normalized.contains('beauty') || normalized.contains('health')) {
+    return Icons.spa_outlined;
+  }
   return Icons.category_outlined;
 }
 
 Color _categoryTint(String label) {
   final normalized = label.toLowerCase();
-  if (normalized.contains('electronic')) return const Color(0xFFEAF1FF);
-  if (normalized.contains('fashion')) return const Color(0xFFFFEDEE);
-  if (normalized.contains('digital')) return const Color(0xFFEFF5FF);
-  if (normalized.contains('home')) return const Color(0xFFFFF3E6);
-  if (normalized.contains('book')) return const Color(0xFFEDEBFF);
-  if (normalized.contains('sport')) return const Color(0xFFEAFCEF);
-  if (normalized.contains('auto')) return const Color(0xFFFFEAEA);
-  if (normalized.contains('beauty') || normalized.contains('health')) return const Color(0xFFF2EAFF);
+  if (normalized.contains('electronic')) {
+    return const Color(0xFFEAF1FF);
+  }
+  if (normalized.contains('fashion')) {
+    return const Color(0xFFFFEDEE);
+  }
+  if (normalized.contains('digital')) {
+    return const Color(0xFFEFF5FF);
+  }
+  if (normalized.contains('home')) {
+    return const Color(0xFFFFF3E6);
+  }
+  if (normalized.contains('book')) {
+    return const Color(0xFFEDEBFF);
+  }
+  if (normalized.contains('sport')) {
+    return const Color(0xFFEAFCEF);
+  }
+  if (normalized.contains('auto')) {
+    return const Color(0xFFFFEAEA);
+  }
+  if (normalized.contains('beauty') || normalized.contains('health')) {
+    return const Color(0xFFF2EAFF);
+  }
   return const Color(0xFFF0F2F6);
 }

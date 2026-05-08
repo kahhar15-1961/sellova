@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 const Color kSellerNavy = Color(0xFF0B1A60);
 const Color kSellerMuted = Color(0xFF64748B);
 const Color kSellerAccent = Color(0xFF5E49D1);
+const Color kSellerGradientStart = Color(0xFF2563EB);
+const Color kSellerGradientEnd = Color(0xFF4338CA);
+const LinearGradient kSellerPrimaryGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: <Color>[kSellerGradientStart, kSellerGradientEnd],
+);
 
 BoxDecoration sellerCardDecoration(ColorScheme cs) {
   return BoxDecoration(
@@ -19,10 +26,32 @@ BoxDecoration sellerCardDecoration(ColorScheme cs) {
   );
 }
 
+BoxShadow sellerGradientShadow({double alpha = 0.22}) {
+  return BoxShadow(
+    color: kSellerGradientEnd.withValues(alpha: alpha),
+    blurRadius: 24,
+    offset: const Offset(0, 14),
+  );
+}
+
 String sellerNiceDate(DateTime d) {
   final local = d.toLocal();
-  const months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  final h = local.hour > 12 ? local.hour - 12 : (local.hour == 0 ? 12 : local.hour);
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  final h =
+      local.hour > 12 ? local.hour - 12 : (local.hour == 0 ? 12 : local.hour);
   final mm = local.minute.toString().padLeft(2, '0');
   final amPm = local.hour >= 12 ? 'PM' : 'AM';
   return '${local.day} ${months[local.month - 1]}, ${local.year}, $h:$mm $amPm';
@@ -30,6 +59,19 @@ String sellerNiceDate(DateTime d) {
 
 String sellerShortDate(DateTime d) {
   final local = d.toLocal();
-  const months = <String>['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   return '${local.day} ${months[local.month - 1]}, ${local.year}';
 }

@@ -11,8 +11,11 @@ use App\Services\Auth\AuthService;
 use App\Services\Category\CategoryService;
 use App\Services\Dispute\DisputeService;
 use App\Services\Order\OrderService;
+use App\Services\Promotion\PromotionService;
 use App\Services\Product\ProductService;
 use App\Services\Returns\ReturnService;
+use App\Services\WalletLedger\WalletLedgerService;
+use App\Services\WalletTopUp\WalletTopUpRequestService;
 use App\Services\UserSeller\UserSellerService;
 use App\Services\Withdrawal\WithdrawalService;
 use Symfony\Component\HttpFoundation\Request;
@@ -38,6 +41,12 @@ final class AppServices
     private ?CategoryService $categoryService = null;
 
     private ?ReturnService $returnService = null;
+
+    private ?PromotionService $promotionService = null;
+
+    private ?WalletLedgerService $walletLedgerService = null;
+
+    private ?WalletTopUpRequestService $walletTopUpRequestService = null;
 
     private ?DomainGate $domainGate = null;
 
@@ -79,6 +88,21 @@ final class AppServices
     public function returnService(): ReturnService
     {
         return $this->returnService ??= new ReturnService();
+    }
+
+    public function promotionService(): PromotionService
+    {
+        return $this->promotionService ??= new PromotionService();
+    }
+
+    public function walletLedgerService(): WalletLedgerService
+    {
+        return $this->walletLedgerService ??= new WalletLedgerService();
+    }
+
+    public function walletTopUpRequestService(): WalletTopUpRequestService
+    {
+        return $this->walletTopUpRequestService ??= new WalletTopUpRequestService();
     }
 
     public function domainGate(): DomainGate

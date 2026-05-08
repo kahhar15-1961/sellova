@@ -16,7 +16,9 @@ use App\Models\UserRole;
 use App\Models\Wallet;
 use App\Models\WalletHold;
 use App\Models\WalletLedgerEntry;
+use App\Models\WalletTopUpRequest;
 use App\Models\WithdrawalRequest;
+use App\Services\Promotion\PromotionService;
 use Illuminate\Http\Request;
 
 /**
@@ -24,6 +26,10 @@ use Illuminate\Http\Request;
  */
 final class AdminListsService
 {
+    public function __construct(private readonly PromotionService $promotionService = new PromotionService())
+    {
+    }
+
     /**
      * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string}}
      */
@@ -107,9 +113,13 @@ final class AdminListsService
                 'status' => $user->status,
                 'risk' => (string) $user->risk_level,
                 'roles' => $user->roles->pluck('code')->implode(', ') ?: '—',
+                'buyer_profile' => 'Open buyer',
+                'seller_profile' => $user->sellerProfile ? ($user->sellerProfile->display_name ?? 'Open seller') : '—',
                 'created' => $user->created_at?->toIso8601String() ?? '—',
                 'last_login' => $user->last_login_at?->toIso8601String() ?? '—',
                 'href' => route('admin.users.show', $user),
+                'buyer_href' => route('admin.buyers.show', $user),
+                'seller_href' => $user->sellerProfile ? route('admin.seller-profiles.show', $user->sellerProfile) : null,
             ];
         }
 
@@ -144,13 +154,14 @@ final class AdminListsService
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string}}
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string, type?: string}}
      */
     public function productsIndex(Request $request): array
     {
         [$page, $perPage] = $this->pagination($request);
         $q = trim((string) $request->query('q', ''));
         $status = trim((string) $request->query('status', ''));
+        $type = trim((string) $request->query('type', ''));
 
         $builder = Product::query()
             ->with(['seller_profile:id,display_name'])
@@ -158,6 +169,9 @@ final class AdminListsService
 
         if ($status !== '') {
             $builder->where('status', $status);
+        }
+        if ($type !== '') {
+            $builder->where('product_type', $type);
         }
         if ($q !== '') {
             $builder->where(function ($w) use ($q): void {
@@ -170,27 +184,38 @@ final class AdminListsService
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $product) {
             $hasMissingMetadata = $product->title === null || $product->description === null || $product->category_id === null;
+            $campaign = $this->promotionService->bestCatalogCampaignForProduct($product);
             $rows[] = [
                 'row_id' => $product->id,
                 'sku' => '#'.$product->id,
                 'title' => $product->title ?? '—',
+                'thumbnail_url' => $this->imageUrl($product->image_url),
+                'type' => (string) ($product->product_type ?? '—'),
+                'type_label' => $this->productTypeLabel((string) ($product->product_type ?? '')),
+                'type_hint' => $this->productTypeHint((string) ($product->product_type ?? '')),
                 'status' => (string) $product->status,
                 'seller' => $product->seller_profile?->display_name ?? '—',
                 'price' => trim(($product->currency ?? '').' '.(string) $product->base_price),
+                'discount' => (float) ($product->discount_percentage ?? 0),
+                'discount_label' => $product->discount_label,
+                'campaign' => $campaign,
                 'ops' => $hasMissingMetadata ? 'needs_attention' : 'ready',
                 'updated' => $product->updated_at?->toIso8601String() ?? '—',
                 'href' => route('admin.products.show', $product),
+                'details_href' => route('admin.products.show', $product),
             ];
         }
 
         return [
             'rows' => $rows,
             'pagination' => $this->paginationPayload($page, $perPage, $total),
-            'filters' => array_filter(['q' => $q, 'status' => $status]),
+            'filters' => array_filter(['q' => $q, 'status' => $status, 'type' => $type]),
             'summary' => [
                 'published' => (int) Product::query()->where('status', 'published')->count(),
                 'draft' => (int) Product::query()->where('status', 'draft')->count(),
                 'inactive' => (int) Product::query()->where('status', 'inactive')->count(),
+                'physical' => (int) Product::query()->where('product_type', 'physical')->count(),
+                'digital' => (int) Product::query()->where('product_type', 'digital')->count(),
                 'needs_attention' => (int) Product::query()
                     ->where(static function ($q): void {
                         $q->whereNull('title')
@@ -200,6 +225,46 @@ final class AdminListsService
                     ->count(),
             ],
         ];
+    }
+
+    private function productTypeLabel(string $type): string
+    {
+        return match ($type) {
+            'physical' => 'Physical',
+            'digital' => 'Digital',
+            'instant_delivery' => 'Instant delivery',
+            'service' => 'Service',
+            default => $type !== '' ? ucfirst(str_replace('_', ' ', $type)) : '—',
+        };
+    }
+
+    private function productTypeHint(string $type): string
+    {
+        return match ($type) {
+            'physical' => 'Requires shipping and inventory handling',
+            'digital' => 'Delivered through digital proof or files',
+            'instant_delivery' => 'Prepared for automatic digital fulfillment',
+            'service' => 'Fulfilled through service delivery workflow',
+            default => 'Product fulfillment type',
+        };
+    }
+
+    private function imageUrl(?string $image): ?string
+    {
+        $image = trim((string) $image);
+        if ($image === '') {
+            return null;
+        }
+
+        $path = parse_url($image, PHP_URL_PATH);
+        if (is_string($path) && str_starts_with($path, '/api/v1/media/')) {
+            return $path;
+        }
+        if (str_starts_with($image, 'http://') || str_starts_with($image, 'https://') || str_starts_with($image, '/')) {
+            return $image;
+        }
+
+        return '/api/v1/media/'.str_replace('%2F', '/', rawurlencode(ltrim($image, '/')));
     }
 
     /**
@@ -235,6 +300,8 @@ final class AdminListsService
                 'state' => $escrow->state->value,
                 'held' => trim(($escrow->currency ?? '').' '.(string) $escrow->held_amount),
                 'currency' => (string) ($escrow->currency ?? ''),
+                'order_href' => route('admin.orders.show', $escrow->order_id),
+                'href' => route('admin.escrows.show', $escrow),
             ];
         }
 
@@ -420,6 +487,58 @@ final class AdminListsService
     /**
      * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{status?: string}}
      */
+    public function walletTopUpRequestsIndex(Request $request): array
+    {
+        [$page, $perPage] = $this->pagination($request);
+        $status = trim((string) $request->query('status', ''));
+
+        $builder = WalletTopUpRequest::query()
+            ->with(['wallet.user:id,email', 'reviewed_by_user:id,email'])
+            ->orderByDesc('id');
+
+        if ($status !== '') {
+            $builder->where('status', $status);
+        }
+
+        $total = (int) $builder->count();
+        $rows = [];
+        foreach ((clone $builder)->forPage($page, $perPage)->get() as $requestRow) {
+            $paymentLabel = match ($requestRow->payment_method) {
+                'bkash' => 'bKash',
+                'nagad' => 'Nagad',
+                'bank' => 'Bank',
+                default => '—',
+            };
+            $rows[] = [
+                'id' => $requestRow->id,
+                'request' => '#'.$requestRow->id,
+                'user' => $requestRow->wallet?->user?->email ?? '—',
+                'wallet' => $requestRow->wallet === null ? '—' : '#'.$requestRow->wallet->id.' · '.$requestRow->wallet->currency,
+                'amount' => trim(($requestRow->currency ?? '').' '.(string) $requestRow->requested_amount),
+                'payment' => $paymentLabel.($requestRow->payment_reference ? ' · '.$requestRow->payment_reference : ''),
+                'status' => $requestRow->status->value,
+                'reviewer' => $requestRow->reviewed_by_user_id ? ($requestRow->reviewed_by_user?->email ?? '—') : 'Pending',
+                'created' => $requestRow->created_at?->toIso8601String() ?? '—',
+                'href' => route('admin.wallet-top-ups.show', $requestRow),
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'pagination' => $this->paginationPayload($page, $perPage, $total),
+            'filters' => array_filter(['status' => $status]),
+            'summary' => [
+                'requested' => (int) WalletTopUpRequest::query()->where('status', 'requested')->count(),
+                'approved' => (int) WalletTopUpRequest::query()->where('status', 'approved')->count(),
+                'rejected' => (int) WalletTopUpRequest::query()->where('status', 'rejected')->count(),
+                'failed' => (int) WalletTopUpRequest::query()->where('status', 'failed')->count(),
+            ],
+        ];
+    }
+
+    /**
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{status?: string}}
+     */
     public function disputesIndex(Request $request, User $viewer): array
     {
         [$page, $perPage] = $this->pagination($request);
@@ -518,9 +637,11 @@ final class AdminListsService
                 'email' => $buyer->email ?? '—',
                 'status' => $buyer->status,
                 'risk' => $buyer->risk_level,
+                'user' => $buyer->email ?? '—',
                 'orders' => (string) $ordersCount,
                 'disputes' => (string) $disputesCount,
                 'href' => route('admin.buyers.show', $buyer),
+                'user_href' => route('admin.users.show', $buyer),
             ];
         }
 
@@ -575,6 +696,7 @@ final class AdminListsService
                 'products' => (string) $productCount,
                 'pending_withdrawals' => (string) $pendingWithdrawals,
                 'href' => route('admin.seller-profiles.show', $seller),
+                'user_href' => $seller->user ? route('admin.users.show', $seller->user) : null,
             ];
         }
 

@@ -1,17 +1,67 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../application/cart_controller.dart';
+import '../application/checkout_draft_controller.dart';
 import 'cart_ui.dart';
 
-class OrderSuccessScreen extends StatelessWidget {
+class OrderSuccessScreen extends ConsumerStatefulWidget {
   const OrderSuccessScreen({
     super.key,
     required this.orderId,
+    required this.orderNumber,
     required this.totalFormatted,
   });
 
   final String orderId;
+  final String orderNumber;
   final String totalFormatted;
+
+  @override
+  ConsumerState<OrderSuccessScreen> createState() => _OrderSuccessScreenState();
+}
+
+class _OrderSuccessScreenState extends ConsumerState<OrderSuccessScreen> {
+  Timer? _timer;
+  int _secondsRemaining = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _secondsRemaining -= 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _clearCheckoutState() {
+    final draft = ref.read(checkoutDraftProvider);
+    if (draft != null) {
+      ref.read(cartControllerProvider.notifier).decrementForCompletedOrder(draft.lines);
+      ref.read(checkoutDraftProvider.notifier).clear();
+    }
+  }
+
+  void _go(String route) {
+    _clearCheckoutState();
+    context.go(route);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +156,7 @@ class OrderSuccessScreen extends StatelessWidget {
                               children: <InlineSpan>[
                                 const TextSpan(text: 'Your payment of '),
                                 TextSpan(
-                                  text: totalFormatted,
+                                  text: widget.totalFormatted,
                                   style: const TextStyle(fontWeight: FontWeight.w900, color: kCartNavy),
                                 ),
                                 const TextSpan(text: ' is held securely in escrow.'),
@@ -133,14 +183,20 @@ class OrderSuccessScreen extends StatelessWidget {
                                       ),
                                 ),
                                 Text(
-                                  '#$orderId',
+                                  widget.orderNumber.isNotEmpty ? '#${widget.orderNumber}' : '#${widget.orderId}',
                                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                         fontWeight: FontWeight.w900,
                                         color: kCartNavy,
                                       ),
                                 ),
                               ],
-                            ),
+                          ),
+                          ),
+                          const SizedBox(height: 14),
+                          _EscrowPill(
+                            orderNumber: widget.orderNumber,
+                            secondsRemaining: _secondsRemaining,
+                            onTap: () => _go('/orders/${widget.orderId}'),
                           ),
                           const SizedBox(height: 28),
                           Container(
@@ -179,13 +235,13 @@ class OrderSuccessScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       FilledButton(
-                        onPressed: () => context.go('/orders'),
+                        onPressed: () => _go('/orders/${widget.orderId}'),
                         style: cartPrimaryButtonStyle(cs),
                         child: const Text('View order'),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton(
-                        onPressed: () => context.go('/home'),
+                        onPressed: () => _go('/home'),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(kCartBtnHeight),
                           side: BorderSide(color: kCartNavy.withValues(alpha: 0.18)),
@@ -212,6 +268,75 @@ class OrderSuccessScreen extends StatelessWidget {
       Color(0xFF0EA5E9),
     ];
     return colors[i % colors.length];
+  }
+}
+
+class _EscrowPill extends StatelessWidget {
+  const _EscrowPill({
+    required this.orderNumber,
+    required this.secondsRemaining,
+    required this.onTap,
+  });
+
+  final String orderNumber;
+  final int secondsRemaining;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: cs.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: cs.primary.withValues(alpha: 0.14)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.timer_outlined, size: 17, color: cs.primary),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Escrow active for #${orderNumber.isNotEmpty ? orderNumber : 'order'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: kCartNavy,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Open in ${secondsRemaining.toString().padLeft(2, '0')}s',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

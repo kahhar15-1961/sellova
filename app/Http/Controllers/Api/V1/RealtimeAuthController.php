@@ -27,25 +27,31 @@ final class RealtimeAuthController
             throw new AuthValidationFailedException('validation_failed', ['socket_id' => 'required', 'channel_name' => 'required']);
         }
 
-        if (! str_starts_with($channelName, 'private-chat.thread.')) {
+        if (str_starts_with($channelName, 'private-chat.thread.')) {
+            $threadId = (int) substr($channelName, strlen('private-chat.thread.'));
+            if ($threadId <= 0) {
+                throw new AuthValidationFailedException('validation_failed', ['channel_name' => 'invalid_thread']);
+            }
+
+            /** @var ChatThread|null $thread */
+            $thread = ChatThread::query()->whereKey($threadId)->first();
+            if ($thread === null) {
+                throw new AuthValidationFailedException('not_found', ['thread_id' => $threadId]);
+            }
+
+            $isMember = (int) $thread->buyer_user_id === (int) $actor->id
+                || ((int) ($thread->seller_user_id ?? 0) === (int) $actor->id);
+            $isSupportStaff = $thread->kind === 'support' && $actor->isPlatformStaff();
+            if (! $isMember && ! $isSupportStaff) {
+                throw new AuthValidationFailedException('forbidden', ['thread_id' => $threadId]);
+            }
+        } elseif (str_starts_with($channelName, 'private-App.Models.User.')) {
+            $targetUserId = (int) substr($channelName, strlen('private-App.Models.User.'));
+            if ($targetUserId <= 0 || $targetUserId !== (int) $actor->id) {
+                throw new AuthValidationFailedException('forbidden', ['channel_name' => 'invalid_user_channel']);
+            }
+        } else {
             throw new AuthValidationFailedException('forbidden', ['channel_name' => 'unsupported']);
-        }
-        $threadId = (int) substr($channelName, strlen('private-chat.thread.'));
-        if ($threadId <= 0) {
-            throw new AuthValidationFailedException('validation_failed', ['channel_name' => 'invalid_thread']);
-        }
-
-        /** @var ChatThread|null $thread */
-        $thread = ChatThread::query()->whereKey($threadId)->first();
-        if ($thread === null) {
-            throw new AuthValidationFailedException('not_found', ['thread_id' => $threadId]);
-        }
-
-        $isMember = (int) $thread->buyer_user_id === (int) $actor->id
-            || ((int) ($thread->seller_user_id ?? 0) === (int) $actor->id);
-        $isSupportStaff = $thread->kind === 'support' && $actor->isPlatformStaff();
-        if (! $isMember && ! $isSupportStaff) {
-            throw new AuthValidationFailedException('forbidden', ['thread_id' => $threadId]);
         }
 
         $key = (string) env('REVERB_APP_KEY', 'local-app-key');
@@ -55,4 +61,3 @@ final class RealtimeAuthController
         return ApiEnvelope::data(['auth' => $key.':'.$signature]);
     }
 }
-

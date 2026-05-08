@@ -73,7 +73,7 @@ class _WithdrawalDetailContent extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           sliver: SliverList.list(
             children: <Widget>[
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.account_balance_wallet_outlined,
                 title: 'Status & amounts',
                 subtitle: 'Current state and payout figures',
@@ -81,7 +81,7 @@ class _WithdrawalDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _StatusFinancialHero(withdrawal: withdrawal),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.receipt_long_outlined,
                 title: 'Amount breakdown',
                 subtitle: 'Requested amount, fees, and net payout',
@@ -89,7 +89,7 @@ class _WithdrawalDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _AmountBreakdownCard(withdrawal: withdrawal),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.summarize_outlined,
                 title: 'Withdrawal summary',
                 subtitle: 'Notes and outcome details',
@@ -97,7 +97,7 @@ class _WithdrawalDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _SummarySection(withdrawal: withdrawal),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.payments_outlined,
                 title: 'Payout & review',
                 subtitle: 'Destination and reviewer metadata',
@@ -105,7 +105,7 @@ class _WithdrawalDetailContent extends StatelessWidget {
               const SizedBox(height: 10),
               _PayoutReviewerSection(withdrawal: withdrawal),
               const SizedBox(height: 24),
-              _SectionHeader(
+              const _SectionHeader(
                 icon: Icons.history,
                 title: 'Status timeline',
                 subtitle: 'How this withdrawal progressed',
@@ -658,7 +658,7 @@ class _PayoutReviewerSection extends StatelessWidget {
                     ),
                   ),
                 ] else
-                  _MetadataFallback(
+                  const _MetadataFallback(
                     message:
                         'No payout destination details were returned for this request. If you expected bank or wallet info here, it may be stored server-side only.',
                   ),

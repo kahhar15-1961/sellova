@@ -6,8 +6,10 @@ class CategoryDto {
   final Map<String, dynamic> raw;
 
   int? get id => (raw['id'] as num?)?.toInt();
+  int? get parentId => (raw['parent_id'] as num?)?.toInt();
   String get name => (raw['name'] ?? 'Unknown category').toString();
   String get slug => (raw['slug'] ?? '').toString();
+  String get description => (raw['description'] ?? '').toString();
   int get productsCount => (raw['products_count'] as num?)?.toInt() ?? 0;
 }
 
@@ -22,4 +24,3 @@ class CategoryRepository {
     return envelope.data.map(CategoryDto.new).toList();
   }
 }
-

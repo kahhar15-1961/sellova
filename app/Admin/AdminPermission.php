@@ -49,6 +49,8 @@ final class AdminPermission
 
     public const SETTINGS_MANAGE = 'admin.settings.manage';
 
+    public const PROMOTIONS_MANAGE = 'admin.promotions.manage';
+
     public const AUDIT_VIEW = 'admin.audit.view';
 
     /**
@@ -76,6 +78,7 @@ final class AdminPermission
             self::WALLETS_MANAGE,
             self::SETTINGS_VIEW,
             self::SETTINGS_MANAGE,
+            self::PROMOTIONS_MANAGE,
             self::AUDIT_VIEW,
         ];
     }

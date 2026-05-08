@@ -8,26 +8,45 @@ abstract class SellerBusinessDataSource {
   Future<SellerStoreSettings> updateStoreSettings({
     required String storeName,
     required String storeDescription,
+    String? storeLogoUrl,
+    String? bannerImageUrl,
+    String? contactEmail,
+    String? contactPhone,
+    String? addressLine,
+    String? city,
+    String? region,
+    String? postalCode,
+    String? country,
   });
 
   Future<SellerShippingSettings> getShippingSettings();
 
-  Future<SellerShippingSettings> updateShippingSettings(SellerShippingSettings value);
+  Future<SellerShippingSettings> updateShippingSettings(
+      SellerShippingSettings value);
 
   Future<List<SellerPayoutMethod>> listPayoutMethods();
+
+  Future<SellerWithdrawalSettings> getWithdrawalSettings();
 
   Future<List<SellerPayoutMethod>> upsertPayoutMethod({
     required SellerPayoutMethodType type,
     required String accountName,
     required String accountNumber,
     String? bankName,
+    String? branchName,
+    String? routingNumber,
+    String? accountType,
     bool asDefault = false,
   });
+
+  Future<List<SellerPayoutMethod>> deletePayoutMethod(String id);
 
   Future<void> requestWithdrawal({
     required SellerPayoutMethodType methodType,
     required String accountNumber,
     required String amountText,
+    int? walletId,
+    String? currency,
   });
 
   Future<List<SellerNotificationItem>> listSellerNotifications();
@@ -47,20 +66,48 @@ class SellerRepositoryBusinessAdapter implements SellerBusinessDataSource {
   Future<SellerStoreSettings> updateStoreSettings({
     required String storeName,
     required String storeDescription,
+    String? storeLogoUrl,
+    String? bannerImageUrl,
+    String? contactEmail,
+    String? contactPhone,
+    String? addressLine,
+    String? city,
+    String? region,
+    String? postalCode,
+    String? country,
   }) {
-    return _inner.updateStoreSettings(storeName: storeName, storeDescription: storeDescription);
+    return _inner.updateStoreSettings(
+      storeName: storeName,
+      storeDescription: storeDescription,
+      storeLogoUrl: storeLogoUrl,
+      bannerImageUrl: bannerImageUrl,
+      contactEmail: contactEmail,
+      contactPhone: contactPhone,
+      addressLine: addressLine,
+      city: city,
+      region: region,
+      postalCode: postalCode,
+      country: country,
+    );
   }
 
   @override
-  Future<SellerShippingSettings> getShippingSettings() => _inner.getShippingSettings();
+  Future<SellerShippingSettings> getShippingSettings() =>
+      _inner.getShippingSettings();
 
   @override
-  Future<SellerShippingSettings> updateShippingSettings(SellerShippingSettings value) {
+  Future<SellerShippingSettings> updateShippingSettings(
+      SellerShippingSettings value) {
     return _inner.updateShippingSettings(value);
   }
 
   @override
-  Future<List<SellerPayoutMethod>> listPayoutMethods() => _inner.listPayoutMethods();
+  Future<List<SellerPayoutMethod>> listPayoutMethods() =>
+      _inner.listPayoutMethods();
+
+  @override
+  Future<SellerWithdrawalSettings> getWithdrawalSettings() =>
+      _inner.getWithdrawalSettings();
 
   @override
   Future<List<SellerPayoutMethod>> upsertPayoutMethod({
@@ -68,6 +115,9 @@ class SellerRepositoryBusinessAdapter implements SellerBusinessDataSource {
     required String accountName,
     required String accountNumber,
     String? bankName,
+    String? branchName,
+    String? routingNumber,
+    String? accountType,
     bool asDefault = false,
   }) {
     return _inner.upsertPayoutMethod(
@@ -75,8 +125,16 @@ class SellerRepositoryBusinessAdapter implements SellerBusinessDataSource {
       accountName: accountName,
       accountNumber: accountNumber,
       bankName: bankName,
+      branchName: branchName,
+      routingNumber: routingNumber,
+      accountType: accountType,
       asDefault: asDefault,
     );
+  }
+
+  @override
+  Future<List<SellerPayoutMethod>> deletePayoutMethod(String id) {
+    return _inner.deletePayoutMethod(id);
   }
 
   @override
@@ -84,12 +142,20 @@ class SellerRepositoryBusinessAdapter implements SellerBusinessDataSource {
     required SellerPayoutMethodType methodType,
     required String accountNumber,
     required String amountText,
+    int? walletId,
+    String? currency,
   }) {
-    return _inner.requestWithdrawal(methodType: methodType, accountNumber: accountNumber, amountText: amountText);
+    return _inner.requestWithdrawal(
+        methodType: methodType,
+        accountNumber: accountNumber,
+        amountText: amountText,
+        walletId: walletId,
+        currency: currency);
   }
 
   @override
-  Future<List<SellerNotificationItem>> listSellerNotifications() => _inner.listSellerNotifications();
+  Future<List<SellerNotificationItem>> listSellerNotifications() =>
+      _inner.listSellerNotifications();
 
   @override
   Future<void> markAllNotificationsRead() => _inner.markAllNotificationsRead();

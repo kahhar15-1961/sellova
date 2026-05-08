@@ -13,6 +13,7 @@ use App\Models\KycVerification;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\WalletTopUpRequest;
 use App\Models\WithdrawalRequest;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ final class AdminDashboardService
      *   recent_orders: list<array<string, mixed>>,
      *   open_disputes: list<array<string, mixed>>,
      *   pending_withdrawals: list<array<string, mixed>>,
+     *   pending_wallet_top_ups: list<array<string, mixed>>,
      *   seller_verification_queue: list<array<string, mixed>>,
      *   product_moderation: list<array<string, mixed>>,
      *   system_alerts: list<array<string, mixed>>,
@@ -49,6 +51,7 @@ final class AdminDashboardService
             'recent_orders' => $user->hasPermissionCode(AdminPermission::ORDERS_VIEW),
             'open_disputes' => $user->hasPermissionCode(AdminPermission::DISPUTES_VIEW),
             'pending_withdrawals' => $user->hasPermissionCode(AdminPermission::WITHDRAWALS_VIEW),
+            'pending_wallet_top_ups' => $user->hasPermissionCode(AdminPermission::WALLETS_VIEW),
             'seller_verification_queue' => $user->hasAnyPermissionCode([
                 AdminPermission::SELLERS_VIEW,
                 AdminPermission::SELLERS_VERIFY,
@@ -65,6 +68,7 @@ final class AdminDashboardService
             'recent_orders' => $sectionAccess['recent_orders'] ? $this->recentOrders() : [],
             'open_disputes' => $sectionAccess['open_disputes'] ? $this->openDisputes() : [],
             'pending_withdrawals' => $sectionAccess['pending_withdrawals'] ? $this->pendingWithdrawals() : [],
+            'pending_wallet_top_ups' => $sectionAccess['pending_wallet_top_ups'] ? $this->pendingWalletTopUps() : [],
             'seller_verification_queue' => $sectionAccess['seller_verification_queue']
                 ? $this->sellerVerificationQueue()
                 : [],
@@ -77,6 +81,7 @@ final class AdminDashboardService
                 'orders' => route('admin.orders.index'),
                 'disputes' => route('admin.disputes.index'),
                 'withdrawals' => route('admin.withdrawals.index'),
+                'wallet_top_ups' => route('admin.wallet-top-ups.index'),
                 'sellers' => route('admin.sellers.index'),
                 'products' => route('admin.products.index'),
                 'escrows' => route('admin.escrows.index'),
@@ -154,6 +159,7 @@ final class AdminDashboardService
      *   orders_in_escrow: int,
      *   open_disputes: int,
      *   pending_withdrawals: int,
+     *   pending_wallet_top_ups: int,
      *   gmv: string|null,
      *   gmv_currency_count: int,
      *   released_funds: string|null,
@@ -162,6 +168,7 @@ final class AdminDashboardService
      *   stale_webhooks: int,
      *   failed_outbox: int,
      *   stuck_outbox: int,
+     *   escalated_seller_verifications: int,
      *   escalated_disputes: int,
      *   escalated_withdrawals: int
      * }
@@ -212,6 +219,10 @@ final class AdminDashboardService
                     WHERE status IN ('".WithdrawalRequestStatus::Requested->value."','".WithdrawalRequestStatus::UnderReview->value."')
                 ) AS pending_withdrawals,
                 (
+                    SELECT COUNT(*) FROM wallet_top_up_requests
+                    WHERE status = 'requested'
+                ) AS pending_wallet_top_ups,
+                (
                     SELECT COALESCE(SUM(gross_amount), 0)
                     FROM orders
                     WHERE status IN ('{$gmvStatuses}')
@@ -243,6 +254,12 @@ final class AdminDashboardService
                     WHERE status IN ('".WithdrawalRequestStatus::Requested->value."','".WithdrawalRequestStatus::UnderReview->value."')
                       AND escalated_at IS NOT NULL
                 ) AS escalated_withdrawals
+                ,
+                (
+                    SELECT COUNT(*) FROM kyc_verifications
+                    WHERE status IN ('submitted','under_review')
+                      AND escalated_at IS NOT NULL
+                ) AS escalated_seller_verifications
         ");
 
         return $row ?? (object) [];
@@ -306,9 +323,14 @@ final class AdminDashboardService
                 number_format($n($row->pending_withdrawals)),
                 'Requested or under review.',
             ),
+            'pending_wallet_top_ups' => $def(
+                $user->hasPermissionCode(AdminPermission::WALLETS_VIEW),
+                number_format($n($row->pending_wallet_top_ups)),
+                'Manual wallet funding requests awaiting finance review.',
+            ),
             'escalated_cases' => $def(
                 $user->hasAnyPermissionCode([AdminPermission::DISPUTES_VIEW, AdminPermission::WITHDRAWALS_VIEW]),
-                number_format($n($row->escalated_disputes) + $n($row->escalated_withdrawals)),
+                number_format($n($row->escalated_disputes) + $n($row->escalated_withdrawals) + $n($row->escalated_seller_verifications)),
                 'Open items escalated by SLA engine.',
             ),
             'total_gmv' => $def(
@@ -417,16 +439,55 @@ final class AdminDashboardService
     /**
      * @return list<array<string, mixed>>
      */
+    private function pendingWalletTopUps(): array
+    {
+        return WalletTopUpRequest::query()
+            ->select(['id', 'uuid', 'wallet_id', 'status', 'requested_amount', 'currency', 'payment_method', 'payment_reference', 'created_at'])
+            ->where('status', 'requested')
+            ->orderByDesc('created_at')
+            ->limit(8)
+            ->with(['wallet.user' => static function ($q): void {
+                $q->select(['id', 'email']);
+            }])
+            ->get()
+            ->map(static function (WalletTopUpRequest $request): array {
+                return [
+                    'id' => $request->id,
+                    'request' => '#'.$request->id,
+                    'user' => $request->wallet?->user?->email ?? '—',
+                    'method' => match ($request->payment_method) {
+                        'bkash' => 'bKash',
+                        'nagad' => 'Nagad',
+                        'bank' => 'Bank transfer',
+                        'card' => 'Card',
+                        'manual' => 'Manual review',
+                        default => '—',
+                    },
+                    'reference' => $request->payment_reference ?: '—',
+                    'amount' => trim(($request->currency ?? '').' '.(string) $request->requested_amount),
+                    'created_at' => $request->created_at?->toIso8601String(),
+                    'href' => route('admin.wallet-top-ups.show', $request),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
     private function sellerVerificationQueue(): array
     {
         return KycVerification::query()
-            ->select(['id', 'uuid', 'seller_profile_id', 'status', 'submitted_at'])
+            ->select(['id', 'uuid', 'seller_profile_id', 'status', 'assigned_to_user_id', 'assigned_at', 'sla_due_at', 'sla_warning_sent_at', 'escalated_at', 'submitted_at', 'created_at'])
             ->whereIn('status', ['submitted', 'under_review'])
             ->orderByDesc('submitted_at')
             ->limit(8)
             ->with([
                 'seller_profile' => static function ($q): void {
                     $q->select(['id', 'display_name', 'verification_status', 'user_id']);
+                },
+                'assigned_to_user' => static function ($q): void {
+                    $q->select(['id', 'email']);
                 },
             ])
             ->get()
@@ -438,6 +499,8 @@ final class AdminDashboardService
                     'submitted_at' => $k->submitted_at?->toIso8601String(),
                     'seller_display_name' => $k->seller_profile?->display_name,
                     'seller_verification_status' => $k->seller_profile?->verification_status,
+                    'assigned_to_email' => $k->assigned_to_user?->email,
+                    'sla_state' => $k->escalated_at !== null ? 'breach' : (($k->submitted_at ?? $k->created_at)?->diffInHours(now()) >= (int) config('admin_sla.kyc.warning_hours', 12) ? 'warning' : 'ok'),
                     'workspace_url' => route('admin.sellers.kyc.show', ['kyc' => $k->id]),
                 ];
             })
@@ -497,6 +560,33 @@ final class AdminDashboardService
                 'severity' => 'warning',
                 'title' => 'Stale webhook backlog',
                 'detail' => "{$n} pending webhook(s) older than one hour.",
+            ];
+        }
+
+        if ($n = max(0, (int) ($row->pending_seller_verifications ?? 0))) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'title' => 'Seller verification queue',
+                'detail' => "{$n} KYC submission(s) awaiting review.",
+                'href' => route('admin.sellers.index'),
+            ];
+        }
+
+        if ($n = max(0, (int) ($row->pending_wallet_top_ups ?? 0))) {
+            $alerts[] = [
+                'severity' => 'warning',
+                'title' => 'Wallet top-up queue',
+                'detail' => "{$n} manual wallet funding request(s) awaiting finance review.",
+                'href' => route('admin.wallet-top-ups.index'),
+            ];
+        }
+
+        if ($n = max(0, (int) ($row->escalated_seller_verifications ?? 0))) {
+            $alerts[] = [
+                'severity' => 'danger',
+                'title' => 'Seller KYC escalations',
+                'detail' => "{$n} verification case(s) breached SLA and were escalated automatically.",
+                'href' => route('admin.sellers.index'),
             ];
         }
 

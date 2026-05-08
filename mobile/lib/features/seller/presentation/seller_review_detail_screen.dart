@@ -21,7 +21,7 @@ class SellerReviewDetailScreen extends ConsumerWidget {
             const CircleAvatar(child: Icon(Icons.person)),
             const SizedBox(width: 10),
             Expanded(child: Text(review.buyerName, style: const TextStyle(fontWeight: FontWeight.w800))),
-            if (review.isVerifiedBuyer) Chip(label: const Text('Verified Buyer'), backgroundColor: const Color(0xFFECFDF5)),
+            if (review.isVerifiedBuyer) const Chip(label: Text('Verified Buyer'), backgroundColor: Color(0xFFECFDF5)),
           ]),
           const SizedBox(height: 10),
           Text(review.productName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),

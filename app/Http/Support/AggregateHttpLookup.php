@@ -6,10 +6,12 @@ namespace App\Http\Support;
 
 use App\Domain\Exceptions\DisputeResolutionConflictException;
 use App\Domain\Exceptions\OrderValidationFailedException;
+use App\Domain\Exceptions\ProductValidationFailedException;
 use App\Domain\Exceptions\WalletNotFoundException;
 use App\Domain\Exceptions\WithdrawalValidationFailedException;
 use App\Models\DisputeCase;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\SellerProfile;
 use App\Models\Wallet;
 use App\Models\WithdrawalRequest;
@@ -27,6 +29,16 @@ final class AggregateHttpLookup
         }
 
         return $order;
+    }
+
+    public static function product(int $productId): Product
+    {
+        $product = Product::query()->find($productId);
+        if ($product === null) {
+            throw new ProductValidationFailedException($productId, 'product_not_found', ['product_id' => $productId]);
+        }
+
+        return $product;
     }
 
     public static function disputeCase(int $disputeCaseId): DisputeCase

@@ -48,11 +48,14 @@ export default function BuyersIndex({ header, rows, pagination, filters, index_u
                 </div>
 
                 <DataTableShell
-                    columns={['buyer', 'email', 'status', 'risk', 'orders', 'disputes']}
+                    columns={['buyer', 'user', 'email', 'status', 'risk', 'orders', 'disputes']}
                     rows={rows}
                     emptyTitle="No buyers"
                     renderers={{
                         buyer: (value, row) => <Link href={row.href} className="font-medium text-primary hover:underline">{String(value)}</Link>,
+                        user: (value, row) => (
+                            row.user_href ? <Link href={row.user_href} className="text-primary hover:underline">{String(value)}</Link> : <span className="text-muted-foreground">—</span>
+                        ),
                         status: (value) => <StatusBadge status={String(value)} />,
                     }}
                 />

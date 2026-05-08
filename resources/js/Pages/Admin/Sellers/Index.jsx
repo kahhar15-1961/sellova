@@ -1,9 +1,10 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -25,13 +26,18 @@ function fmtDate(iso) {
  *   q: string,
  *   rows: object[],
  *   pagination: { current_page: number, last_page: number, per_page: number, total: number, from?: number|null, to?: number|null },
+ *   summary?: { pending?: number, mine?: number, escalated?: number, approved?: number, rejected?: number },
+  *   bulk_claim_url?: string,
+ *   export_url?: string,
  * }} props
  */
-export default function SellersIndex({ header, tab, q, rows, pagination }) {
+export default function SellersIndex({ header, tab, q, rows, pagination, summary, bulk_claim_url: bulkClaimUrl, export_url: exportUrl }) {
     const flash = usePage().props.flash ?? {};
     const qRef = useRef(null);
+    const [selectedIds, setSelectedIds] = useState([]);
 
     const applyFilters = (next = {}) => {
+        setSelectedIds([]);
         router.get(
             '/admin/sellers',
             {
@@ -42,6 +48,35 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
             { preserveState: true, replace: true },
         );
     };
+
+    const toggleSelected = (id) => {
+        setSelectedIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+    };
+
+    const toggleAll = () => {
+        if (!rows?.length) return;
+        setSelectedIds((current) => (current.length === rows.length ? [] : rows.map((row) => row.id)));
+    };
+
+    const bulkClaim = () => {
+        if (!selectedIds.length) return;
+        if (!window.confirm(`Claim ${selectedIds.length} selected case(s) for review?`)) return;
+        router.post(
+            bulkClaimUrl ?? '/admin/sellers/kyc/bulk-claim',
+            { kyc_ids: selectedIds },
+            {
+                preserveScroll: true,
+                onSuccess: () => setSelectedIds([]),
+            },
+        );
+    };
+
+    const goToPage = (page) => {
+        setSelectedIds([]);
+        router.get('/admin/sellers', { tab, q, page });
+    };
+
+    const allSelected = rows?.length > 0 && selectedIds.length === rows.length;
 
     return (
         <AdminLayout>
@@ -83,9 +118,19 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
                 </CardContent>
             </Card>
 
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                <Card className="border-border/80 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Pending</CardTitle><CardDescription>{summary?.pending ?? 0}</CardDescription></CardHeader></Card>
+                <Card className="border-border/80 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">My queue</CardTitle><CardDescription>{summary?.mine ?? 0}</CardDescription></CardHeader></Card>
+                <Card className="border-border/80 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Escalated</CardTitle><CardDescription>{summary?.escalated ?? 0}</CardDescription></CardHeader></Card>
+                <Card className="border-border/80 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Approved</CardTitle><CardDescription>{summary?.approved ?? 0}</CardDescription></CardHeader></Card>
+                <Card className="border-border/80 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Rejected</CardTitle><CardDescription>{summary?.rejected ?? 0}</CardDescription></CardHeader></Card>
+            </div>
+
             <Tabs value={tab} onValueChange={(v) => applyFilters({ tab: v, page: 1 })} className="space-y-4">
-                <TabsList className="grid w-full max-w-2xl grid-cols-5">
+                <TabsList className="grid w-full max-w-4xl grid-cols-7">
                     <TabsTrigger value="pending">Pending</TabsTrigger>
+                    <TabsTrigger value="mine">Mine</TabsTrigger>
+                    <TabsTrigger value="escalated">Escalated</TabsTrigger>
                     <TabsTrigger value="all">All</TabsTrigger>
                     <TabsTrigger value="approved">Approved</TabsTrigger>
                     <TabsTrigger value="rejected">Rejected</TabsTrigger>
@@ -101,6 +146,23 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
                             Showing {pagination.from ?? 0}–{pagination.to ?? 0} of {pagination.total}
                         </CardDescription>
                     </div>
+                    <div className="flex items-center gap-2">
+                        {exportUrl ? (
+                            <Button type="button" variant="outline" size="sm" asChild>
+                                <a href={exportUrl}>Export CSV</a>
+                            </Button>
+                        ) : null}
+                        {tab === 'pending' ? (
+                            <>
+                                <Badge variant="outline" className="font-normal">
+                                    Selected {selectedIds.length}
+                                </Badge>
+                                <Button type="button" variant="secondary" size="sm" onClick={bulkClaim} disabled={!selectedIds.length}>
+                                    Claim selected
+                                </Button>
+                            </>
+                        ) : null}
+                    </div>
                 </CardHeader>
                 <CardContent className="pt-0">
                     {!rows?.length ? (
@@ -108,23 +170,46 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
                             No cases match this view.
                         </p>
                     ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Case</TableHead>
-                                    <TableHead>Seller</TableHead>
-                                    <TableHead>Account</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Submitted</TableHead>
-                                    <TableHead className="text-right">Action</TableHead>
-                                </TableRow>
-                            </TableHeader>
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            {tab === 'pending' ? (
+                                                <TableHead className="w-10">
+                                                    <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all cases" />
+                                                </TableHead>
+                                            ) : null}
+                                            <TableHead>Case</TableHead>
+                                            <TableHead>Seller</TableHead>
+                                            <TableHead>Account</TableHead>
+                                            <TableHead>Assignee</TableHead>
+                                            <TableHead>SLA</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead>Submitted</TableHead>
+                                            <TableHead className="text-right">Action</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
                             <TableBody>
                                 {rows.map((row) => (
                                     <TableRow key={row.id}>
+                                        {tab === 'pending' ? (
+                                            <TableCell>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.includes(row.id)}
+                                                    onChange={() => toggleSelected(row.id)}
+                                                    aria-label={`Select case ${row.id}`}
+                                                />
+                                            </TableCell>
+                                        ) : null}
                                         <TableCell className="font-mono text-xs text-muted-foreground">#{row.id}</TableCell>
                                         <TableCell className="max-w-[160px] truncate font-medium">{row.seller_display_name ?? '—'}</TableCell>
                                         <TableCell className="max-w-[200px] truncate text-muted-foreground">{row.account_email ?? '—'}</TableCell>
+                                        <TableCell className="max-w-[180px] truncate text-muted-foreground">{row.assigned_to_email ?? 'Unassigned'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={row.sla_state === 'breach' ? 'danger' : row.sla_state === 'warning' ? 'secondary' : 'outline'} className="font-normal">
+                                                {row.sla_state === 'breach' ? 'Escalated' : row.sla_state === 'warning' ? 'Due soon' : 'On track'}
+                                            </Badge>
+                                        </TableCell>
                                         <TableCell>
                                             <StatusBadge status={row.status} />
                                         </TableCell>
@@ -146,13 +231,7 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() =>
-                                        router.get('/admin/sellers', {
-                                            tab,
-                                            q,
-                                            page: pagination.current_page - 1,
-                                        })
-                                    }
+                                    onClick={() => goToPage(pagination.current_page - 1)}
                                 >
                                     Previous
                                 </Button>
@@ -162,13 +241,7 @@ export default function SellersIndex({ header, tab, q, rows, pagination }) {
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() =>
-                                        router.get('/admin/sellers', {
-                                            tab,
-                                            q,
-                                            page: pagination.current_page + 1,
-                                        })
-                                    }
+                                    onClick={() => goToPage(pagination.current_page + 1)}
                                 >
                                     Next
                                 </Button>

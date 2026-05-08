@@ -15,17 +15,33 @@ class ChatMessage extends Model
         'uuid',
         'thread_id',
         'sender_user_id',
+        'receiver_user_id',
+        'sender_role',
         'body',
+        'marker_type',
+        'artifact_type',
+        'is_delivery_proof',
         'attachment_url',
         'attachment_name',
+        'attachment_type',
+        'attachment_mime',
+        'attachment_size',
     ];
 
     protected $casts = [
         'thread_id' => 'integer',
         'sender_user_id' => 'integer',
+        'receiver_user_id' => 'integer',
+        'sender_role' => 'string',
         'body' => 'string',
+        'marker_type' => 'string',
+        'artifact_type' => 'string',
+        'is_delivery_proof' => 'boolean',
         'attachment_url' => 'string',
         'attachment_name' => 'string',
+        'attachment_type' => 'string',
+        'attachment_mime' => 'string',
+        'attachment_size' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -40,4 +56,3 @@ class ChatMessage extends Model
         return $this->belongsTo(User::class, 'sender_user_id');
     }
 }
-

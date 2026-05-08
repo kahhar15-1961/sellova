@@ -42,7 +42,7 @@ class DisputeService
 {
     use FinancialCritical;
 
-    private const EVIDENCE_TYPES = ['text', 'image', 'video', 'document', 'tracking'];
+    private const EVIDENCE_TYPES = ['text', 'image', 'video', 'document', 'tracking', 'chat_message', 'delivery_proof', 'screenshot', 'file'];
 
     private readonly EscrowService $escrowService;
 
@@ -70,9 +70,7 @@ class DisputeService
                 $w->where('opened_by_user_id', $uid)
                     ->orWhereHas('order', function ($oq) use ($uid): void {
                         $oq->where('buyer_user_id', $uid)
-                            ->orWhereHas('orderItems.seller_profile', static function ($sp) use ($uid): void {
-                                $sp->where('user_id', $uid);
-                            });
+                            ->orWhere('seller_user_id', $uid);
                     });
             });
         }
@@ -162,7 +160,13 @@ class DisputeService
                 throw new DisputeResolutionConflictException(0, 'active_dispute_exists_for_order');
             }
 
-            if ($order->status !== OrderStatus::PaidInEscrow) {
+            if (! in_array($order->status, [
+                OrderStatus::PaidInEscrow,
+                OrderStatus::EscrowFunded,
+                OrderStatus::Processing,
+                OrderStatus::DeliverySubmitted,
+                OrderStatus::BuyerReview,
+            ], true)) {
                 throw new InvalidOrderStateTransitionException(
                     orderId: $order->id,
                     fromStatus: $order->status->value,
@@ -263,6 +267,7 @@ class DisputeService
                 DisputeEvidence::query()->create([
                     'uuid' => (string) Str::uuid(),
                     'dispute_case_id' => $case->id,
+                    'order_id' => $case->order_id,
                     'submitted_by_user_id' => $command->submittedByUserId,
                     'evidence_type' => $item->evidenceType,
                     'content_text' => $item->contentText,
@@ -478,7 +483,7 @@ class DisputeService
             $case->save();
 
             $targetOrderStatus = $this->toScale($sellerAmt) > 0
-                ? OrderStatus::PaidInEscrow
+                ? OrderStatus::Completed
                 : OrderStatus::Refunded;
 
             $this->orderService->applyOrderStatusAfterDisputeResolution(

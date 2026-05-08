@@ -7,7 +7,8 @@ import '../../../core/state/paginated_state.dart';
 import '../../../core/state/list_state_persistence.dart';
 import '../data/order_repository.dart';
 
-final orderListControllerProvider = NotifierProvider<OrderListController, PaginatedState<OrderDto>>(
+final orderListControllerProvider =
+    NotifierProvider<OrderListController, PaginatedState<OrderDto>>(
   OrderListController.new,
 );
 
@@ -17,6 +18,7 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
   String _sort = 'latest';
   double _scrollOffset = 0;
   bool _initialized = false;
+  bool _refreshing = false;
 
   @override
   PaginatedState<OrderDto> build() => const PaginatedState<OrderDto>();
@@ -28,7 +30,8 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
   Future<void> loadFirstPage() async {
     state = state.copyWith(isInitialLoading: true, errorMessage: null);
     try {
-      final result = await ref.read(orderRepositoryProvider).list(page: 1, perPage: 10);
+      final result =
+          await ref.read(orderRepositoryProvider).list(page: 1, perPage: 10);
       state = state.copyWith(
         items: result.items,
         meta: result.meta,
@@ -44,8 +47,13 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
   }
 
   Future<void> refresh() async {
+    if (_refreshing) {
+      return;
+    }
+    _refreshing = true;
     try {
-      final result = await ref.read(orderRepositoryProvider).list(page: 1, perPage: 10);
+      final result =
+          await ref.read(orderRepositoryProvider).list(page: 1, perPage: 10);
       state = state.copyWith(
         items: result.items,
         meta: result.meta,
@@ -56,6 +64,8 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
       await _persist();
     } catch (error) {
       state = state.copyWith(errorMessage: error.toString());
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -85,7 +95,10 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
   }
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      await refresh();
+      return;
+    }
     _initialized = true;
     final persisted = ref.read(listStatePersistenceProvider).load(_moduleKey);
     if (persisted == null) {
@@ -106,10 +119,15 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
           perPage: perPage,
           total: total,
           lastPage: page + 1,
-          raw: <String, dynamic>{'page': page, 'per_page': perPage, 'total': total, 'last_page': page + 1},
+          raw: <String, dynamic>{
+            'page': page,
+            'per_page': perPage,
+            'total': total,
+            'last_page': page + 1
+          },
         ),
       );
-      await refreshIfStale();
+      await refresh();
     } else {
       await loadFirstPage();
     }
@@ -117,7 +135,7 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
 
   Future<void> refreshIfStale() async {
     final isStale = ref.read(listStatePersistenceProvider).isStale(_moduleKey);
-    if (!isStale) {
+    if (!isStale && state.items.isNotEmpty) {
       return;
     }
     await refresh();
@@ -139,18 +157,18 @@ class OrderListController extends Notifier<PaginatedState<OrderDto>> {
   Future<void> _persist() async {
     final meta = state.meta;
     await ref.read(listStatePersistenceProvider).save(
-      _moduleKey,
-      PersistedListUiState(
-        query: _query,
-        sort: _sort,
-        filters: const <String, dynamic>{},
-        currentTab: null,
-        scrollOffset: _scrollOffset,
-        page: meta?.page ?? 1,
-        perPage: meta?.perPage ?? 10,
-        items: state.items.map((e) => e.raw).toList(),
-        savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
+          _moduleKey,
+          PersistedListUiState(
+            query: _query,
+            sort: _sort,
+            filters: const <String, dynamic>{},
+            currentTab: null,
+            scrollOffset: _scrollOffset,
+            page: meta?.page ?? 1,
+            perPage: meta?.perPage ?? 10,
+            items: state.items.map((e) => e.raw).toList(),
+            savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
   }
 }

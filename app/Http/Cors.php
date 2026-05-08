@@ -38,7 +38,7 @@ final class Cors
 
         $response->headers->set('Access-Control-Allow-Origin', $origin);
         self::mergeVaryOrigin($response);
-        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+        $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
         $requested = $request->headers->get('Access-Control-Request-Headers');
         $response->headers->set(
             'Access-Control-Allow-Headers',

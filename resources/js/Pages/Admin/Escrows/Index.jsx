@@ -1,9 +1,10 @@
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { AdminFilterBar } from '@/components/admin/AdminFilterBar';
 import { AdminPagination } from '@/components/admin/AdminPagination';
 import { DataTableShell } from '@/components/admin/DataTableShell';
+import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function EscrowsIndex({ header, rows, pagination, filters, index_url, state_options }) {
@@ -44,7 +45,24 @@ export default function EscrowsIndex({ header, rows, pagination, filters, index_
                         </Select>
                     </div>
                 </div>
-                <DataTableShell columns={['order', 'state', 'held']} rows={rows} emptyTitle="No escrow accounts" />
+                <DataTableShell
+                    columns={['order', 'details', 'state', 'held']}
+                    rows={rows}
+                    emptyTitle="No escrow accounts"
+                    renderers={{
+                        order: (value, row) => (
+                            <Link href={row.order_href} className="font-medium text-primary hover:underline">
+                                {String(value)}
+                            </Link>
+                        ),
+                        details: (_value, row) => (
+                            <Link href={row.href} className="text-primary hover:underline">
+                                Open escrow
+                            </Link>
+                        ),
+                        state: (value) => <StatusBadge status={String(value)} />,
+                    }}
+                />
                 <AdminPagination baseUrl={index_url} pagination={pagination} extraParams={f} />
             </div>
         </AdminLayout>

@@ -6,20 +6,25 @@ import '../application/seller_demo_controller.dart';
 import '../application/seller_inventory_controller.dart';
 import '../application/seller_product_controller.dart';
 import 'seller_feedback_widgets.dart';
+import 'seller_product_thumbnail.dart';
 
 class SellerAddStockInScreen extends ConsumerStatefulWidget {
   const SellerAddStockInScreen({super.key, required this.productId});
   final int productId;
 
   @override
-  ConsumerState<SellerAddStockInScreen> createState() => _SellerAddStockInScreenState();
+  ConsumerState<SellerAddStockInScreen> createState() =>
+      _SellerAddStockInScreenState();
 }
 
-class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen> {
+class _SellerAddStockInScreenState
+    extends ConsumerState<SellerAddStockInScreen> {
   final TextEditingController _quantity = TextEditingController(text: '20');
   final TextEditingController _unitCost = TextEditingController(text: '1250');
-  final TextEditingController _reason = TextEditingController(text: 'New Stock Received');
-  final TextEditingController _note = TextEditingController(text: 'Received new stock from supplier.');
+  final TextEditingController _reason =
+      TextEditingController(text: 'New Stock Received');
+  final TextEditingController _note =
+      TextEditingController(text: 'Received new stock from supplier.');
   String _warehouse = 'Main Warehouse';
 
   @override
@@ -34,9 +39,16 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
   @override
   Widget build(BuildContext context) {
     final busy = ref.watch(sellerBusyProvider);
-    final product = ref.watch(sellerProductsProvider.notifier).byId(widget.productId);
-    if (product == null) return const Scaffold(body: Center(child: Text('Product not found')));
-    final currentWarehouseStock = product.warehouseStocks[_warehouse] ?? 0;
+    final product =
+        ref.watch(sellerProductsProvider.notifier).byId(widget.productId);
+    if (product == null) {
+      return const Scaffold(body: Center(child: Text('Product not found')));
+    }
+    final warehouseNames = ref.watch(sellerWarehouseProvider.notifier).names();
+    final selectedWarehouse =
+        warehouseNames.contains(_warehouse) ? _warehouse : warehouseNames.first;
+    final currentWarehouseStock =
+        product.warehouseStocks[selectedWarehouse] ?? 0;
     final qty = int.tryParse(_quantity.text.trim()) ?? 0;
     final cost = double.tryParse(_unitCost.text.trim()) ?? 0;
     final total = qty * cost;
@@ -47,13 +59,18 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
         children: <Widget>[
           ListTile(
             contentPadding: const EdgeInsets.all(12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
-            leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
-            title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-            subtitle: Text('SKU: ${product.sku}\nCurrent Stock: $currentWarehouseStock'),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant)),
+            leading: SellerProductThumbnail(product: product, size: 64),
+            title: Text(product.name,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text(
+                'SKU: ${product.sku}\nCurrent Stock: $currentWarehouseStock'),
           ),
           const SizedBox(height: 10),
-          _warehouseField(),
+          _warehouseField(selectedWarehouse, warehouseNames),
           _line('Quantity In', _quantity.text, editable: _quantity),
           _line('Unit Cost (৳)', _unitCost.text, editable: _unitCost),
           _line('Total Value', total.toStringAsFixed(2)),
@@ -61,7 +78,11 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
           const SizedBox(height: 10),
           const Text('Notes (Optional)'),
           const SizedBox(height: 6),
-          TextField(controller: _note, maxLines: 4, maxLength: 200, decoration: const InputDecoration(border: OutlineInputBorder())),
+          TextField(
+              controller: _note,
+              maxLines: 4,
+              maxLength: 200,
+              decoration: const InputDecoration(border: OutlineInputBorder())),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: busy
@@ -70,19 +91,22 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
                     final q = int.tryParse(_quantity.text.trim());
                     final c = double.tryParse(_unitCost.text.trim());
                     if (q == null || q <= 0 || c == null || c <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter valid quantity and unit cost.')));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content:
+                              Text('Enter valid quantity and unit cost.')));
                       return;
                     }
                     await ref.read(sellerInventoryProvider.notifier).addStockIn(
                           product: product,
                           quantity: q,
                           unitCost: c,
-                          warehouse: _warehouse,
+                          warehouse: selectedWarehouse,
                           reason: _reason.text.trim(),
                           note: _note.text.trim(),
                         );
                     if (context.mounted) {
-                      showSellerSuccessToast(context, 'Stock in saved successfully.');
+                      showSellerSuccessToast(
+                          context, 'Stock in saved successfully.');
                       context.go('/seller/inventory/history');
                     }
                   },
@@ -93,15 +117,20 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
     );
   }
 
-  Widget _warehouseField() {
+  Widget _warehouseField(
+      String selectedWarehouse, List<String> warehouseNames) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: <Widget>[
-          const Expanded(child: Text('Warehouse', style: TextStyle(color: Colors.black54))),
+          const Expanded(
+              child:
+                  Text('Warehouse', style: TextStyle(color: Colors.black54))),
           DropdownButton<String>(
-            value: _warehouse,
-            items: kSellerWarehouses.where((e) => e != 'All Warehouses').map((e) => DropdownMenuItem<String>(value: e, child: Text(e))).toList(),
+            value: selectedWarehouse,
+            items: warehouseNames
+                .map((e) => DropdownMenuItem<String>(value: e, child: Text(e)))
+                .toList(),
             onChanged: (v) {
               if (v != null) setState(() => _warehouse = v);
             },
@@ -116,7 +145,8 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: <Widget>[
-          Expanded(child: Text(k, style: const TextStyle(color: Colors.black54))),
+          Expanded(
+              child: Text(k, style: const TextStyle(color: Colors.black54))),
           if (editable == null)
             Text(v, style: const TextStyle(fontWeight: FontWeight.w700))
           else
@@ -127,7 +157,8 @@ class _SellerAddStockInScreenState extends ConsumerState<SellerAddStockInScreen>
                 textAlign: TextAlign.right,
                 keyboardType: TextInputType.number,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    isDense: true, border: OutlineInputBorder()),
               ),
             ),
         ],

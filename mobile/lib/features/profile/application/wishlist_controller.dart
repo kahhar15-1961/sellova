@@ -11,9 +11,13 @@ class WishlistController extends AsyncNotifier<List<WishlistItem>> {
     return ref.read(profileExtrasRepositoryProvider).loadWishlist();
   }
 
+  Future<void> add(int productId) async {
+    final next = await ref.read(profileExtrasRepositoryProvider).addWishlistItem(productId);
+    state = AsyncData(next);
+  }
+
   Future<void> remove(int productId) async {
     final next = await ref.read(profileExtrasRepositoryProvider).removeWishlistItem(productId);
     state = AsyncData(next);
   }
 }
-

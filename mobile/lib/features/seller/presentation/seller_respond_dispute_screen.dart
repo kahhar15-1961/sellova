@@ -177,7 +177,7 @@ class _SellerRespondDisputeScreenState extends ConsumerState<SellerRespondDisput
                 children: <Widget>[
                   Icon(Icons.cloud_upload_outlined, size: 40, color: kSellerAccent.withValues(alpha: 0.9)),
                   const SizedBox(height: 10),
-                  Text('Tap to upload', style: TextStyle(color: kSellerAccent, fontWeight: FontWeight.w800)),
+                  const Text('Tap to upload', style: TextStyle(color: kSellerAccent, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
                   Text('or drag and drop', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted)),
                 ],

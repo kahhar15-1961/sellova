@@ -23,7 +23,7 @@ final class EscrowsController extends AdminPageController
         return Inertia::render('Admin/Escrows/Index', [
             'header' => $this->pageHeader(
                 'Escrows',
-                'Held funds and escrow state per order — read-only operational view.',
+                'Held funds, settlement controls, and order-linked escrow operations.',
                 [
                     ['label' => 'Overview', 'href' => route('admin.dashboard')],
                     ['label' => 'Orders & Escrow'],

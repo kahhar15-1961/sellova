@@ -87,7 +87,8 @@ class ListStatePersistence {
       items: state.items,
       savedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
     );
-    await _preferences.setString(_key(moduleKey), jsonEncode(nowStamped.toJson()));
+    await _preferences.setString(
+        _key(moduleKey), jsonEncode(nowStamped.toJson()));
   }
 
   PersistedListUiState? load(String moduleKey) {
@@ -126,9 +127,16 @@ class ListStatePersistence {
     for (final key in moduleKeys) {
       await clear(key);
     }
+    await clearProductBrowsingState();
+  }
+
+  Future<void> clearProductBrowsingState() async {
+    await clear('products');
+    const categoryListPrefix = 'list_state.category_detail_';
     const storefrontListPrefix = 'list_state.storefront_';
     for (final key in _preferences.getKeys()) {
-      if (key.startsWith(storefrontListPrefix)) {
+      if (key.startsWith(categoryListPrefix) ||
+          key.startsWith(storefrontListPrefix)) {
         await _preferences.remove(key);
       }
     }

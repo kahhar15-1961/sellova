@@ -19,7 +19,8 @@ class CategoryDetailScreen extends ConsumerStatefulWidget {
   final int categoryId;
 
   @override
-  ConsumerState<CategoryDetailScreen> createState() => _CategoryDetailScreenState();
+  ConsumerState<CategoryDetailScreen> createState() =>
+      _CategoryDetailScreenState();
 }
 
 class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
@@ -67,9 +68,13 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
       return;
     }
     final pos = _scrollController.position;
-    ref.read(categoryDetailControllerProvider(widget.categoryId).notifier).updateScrollOffset(pos.pixels);
+    ref
+        .read(categoryDetailControllerProvider(widget.categoryId).notifier)
+        .updateScrollOffset(pos.pixels);
     if (pos.pixels >= pos.maxScrollExtent - 200) {
-      ref.read(categoryDetailControllerProvider(widget.categoryId).notifier).loadNextPage();
+      ref
+          .read(categoryDetailControllerProvider(widget.categoryId).notifier)
+          .loadNextPage();
     }
   }
 
@@ -79,7 +84,9 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
       if (!mounted) {
         return;
       }
-      await ref.read(categoryDetailControllerProvider(widget.categoryId).notifier).applySearch(value);
+      await ref
+          .read(categoryDetailControllerProvider(widget.categoryId).notifier)
+          .applySearch(value);
       if (mounted && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
       }
@@ -88,13 +95,17 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(categoryDetailControllerProvider(widget.categoryId));
-    final controller = ref.read(categoryDetailControllerProvider(widget.categoryId).notifier);
+    final state =
+        ref.watch(categoryDetailControllerProvider(widget.categoryId));
+    final controller =
+        ref.read(categoryDetailControllerProvider(widget.categoryId).notifier);
     final categoryName = _resolveCategoryName(ref, widget.categoryId);
     final visibleItems = _applyUiFilters(state.items);
-    final hasUiFilters = _selectedType != 'All' || _onlyWithImages || _onlyWithRating;
+    final hasUiFilters =
+        _selectedType != 'All' || _onlyWithImages || _onlyWithRating;
 
-    ref.listen(categoryDetailControllerProvider(widget.categoryId), (Object? previous, Object? next) {
+    ref.listen(categoryDetailControllerProvider(widget.categoryId),
+        (Object? previous, Object? next) {
       if (next is! PaginatedState<ProductDto>) {
         return;
       }
@@ -118,7 +129,9 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
           _onlyWithRating = controller.onlyWithRating;
         });
       }
-      if (!_didRestoreScroll && !nextState.isInitialLoading && nextState.items.isNotEmpty) {
+      if (!_didRestoreScroll &&
+          !nextState.isInitialLoading &&
+          nextState.items.isNotEmpty) {
         _didRestoreScroll = true;
         final offset = controller.scrollOffset;
         if (offset > 0) {
@@ -126,7 +139,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
             if (!mounted || !_scrollController.hasClients) {
               return;
             }
-            _scrollController.jumpTo(offset.clamp(0, _scrollController.position.maxScrollExtent));
+            _scrollController.jumpTo(
+                offset.clamp(0, _scrollController.position.maxScrollExtent));
           });
         }
       }
@@ -134,7 +148,9 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
 
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () => ref.read(categoryDetailControllerProvider(widget.categoryId).notifier).refresh(),
+        onRefresh: () => ref
+            .read(categoryDetailControllerProvider(widget.categoryId).notifier)
+            .refresh(),
         child: CustomScrollView(
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
@@ -201,7 +217,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                 child: _CategoryProductsError(
                   message: state.errorMessage!,
                   onRetry: () => ref
-                      .read(categoryDetailControllerProvider(widget.categoryId).notifier)
+                      .read(categoryDetailControllerProvider(widget.categoryId)
+                          .notifier)
                       .loadFirstPage(),
                 ),
               )
@@ -223,7 +240,6 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                     final product = visibleItems[index];
                     return _CategoryProductCard(
                       product: product,
-                      index: index,
                       onTap: () {
                         final id = product.id;
                         if (id != null) {
@@ -240,9 +256,13 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
                   child: _LoadMoreFooter(
                     isAppending: state.isAppending,
                     hasMore: state.hasMore,
-                    errorMessage: state.items.isNotEmpty ? state.errorMessage : null,
-                    onRetryAppend: () =>
-                        ref.read(categoryDetailControllerProvider(widget.categoryId).notifier).loadNextPage(),
+                    errorMessage:
+                        state.items.isNotEmpty ? state.errorMessage : null,
+                    onRetryAppend: () => ref
+                        .read(
+                            categoryDetailControllerProvider(widget.categoryId)
+                                .notifier)
+                        .loadNextPage(),
                   ),
                 ),
               ),
@@ -254,7 +274,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
   }
 
   String _resolveCategoryName(WidgetRef ref, int categoryId) {
-    final items = ref.watch(categoryListProvider).valueOrNull ?? const <CategoryDto>[];
+    final items =
+        ref.watch(categoryListProvider).valueOrNull ?? const <CategoryDto>[];
     for (final item in items) {
       if (item.id == categoryId) {
         return item.name;
@@ -288,11 +309,14 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
       case _SortKey.relevance:
         return filtered;
       case _SortKey.priceLowHigh:
-        filtered.sort((a, b) => (_priceValue(a) ?? 0).compareTo(_priceValue(b) ?? 0));
+        filtered.sort(
+            (a, b) => (_priceValue(a) ?? 0).compareTo(_priceValue(b) ?? 0));
       case _SortKey.priceHighLow:
-        filtered.sort((a, b) => (_priceValue(b) ?? 0).compareTo(_priceValue(a) ?? 0));
+        filtered.sort(
+            (a, b) => (_priceValue(b) ?? 0).compareTo(_priceValue(a) ?? 0));
       case _SortKey.ratingHighLow:
-        filtered.sort((a, b) => (_ratingValue(b) ?? -1).compareTo(_ratingValue(a) ?? -1));
+        filtered.sort(
+            (a, b) => (_ratingValue(b) ?? -1).compareTo(_ratingValue(a) ?? -1));
     }
     return filtered;
   }
@@ -319,7 +343,8 @@ class _CategoryDetailScreenState extends ConsumerState<CategoryDetailScreen> {
         _sortKey = _SortKey.relevance;
       }
     });
-    await _persistUiPreferences(ref.read(categoryDetailControllerProvider(widget.categoryId).notifier));
+    await _persistUiPreferences(
+        ref.read(categoryDetailControllerProvider(widget.categoryId).notifier));
   }
 
   Future<void> _persistUiPreferences(CategoryDetailController controller) {
@@ -381,8 +406,11 @@ class _SearchFilterBar extends StatelessWidget {
             label: const Text('Filter'),
             style: FilledButton.styleFrom(
               foregroundColor: cs.onSurface,
-              backgroundColor: hasActiveFilters ? cs.primaryContainer : cs.surfaceContainerHigh,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: hasActiveFilters
+                  ? cs.primaryContainer
+                  : cs.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ),
@@ -400,7 +428,12 @@ class _TypeTabs extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelected;
 
-  static const List<String> _tabs = <String>['All', 'Physical', 'Digital', 'Manual'];
+  static const List<String> _tabs = <String>[
+    'All',
+    'Physical',
+    'Digital',
+    'Manual'
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -424,7 +457,9 @@ class _TypeTabs extends StatelessWidget {
                 color: isSelected ? cs.primaryContainer : cs.surface,
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(
-                  color: isSelected ? cs.primary.withValues(alpha: 0.55) : cs.outlineVariant,
+                  color: isSelected
+                      ? cs.primary.withValues(alpha: 0.55)
+                      : cs.outlineVariant,
                 ),
               ),
               child: Text(
@@ -475,9 +510,12 @@ class _SortBar extends StatelessWidget {
         const SizedBox(width: 8),
         _SortPill(
           label: 'Price',
-          isPrimary: sortKey == _SortKey.priceLowHigh || sortKey == _SortKey.priceHighLow,
+          isPrimary: sortKey == _SortKey.priceLowHigh ||
+              sortKey == _SortKey.priceHighLow,
           onTap: () => onSortChanged(
-            sortKey == _SortKey.priceLowHigh ? _SortKey.priceHighLow : _SortKey.priceLowHigh,
+            sortKey == _SortKey.priceLowHigh
+                ? _SortKey.priceHighLow
+                : _SortKey.priceLowHigh,
           ),
         ),
         const SizedBox(width: 8),
@@ -503,10 +541,14 @@ class _SortBar extends StatelessWidget {
       context: context,
       position: const RelativeRect.fromLTRB(80, 210, 20, 0),
       items: const <PopupMenuEntry<_SortKey>>[
-        PopupMenuItem<_SortKey>(value: _SortKey.relevance, child: Text('Relevance')),
-        PopupMenuItem<_SortKey>(value: _SortKey.priceLowHigh, child: Text('Price: Low to High')),
-        PopupMenuItem<_SortKey>(value: _SortKey.priceHighLow, child: Text('Price: High to Low')),
-        PopupMenuItem<_SortKey>(value: _SortKey.ratingHighLow, child: Text('Rating: High to Low')),
+        PopupMenuItem<_SortKey>(
+            value: _SortKey.relevance, child: Text('Relevance')),
+        PopupMenuItem<_SortKey>(
+            value: _SortKey.priceLowHigh, child: Text('Price: Low to High')),
+        PopupMenuItem<_SortKey>(
+            value: _SortKey.priceHighLow, child: Text('Price: High to Low')),
+        PopupMenuItem<_SortKey>(
+            value: _SortKey.ratingHighLow, child: Text('Rating: High to Low')),
       ],
     );
     if (selected != null) {
@@ -537,10 +579,14 @@ class _SortPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isPrimary ? cs.primaryContainer.withValues(alpha: 0.6) : cs.surface,
+          color: isPrimary
+              ? cs.primaryContainer.withValues(alpha: 0.6)
+              : cs.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isPrimary ? cs.primary.withValues(alpha: 0.35) : cs.outlineVariant,
+            color: isPrimary
+                ? cs.primary.withValues(alpha: 0.35)
+                : cs.outlineVariant,
           ),
         ),
         child: Row(
@@ -590,7 +636,11 @@ class _FilterSheetState extends State<_FilterSheet> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Text('Filters', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Text('Filters',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800)),
                 const Spacer(),
                 TextButton(
                   onPressed: () {
@@ -652,12 +702,10 @@ class _FilterDraft {
 class _CategoryProductCard extends StatelessWidget {
   const _CategoryProductCard({
     required this.product,
-    required this.index,
     required this.onTap,
   });
 
   final ProductDto product;
-  final int index;
   final VoidCallback onTap;
 
   @override
@@ -665,22 +713,24 @@ class _CategoryProductCard extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final rating = _ratingLabel(product);
+    final hasRating = rating != null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: Ink(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: cs.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(18),
+            border:
+                Border.all(color: cs.outlineVariant.withValues(alpha: 0.32)),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: cs.shadow.withValues(alpha: 0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+                color: cs.shadow.withValues(alpha: 0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -696,15 +746,10 @@ class _CategoryProductCard extends StatelessWidget {
                       product.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      product.sellerLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.9),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: -0.1,
                       ),
                     ),
                     const SizedBox(height: 9),
@@ -717,32 +762,29 @@ class _CategoryProductCard extends StatelessWidget {
                             color: cs.primary,
                           ),
                         ),
-                        if (rating != null) ...<Widget>[
+                        if (hasRating) ...<Widget>[
                           const SizedBox(width: 10),
-                          const Icon(Icons.star_rounded, size: 15, color: Color(0xFFF5A524)),
-                          const SizedBox(width: 2),
-                          Text(
-                            rating,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                        if (index == 0) ...<Widget>[
-                          const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFBEFD8),
-                              borderRadius: BorderRadius.circular(8),
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(999),
                             ),
-                            child: Text(
-                              'Best Seller',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: const Color(0xFFA96B00),
-                                fontWeight: FontWeight.w700,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const Icon(Icons.star_rounded,
+                                    size: 14, color: Color(0xFFF59E0B)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  rating,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: const Color(0xFFB45309),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -776,7 +818,8 @@ class _Thumb extends StatelessWidget {
             ? Container(
                 color: cs.surfaceContainerHighest,
                 alignment: Alignment.center,
-                child: Icon(Icons.image_not_supported_outlined, color: cs.outline),
+                child:
+                    Icon(Icons.image_not_supported_outlined, color: cs.outline),
               )
             : Image.network(
                 imageUrl!,
@@ -813,7 +856,7 @@ class _CategoryProductsEmpty extends StatelessWidget {
             const Icon(Icons.inventory_2_outlined, size: 46),
             const SizedBox(height: 10),
             Text(
-              isSearch ? 'No matching products in $categoryName.' : 'No products in $categoryName yet.',
+              isSearch ? 'No matches.' : 'No products yet.',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium,
             ),
@@ -844,7 +887,7 @@ class _CategoryProductsError extends StatelessWidget {
           children: <Widget>[
             const Icon(Icons.error_outline, size: 46),
             const SizedBox(height: 10),
-            Text('Failed to load products', style: theme.textTheme.titleMedium),
+            Text('Load failed', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
               message,
@@ -895,7 +938,7 @@ class _LoadMoreFooter extends StatelessWidget {
             TextButton.icon(
               onPressed: onRetryAppend,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry loading more'),
+              label: const Text('Retry'),
             ),
           ],
         ),
@@ -904,8 +947,9 @@ class _LoadMoreFooter extends StatelessWidget {
     if (!hasMore) {
       return Center(
         child: Text(
-          'You reached the end.',
-          style: theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          'End of list.',
+          style:
+              theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
       );
     }
@@ -943,7 +987,9 @@ double? _ratingValue(ProductDto product) {
 }
 
 double? _priceValue(ProductDto product) {
-  final raw = product.raw['base_price'] ?? product.raw['price'] ?? product.raw['amount'];
+  final raw = product.raw['base_price'] ??
+      product.raw['price'] ??
+      product.raw['amount'];
   if (raw == null) {
     return null;
   }
@@ -999,4 +1045,3 @@ enum _SortKey {
   priceHighLow,
   ratingHighLow,
 }
-

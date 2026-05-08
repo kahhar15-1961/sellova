@@ -15,6 +15,7 @@ class ChatThread extends Model
     protected $fillable = [
         'uuid',
         'kind',
+        'purpose',
         'order_id',
         'buyer_user_id',
         'seller_user_id',
@@ -28,6 +29,7 @@ class ChatThread extends Model
         'buyer_user_id' => 'integer',
         'seller_user_id' => 'integer',
         'kind' => 'string',
+        'purpose' => 'string',
         'status' => 'string',
         'last_message_at' => 'datetime',
         'created_at' => 'datetime',
@@ -54,4 +56,3 @@ class ChatThread extends Model
         return $this->hasMany(ChatMessage::class, 'thread_id');
     }
 }
-

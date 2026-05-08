@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shell/presentation/buyer_page_header.dart';
 import '../application/cart_controller.dart';
 import '../application/checkout_draft_controller.dart';
 import '../domain/cart_line.dart';
@@ -25,39 +26,12 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     final subtotal = cart.subtotalAmount();
     final shipping = lines.any((CartLine e) => e.isPhysical) ? 20.0 : 0.0;
     final total = subtotal + shipping;
-    final currency = lines.isNotEmpty ? lines.first.currency.toUpperCase() : 'USD';
+    final currency =
+        lines.isNotEmpty ? lines.first.currency.toUpperCase() : 'USD';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      appBar: AppBar(
-        backgroundColor: cs.surface.withValues(alpha: 0.92),
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/home');
-            }
-          },
-        ),
-        title: Text(
-          'My Cart (${cart.itemCount})',
-          style: cartSectionHeading(Theme.of(context).textTheme).copyWith(fontSize: 17),
-        ),
-        centerTitle: true,
-        actions: <Widget>[
-          TextButton.icon(
-            onPressed: () => setState(() => _editMode = !_editMode),
-            icon: Icon(_editMode ? Icons.check_rounded : Icons.edit_outlined, size: 18),
-            label: Text(_editMode ? 'Done' : 'Edit', style: const TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -66,69 +40,136 @@ class _CartScreenState extends ConsumerState<CartScreen> {
             colors: <Color>[kCartPageBgTop, kCartPageBgBottom],
           ),
         ),
-        child: lines.isEmpty
-            ? _CartEmpty(onBrowse: () => context.go('/home'))
-            : Column(
-                children: <Widget>[
-                  Expanded(
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      itemCount: lines.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        return _CartLineCard(
-                          line: lines[index],
-                          editMode: _editMode,
-                          onQtyChanged: (q) => cart.setQuantity(lines[index].productId, q),
-                          onRemove: () => cart.remove(lines[index].productId),
-                        );
-                      },
-                    ),
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                child: BuyerPageHeader(
+                  title: 'Cart (${cart.itemCount})',
+                  showSearch: false,
+                  showFilter: false,
+                  showSeller: false,
+                  showMore: false,
+                  leading: BuyerHeaderActionButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    tooltip: 'Back',
+                    onTap: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/home');
+                      }
+                    },
                   ),
-                  Container(
-                    padding: EdgeInsets.fromLTRB(20, 18, 20, 18 + MediaQuery.paddingOf(context).bottom),
-                    decoration: BoxDecoration(
-                      color: cs.surface,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                      border: Border(top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35))),
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: const Color(0xFF0F172A).withValues(alpha: 0.08),
-                          blurRadius: 28,
-                          offset: const Offset(0, -6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _SummaryRow(label: 'Subtotal', value: _fmtMoney(currency, subtotal)),
-                        const SizedBox(height: 10),
-                        _SummaryRow(
-                          label: 'Shipping Fee',
-                          value: _fmtMoney(currency, shipping),
-                          caption: shipping == 0 ? 'No shipping for digital / service items' : null,
-                        ),
-                        const Divider(height: 26),
-                        _SummaryRow(
-                          label: 'Total',
-                          value: _fmtMoney(currency, total),
-                          emphasize: true,
-                        ),
-                        const SizedBox(height: 18),
-                        FilledButton(
-                          onPressed: () {
-                            ref.read(checkoutDraftProvider.notifier).beginFromCart(lines);
-                            context.push('/checkout/shipping');
-                          },
-                          style: cartPrimaryButtonStyle(cs),
-                          child: const Text('Proceed to Checkout'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
+              if (lines.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _editMode = !_editMode),
+                      icon: Icon(
+                        _editMode ? Icons.check_rounded : Icons.edit_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        _editMode ? 'Done' : 'Edit',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: lines.isEmpty
+                    ? _CartEmpty(onBrowse: () => context.go('/home'))
+                    : Column(
+                        children: <Widget>[
+                          Expanded(
+                            child: ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              itemCount: lines.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                return _CartLineCard(
+                                  line: lines[index],
+                                  editMode: _editMode,
+                                  onQtyChanged: (q) => cart.setQuantity(
+                                      lines[index].productId, q),
+                                  onRemove: () =>
+                                      cart.remove(lines[index].productId),
+                                );
+                              },
+                            ),
+                          ),
+                          Container(
+                            padding: EdgeInsets.fromLTRB(
+                              20,
+                              18,
+                              20,
+                              18 + MediaQuery.paddingOf(context).bottom,
+                            ),
+                            decoration: BoxDecoration(
+                              color: cs.surface,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(24)),
+                              border: Border(
+                                top: BorderSide(
+                                  color:
+                                      cs.outlineVariant.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: const Color(0xFF0F172A)
+                                      .withValues(alpha: 0.08),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, -6),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                _SummaryRow(
+                                    label: 'Subtotal',
+                                    value: _fmtMoney(currency, subtotal)),
+                                const SizedBox(height: 10),
+                                _SummaryRow(
+                                  label: 'Shipping',
+                                  value: _fmtMoney(currency, shipping),
+                                  caption: shipping == 0 ? 'No shipping' : null,
+                                ),
+                                const Divider(height: 26),
+                                _SummaryRow(
+                                  label: 'Total',
+                                  value: _fmtMoney(currency, total),
+                                  emphasize: true,
+                                ),
+                                const SizedBox(height: 18),
+                                FilledButton(
+                                  onPressed: () {
+                                    ref
+                                        .read(checkoutDraftProvider.notifier)
+                                        .beginFromCart(lines);
+                                    context.push('/checkout/shipping');
+                                  },
+                                  style: cartPrimaryButtonStyle(cs),
+                                  child: const Text('Checkout'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -165,21 +206,26 @@ class _SummaryRow extends StatelessWidget {
               child: Text(
                 label,
                 style: emphasize
-                    ? theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: kCartNavy)
-                    : theme.textTheme.bodyMedium?.copyWith(color: kCartMuted, fontWeight: FontWeight.w600),
+                    ? theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800, color: kCartNavy)
+                    : theme.textTheme.bodyMedium?.copyWith(
+                        color: kCartMuted, fontWeight: FontWeight.w600),
               ),
             ),
             Text(
               value,
               style: emphasize
-                  ? theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: kCartNavy)
-                  : theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ? theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900, color: kCartNavy)
+                  : theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ],
         ),
         if (caption != null) ...<Widget>[
           const SizedBox(height: 4),
-          Text(caption!, style: theme.textTheme.bodySmall?.copyWith(color: kCartMuted)),
+          Text(caption!,
+              style: theme.textTheme.bodySmall?.copyWith(color: kCartMuted)),
         ],
       ],
     );
@@ -214,11 +260,13 @@ class _CartLineCard extends StatelessWidget {
             child: SizedBox(
               width: 72,
               height: 72,
-              child: line.imageUrl != null && line.imageUrl!.toLowerCase().startsWith('http')
+              child: line.imageUrl != null &&
+                      line.imageUrl!.toLowerCase().startsWith('http')
                   ? Image.network(line.imageUrl!, fit: BoxFit.cover)
                   : ColoredBox(
                       color: cs.surfaceContainerHighest,
-                      child: Icon(Icons.inventory_2_outlined, color: cs.outline),
+                      child:
+                          Icon(Icons.inventory_2_outlined, color: cs.outline),
                     ),
             ),
           ),
@@ -231,7 +279,8 @@ class _CartLineCard extends StatelessWidget {
                   line.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800, color: kCartNavy),
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w800, color: kCartNavy),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -252,11 +301,12 @@ class _CartLineCard extends StatelessWidget {
               ],
             ),
           ),
-          if (!editMode) _QtyControl(
-            quantity: line.quantity,
-            onMinus: () => onQtyChanged(line.quantity - 1),
-            onPlus: () => onQtyChanged(line.quantity + 1),
-          ),
+          if (!editMode)
+            _QtyControl(
+              quantity: line.quantity,
+              onMinus: () => onQtyChanged(line.quantity - 1),
+              onPlus: () => onQtyChanged(line.quantity + 1),
+            ),
         ],
       ),
     );
@@ -295,7 +345,10 @@ class _QtyControl extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Text(
               '$quantity',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900, color: kCartNavy),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w900, color: kCartNavy),
             ),
           ),
           IconButton(
@@ -337,7 +390,8 @@ class _CartEmpty extends StatelessWidget {
                     cs.surface,
                   ],
                 ),
-                border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+                border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.35)),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
                     color: cs.primary.withValues(alpha: 0.12),
@@ -346,18 +400,23 @@ class _CartEmpty extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(Icons.shopping_bag_outlined, size: 40, color: cs.primary.withValues(alpha: 0.85)),
+              child: Icon(Icons.shopping_bag_outlined,
+                  size: 40, color: cs.primary.withValues(alpha: 0.85)),
             ),
             const SizedBox(height: 24),
             Text(
               'Your cart is empty',
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, color: kCartNavy, letterSpacing: -0.3),
+              style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: kCartNavy,
+                  letterSpacing: -0.3),
             ),
             const SizedBox(height: 10),
             Text(
-              'Browse the catalog and add items — your selections appear here with secure checkout.',
+              'Browse products and add items.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(color: kCartMuted, height: 1.45),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: kCartMuted, height: 1.45),
             ),
             const SizedBox(height: 28),
             FilledButton(

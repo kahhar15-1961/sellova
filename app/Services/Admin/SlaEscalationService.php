@@ -7,6 +7,7 @@ namespace App\Services\Admin;
 use App\Admin\AdminPermission;
 use App\Auth\RoleCodes;
 use App\Domain\Enums\DisputeCaseStatus;
+use App\Models\KycVerification;
 use App\Domain\Enums\WithdrawalRequestStatus;
 use App\Models\DisputeCase;
 use App\Models\Notification;
@@ -23,20 +24,180 @@ final class SlaEscalationService
     ) {}
 
     /**
-     * @return array{disputes_escalated: int, withdrawals_escalated: int}
+     * @return array{kyc_warnings: int, kyc_escalated: int, disputes_escalated: int, withdrawals_escalated: int}
      */
     public function run(): array
     {
+        $kycWarningThreshold = (int) config('admin_sla.kyc.warning_hours', 12);
+        $kycBreachThreshold = (int) config('admin_sla.kyc.breach_hours', 24);
         $disputeThreshold = (int) config('admin_sla.disputes.breach_hours', 48);
         $withdrawalThreshold = (int) config('admin_sla.withdrawals.breach_hours', 24);
 
+        $kycWarnings = $this->warnKycCases($kycWarningThreshold);
+        $kycEscalated = $this->escalateKycCases($kycBreachThreshold);
         $disputesEscalated = $this->escalateDisputes($disputeThreshold);
         $withdrawalsEscalated = $this->escalateWithdrawals($withdrawalThreshold);
 
         return [
+            'kyc_warnings' => $kycWarnings,
+            'kyc_escalated' => $kycEscalated,
             'disputes_escalated' => $disputesEscalated,
             'withdrawals_escalated' => $withdrawalsEscalated,
         ];
+    }
+
+    private function warnKycCases(int $warningHours): int
+    {
+        $cutoff = now()->subHours(max(1, $warningHours));
+        $targets = KycVerification::query()
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->whereNull('sla_warning_sent_at')
+            ->where(function ($q) use ($cutoff): void {
+                $q->where('submitted_at', '<=', $cutoff)
+                    ->orWhere(function ($fallback) use ($cutoff): void {
+                        $fallback->whereNull('submitted_at')->where('created_at', '<=', $cutoff);
+                    });
+            })
+            ->limit(500)
+            ->get();
+
+        if ($targets->isEmpty()) {
+            return 0;
+        }
+
+        $recipientIds = $this->staffUserIdsByPermission(AdminPermission::SELLERS_VERIFY);
+        $now = now();
+
+        foreach ($targets as $kyc) {
+            $before = [
+                'sla_warning_sent_at' => null,
+                'submitted_at' => $kyc->submitted_at?->toIso8601String(),
+                'assigned_to_user_id' => $kyc->assigned_to_user_id,
+            ];
+
+            $kyc->forceFill([
+                'sla_warning_sent_at' => $now,
+            ])->save();
+
+            $auditorId = $this->resolveAuditActorId($kyc->assigned_to_user_id, $recipientIds);
+
+            AuditLogWriter::write(
+                actorUserId: $auditorId,
+                action: 'admin.seller_kyc.sla_warning',
+                targetType: 'kyc_verification',
+                targetId: (int) $kyc->id,
+                beforeJson: $before,
+                afterJson: [
+                    'sla_warning_sent_at' => $now->toIso8601String(),
+                    'submitted_at' => $kyc->submitted_at?->toIso8601String(),
+                    'assigned_to_user_id' => $kyc->assigned_to_user_id,
+                ],
+                reasonCode: 'sla_warning',
+                correlationId: (string) Str::uuid(),
+                ipAddress: null,
+                userAgent: 'scheduler:sla-escalations',
+            );
+
+            $this->notifyRecipients(
+                queueCode: 'seller_kyc',
+                targetId: (int) $kyc->id,
+                recipientIds: $this->appendAssignedUser($recipientIds, $kyc->assigned_to_user_id),
+                templateCode: 'admin.sla.warning',
+                reason: 'sla_warning',
+            );
+        }
+
+        return $targets->count();
+    }
+
+    private function escalateKycCases(int $breachHours): int
+    {
+        $cutoff = now()->subHours(max(1, $breachHours));
+        $targets = KycVerification::query()
+            ->whereIn('status', ['submitted', 'under_review'])
+            ->whereNull('escalated_at')
+            ->where(function ($q) use ($cutoff): void {
+                $q->where('submitted_at', '<=', $cutoff)
+                    ->orWhere(function ($fallback) use ($cutoff): void {
+                        $fallback->whereNull('submitted_at')->where('created_at', '<=', $cutoff);
+                    });
+            })
+            ->limit(500)
+            ->get();
+
+        if ($targets->isEmpty()) {
+            return 0;
+        }
+
+        $recipientIds = $this->staffUserIdsByPermission(AdminPermission::SELLERS_VERIFY);
+        $now = now();
+
+        foreach ($targets as $kyc) {
+            $incident = $this->escalationOps->openFromBreach(
+                queueCode: 'seller_kyc',
+                targetType: 'kyc_verification',
+                targetId: (int) $kyc->id,
+                reasonCode: 'sla_breach',
+                breachedAt: $now,
+                meta: [
+                    'source' => 'scheduler',
+                    'seller_profile_id' => $kyc->seller_profile_id,
+                    'current_assignee_user_id' => $kyc->assigned_to_user_id,
+                ],
+            );
+
+            $before = [
+                'status' => (string) $kyc->status,
+                'assigned_to_user_id' => $kyc->assigned_to_user_id,
+                'assigned_at' => $kyc->assigned_at?->toIso8601String(),
+                'escalated_at' => $kyc->escalated_at?->toIso8601String(),
+                'escalation_reason' => $kyc->escalation_reason,
+            ];
+
+            $updatedAssignee = $kyc->assigned_to_user_id;
+            if ($incident->assigned_user_id !== null) {
+                $updatedAssignee = (int) $incident->assigned_user_id;
+                $kyc->assigned_to_user_id = $updatedAssignee;
+                $kyc->assigned_at = $kyc->assigned_at ?? $now;
+            }
+
+            $kyc->forceFill([
+                'status' => 'under_review',
+                'escalated_at' => $now,
+                'escalation_reason' => 'sla_breach',
+            ])->save();
+
+            $auditorId = $this->resolveAuditActorId($updatedAssignee, $recipientIds);
+
+            AuditLogWriter::write(
+                actorUserId: $auditorId,
+                action: 'admin.seller_kyc.escalated',
+                targetType: 'kyc_verification',
+                targetId: (int) $kyc->id,
+                beforeJson: $before,
+                afterJson: [
+                    'status' => 'under_review',
+                    'assigned_to_user_id' => $kyc->assigned_to_user_id,
+                    'assigned_at' => $kyc->assigned_at?->toIso8601String(),
+                    'escalated_at' => $now->toIso8601String(),
+                    'escalation_reason' => 'sla_breach',
+                ],
+                reasonCode: 'sla_breach',
+                correlationId: (string) Str::uuid(),
+                ipAddress: null,
+                userAgent: 'scheduler:sla-escalations',
+            );
+
+            $this->notifyRecipients(
+                queueCode: 'seller_kyc',
+                targetId: (int) $kyc->id,
+                recipientIds: $this->appendAssignedUser($recipientIds, $kyc->assigned_to_user_id),
+                templateCode: 'admin.sla.escalated',
+                reason: 'sla_breach',
+            );
+        }
+
+        return $targets->count();
     }
 
     private function escalateDisputes(int $breachHours): int
@@ -93,6 +254,8 @@ final class SlaEscalationService
                 queueCode: 'disputes',
                 targetId: (int) $case->id,
                 recipientIds: $this->appendAssignedUser($recipientIds, $case->assigned_to_user_id),
+                templateCode: 'admin.sla.escalated',
+                reason: 'sla_breach',
             );
 
             $this->escalationOps->openFromBreach(
@@ -157,6 +320,8 @@ final class SlaEscalationService
                 queueCode: 'withdrawals',
                 targetId: (int) $request->id,
                 recipientIds: $this->appendAssignedUser($recipientIds, $request->assigned_to_user_id),
+                templateCode: 'admin.sla.escalated',
+                reason: 'sla_breach',
             );
 
             $this->escalationOps->openFromBreach(
@@ -229,7 +394,7 @@ final class SlaEscalationService
     /**
      * @param  list<int>  $recipientIds
      */
-    private function notifyRecipients(string $queueCode, int $targetId, array $recipientIds): void
+    private function notifyRecipients(string $queueCode, int $targetId, array $recipientIds, string $templateCode, string $reason): void
     {
         $now = now();
 
@@ -238,16 +403,27 @@ final class SlaEscalationService
                 'uuid' => (string) Str::uuid(),
                 'user_id' => $recipientId,
                 'channel' => 'in_app',
-                'template_code' => 'admin.sla.escalated',
+                'template_code' => $templateCode,
                 'payload_json' => [
                     'queue' => $queueCode,
                     'target_id' => $targetId,
-                    'reason' => 'sla_breach',
+                    'reason' => $reason,
                     'escalated_at' => $now->toIso8601String(),
+                    'href' => $this->notificationHref($queueCode, $targetId),
                 ],
                 'status' => 'sent',
                 'sent_at' => $now,
             ]);
         }
+    }
+
+    private function notificationHref(string $queueCode, int $targetId): ?string
+    {
+        return match ($queueCode) {
+            'seller_kyc' => route('admin.sellers.kyc.show', ['kyc' => $targetId]),
+            'disputes' => route('admin.disputes.show', ['dispute' => $targetId]),
+            'withdrawals' => route('admin.withdrawals.show', ['withdrawal' => $targetId]),
+            default => route('admin.escalations.show', ['incident' => $targetId]),
+        };
     }
 }

@@ -11,7 +11,11 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string|null $uuid
  * @property int $dispute_case_id
+ * @property int|null $order_id
  * @property int $submitted_by_user_id
+ * @property int|null $message_id
+ * @property string|null $file_id
+ * @property string|null $note
  * @property string $evidence_type
  * @property string|null $content_text
  * @property string|null $storage_path
@@ -31,7 +35,11 @@ class DisputeEvidence extends Model
     protected $fillable = [
         'uuid',
         'dispute_case_id',
+        'order_id',
         'submitted_by_user_id',
+        'message_id',
+        'file_id',
+        'note',
         'evidence_type',
         'content_text',
         'storage_path',
@@ -41,7 +49,9 @@ class DisputeEvidence extends Model
 
     protected $casts = [
         'dispute_case_id' => 'integer',
+        'order_id' => 'integer',
         'submitted_by_user_id' => 'integer',
+        'message_id' => 'integer',
         'evidence_type' => 'string',
         'submitted_at' => 'datetime',
         'created_at' => 'datetime',

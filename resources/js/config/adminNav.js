@@ -3,6 +3,7 @@ import {
     Users,
     Store,
     Package,
+    Tags,
     ShoppingCart,
     Vault,
     Scale,
@@ -14,6 +15,8 @@ import {
     ShieldCheck,
     BookOpenCheck,
     BellRing,
+    TicketPercent,
+    Truck,
 } from 'lucide-react';
 
 /** @typedef {{ id: string, label: string, href: string, icon: import('lucide-react').LucideIcon, permission?: string }} NavItem */
@@ -34,6 +37,7 @@ export const adminNavGroups = [
             { id: 'seller_profiles', label: 'Seller Profiles', href: '/admin/seller-profiles', icon: Store, permission: 'admin.sellers.view' },
             { id: 'sellers', label: 'Sellers / Verification', href: '/admin/sellers', icon: Store, permission: 'admin.sellers.view' },
             { id: 'products', label: 'Products / Moderation', href: '/admin/products', icon: Package, permission: 'admin.products.view' },
+            { id: 'categories', label: 'Categories', href: '/admin/categories', icon: Tags, permission: 'admin.products.moderate' },
         ],
     },
     {
@@ -49,6 +53,7 @@ export const adminNavGroups = [
         label: 'Finance',
         items: [
             { id: 'withdrawals', label: 'Withdrawals', href: '/admin/withdrawals', icon: Banknote, permission: 'admin.withdrawals.view' },
+            { id: 'wallet_top_ups', label: 'Wallet Top-Ups', href: '/admin/wallet-top-ups', icon: Banknote, permission: 'admin.wallets.view' },
             { id: 'wallets', label: 'Wallets / Ledger', href: '/admin/wallets', icon: Wallet, permission: 'admin.wallets.view' },
         ],
     },
@@ -62,6 +67,10 @@ export const adminNavGroups = [
         label: 'System',
         items: [
             { id: 'settings', label: 'Settings', href: '/admin/settings', icon: Settings, permission: 'admin.settings.view' },
+            { id: 'shipping_methods', label: 'Shipping Methods', href: '/admin/shipping-methods', icon: Truck, permission: 'admin.settings.manage' },
+            { id: 'payment_gateways', label: 'Payment Gateways', href: '/admin/settings/payment-gateways', icon: Wallet, permission: 'admin.settings.view' },
+            { id: 'access_control', label: 'Access Control', href: '/admin/access-control', icon: ShieldCheck, permission: 'admin.access' },
+            { id: 'promotions', label: 'Promotions', href: '/admin/promotions', icon: TicketPercent },
             { id: 'approvals', label: 'Approvals Inbox', href: '/admin/approvals', icon: ScrollText, permission: 'admin.access' },
             { id: 'escalations', label: 'Escalations Inbox', href: '/admin/escalations', icon: Siren, permission: 'admin.access' },
             { id: 'escalation_policies', label: 'Escalation Policies', href: '/admin/escalation-policies', icon: ShieldCheck, permission: 'admin.access' },

@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read User|null $user
  * @property-read Collection<int, WalletHold> $walletHolds
+ * @property-read Collection<int, WalletTopUpRequest> $walletTopUpRequests
  * @property-read Collection<int, WalletLedgerEntry> $walletLedgerEntries
  * @property-read Collection<int, WalletLedgerEntry> $counterpartyLedgerEntries
  * @property-read Collection<int, WalletBalanceSnapshot> $walletBalanceSnapshots
@@ -64,6 +65,11 @@ class Wallet extends Model
     public function walletHolds(): HasMany
     {
         return $this->hasMany(WalletHold::class, 'wallet_id');
+    }
+
+    public function walletTopUpRequests(): HasMany
+    {
+        return $this->hasMany(WalletTopUpRequest::class, 'wallet_id');
     }
 
     public function walletLedgerEntries(): HasMany

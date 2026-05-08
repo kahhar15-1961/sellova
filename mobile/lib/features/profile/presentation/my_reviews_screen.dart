@@ -19,7 +19,7 @@ class MyReviewsScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => context.pop(),
         ),
-        title: const Text('My Reviews'),
+        title: const Text('Reviews'),
       ),
       body: state.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -29,10 +29,11 @@ class MyReviewsScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text('Failed to load your reviews:\n$e', textAlign: TextAlign.center),
+                Text('Load failed\n$e', textAlign: TextAlign.center),
                 const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: () => ref.read(myReviewsControllerProvider.notifier).reload(),
+                  onPressed: () =>
+                      ref.read(myReviewsControllerProvider.notifier).reload(),
                   child: const Text('Retry'),
                 ),
               ],
@@ -48,7 +49,8 @@ class MyReviewsScreen extends ConsumerWidget {
             return Card(
               elevation: 0,
               color: const Color(0xFFF8F8FC),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Column(
@@ -57,21 +59,35 @@ class MyReviewsScreen extends ConsumerWidget {
                     Row(
                       children: <Widget>[
                         Expanded(
-                          child: Text(r.productName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                          child: Text(r.productName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15)),
                         ),
-                        Text(r.dateLabel, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B))),
+                        Text(r.dateLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: const Color(0xFF64748B))),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(r.orderNo, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF64748B))),
+                    Text(r.orderNo,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: const Color(0xFF64748B))),
                     const SizedBox(height: 8),
                     Row(
                       children: List<Widget>.generate(
                         5,
                         (j) => Icon(
-                          j < r.rating ? Icons.star_rounded : Icons.star_border_rounded,
+                          j < r.rating
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
                           size: 20,
-                          color: j < r.rating ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                          color: j < r.rating
+                              ? const Color(0xFFF59E0B)
+                              : const Color(0xFFCBD5E1),
                         ),
                       ),
                     ),

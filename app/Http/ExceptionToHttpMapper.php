@@ -17,6 +17,7 @@ use App\Domain\Exceptions\InvalidEscrowStateTransitionException;
 use App\Domain\Exceptions\InvalidLedgerOperationException;
 use App\Domain\Exceptions\InvalidOrderStateTransitionException;
 use App\Domain\Exceptions\OrderValidationFailedException;
+use App\Domain\Exceptions\PromotionValidationFailedException;
 use App\Domain\Exceptions\ProductValidationFailedException;
 use App\Domain\Exceptions\WalletCurrencyMismatchException;
 use App\Domain\Exceptions\WalletNotFoundException;
@@ -153,6 +154,16 @@ final class ExceptionToHttpMapper
                 'product_id' => $e->productId,
                 'violations' => $e->violations,
             ], $status);
+        }
+
+        if ($e instanceof PromotionValidationFailedException) {
+            return new JsonResponse([
+                'error' => 'validation_failed',
+                'message' => $e->getMessage(),
+                'reason_code' => $e->reasonCode,
+                'promo_code' => $e->promoCode,
+                'violations' => $e->violations,
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($e instanceof DisputeResolutionConflictException) {

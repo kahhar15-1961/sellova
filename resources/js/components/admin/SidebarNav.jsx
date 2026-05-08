@@ -3,12 +3,22 @@ import { adminNavGroups } from '@/config/adminNav';
 import { cn } from '@/lib/utils';
 import { useAdminCan } from '@/hooks/useAdminCan';
 
+function QueueBadge({ count }) {
+    if (!count) return null;
+    return (
+        <span className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+            {count > 99 ? '99+' : count}
+        </span>
+    );
+}
+
 /**
  * @param {{ className?: string, onNavigate?: () => void }} props
  */
 export function SidebarNav({ className, onNavigate }) {
     const page = usePage();
     const url = page.url;
+    const queueCounts = page.props.adminQueueCounts ?? {};
     const can = useAdminCan();
 
     return (
@@ -26,6 +36,7 @@ export function SidebarNav({ className, onNavigate }) {
                             .map((item) => {
                                 const active = url === item.href || url.startsWith(`${item.href}/`);
                                 const Icon = item.icon;
+                                const count = item.id === 'wallet_top_ups' ? queueCounts.wallet_top_ups : 0;
                                 return (
                                     <li key={item.id}>
                                         <Link
@@ -40,6 +51,7 @@ export function SidebarNav({ className, onNavigate }) {
                                         >
                                             <Icon className="h-4 w-4 shrink-0 opacity-80" />
                                             <span className="truncate">{item.label}</span>
+                                            <QueueBadge count={count} />
                                         </Link>
                                     </li>
                                 );

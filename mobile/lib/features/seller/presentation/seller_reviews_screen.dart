@@ -1,192 +1,258 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../application/seller_demo_controller.dart';
+import '../domain/seller_models.dart';
+import 'seller_feedback_widgets.dart';
+import 'seller_scaffold.dart';
 import 'seller_ui.dart';
 
-class _ReviewItem {
-  const _ReviewItem({required this.name, required this.stars, required this.text, required this.date, required this.product});
-  final String name;
-  final double stars;
-  final String text;
-  final String date;
-  final String product;
-}
-
-class SellerReviewsScreen extends StatefulWidget {
+class SellerReviewsScreen extends ConsumerWidget {
   const SellerReviewsScreen({super.key});
 
   @override
-  State<SellerReviewsScreen> createState() => _SellerReviewsScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reviews = ref.watch(sellerReviewsProvider);
+    final positive = reviews.where((e) => e.rating >= 4).length;
+    final negative = reviews.where((e) => e.rating <= 2).length;
+    final total = reviews.length;
+    final average =
+        total == 0 ? 0.0 : reviews.fold<int>(0, (s, e) => s + e.rating) / total;
+    final filtered = reviews;
 
-class _SellerReviewsScreenState extends State<SellerReviewsScreen> {
-  int _tab = 0;
-
-  static const List<_ReviewItem> _all = <_ReviewItem>[
-    _ReviewItem(name: 'Ahammad Uddin', stars: 5, text: 'Great product quality and fast delivery.', date: '29 May, 2025', product: 'Wireless Noise Cancelling Headphones'),
-    _ReviewItem(name: 'Riad Hossain', stars: 4, text: 'Good value. Packaging could be better.', date: '22 May, 2025', product: 'USB-C Hub Pro'),
-    _ReviewItem(name: 'Nusrat Jahan', stars: 2, text: 'Arrived late.', date: '18 May, 2025', product: 'Phone Case Matte'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _tab == 0
-        ? _all
-        : _tab == 1
-            ? _all.where((e) => e.stars >= 4).toList()
-            : _all.where((e) => e.stars <= 2).toList();
-    const int total = 128;
-    const int positive = 112;
-    const int negative = 16;
-    const breakdown = <int>[86, 28, 8, 4, 2];
-
-    return Scaffold(
-      backgroundColor: Colors.white,
+    return SellerScaffold(
+      selectedNavIndex: 4,
       appBar: AppBar(
         title: const Text('Reviews'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded), onPressed: () => Navigator.of(context).maybePop()),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: () => context.pop(),
+        ),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: () => ref.read(sellerReviewsProvider.notifier).refresh(),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text('4.8', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w900, color: kSellerNavy)),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      body: RefreshIndicator(
+        onRefresh: () => ref.read(sellerReviewsProvider.notifier).refresh(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: kSellerPrimaryGradient,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: <BoxShadow>[sellerGradientShadow(alpha: 0.16)],
+              ),
+              child: Row(
                 children: <Widget>[
-                  Row(children: List<Widget>.generate(5, (_) => const Icon(Icons.star_rounded, color: Color(0xFFEAB308), size: 26))),
-                  Text('($total Reviews)', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted)),
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.star_rounded,
+                        color: Colors.white, size: 30),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          average.toStringAsFixed(1),
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        Text(
+                          '$total reviews',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.82)),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          for (int i = 0; i < 5; i++) _starBarRow(context, 5 - i, breakdown[i], total),
-          const SizedBox(height: 20),
-          Row(
-            children: <Widget>[
-              _reviewTab(context, 0, 'All ($total)'),
-              const SizedBox(width: 8),
-              _reviewTab(context, 1, 'Positive ($positive)'),
-              const SizedBox(width: 8),
-              _reviewTab(context, 2, 'Negative ($negative)'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...filtered.map((e) => _reviewCard(context, e)),
-        ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                    child: _MiniStat(label: 'Positive', value: '$positive')),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: _MiniStat(label: 'Negative', value: '$negative')),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Recent reviews',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            if (filtered.isEmpty)
+              const SellerEmptyState(
+                title: 'No reviews yet',
+                subtitle: 'Buyer reviews will appear here.',
+              )
+            else
+              ...filtered.map(
+                (review) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ReviewCard(
+                    review: review,
+                    onTap: () => context.push('/seller/reviews/${review.id}'),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _reviewTab(BuildContext context, int index, String label) {
-    final selected = _tab == index;
-    return Expanded(
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({
+    required this.review,
+    required this.onTap,
+  });
+
+  final SellerReview review;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
-        onTap: () => setState(() => _tab = index),
-        borderRadius: BorderRadius.circular(10),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFF3F0FF) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border(
-              bottom: BorderSide(color: selected ? kSellerAccent : Colors.transparent, width: 2),
-            ),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: selected ? kSellerAccent : kSellerMuted,
-                ),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: sellerCardDecoration(cs),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const CircleAvatar(child: Icon(Icons.person_rounded)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(review.buyerName,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 2),
+                        Text(review.productName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: kSellerMuted)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${review.rating.toStringAsFixed(1)} ★',
+                      style: const TextStyle(
+                          color: Color(0xFF15803D),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(review.comment,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 10),
+              Row(
+                children: <Widget>[
+                  Text(review.orderNumber,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: kSellerMuted)),
+                  const Spacer(),
+                  if (review.sellerReply != null)
+                    const Chip(
+                      label: Text('Replied'),
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: Color(0xFFF0FDF4),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _starBarRow(BuildContext context, int stars, int count, int total) {
-    final ratio = total == 0 ? 0.0 : count / total;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 36,
-            child: Row(
-              children: <Widget>[
-                Text('$stars', style: const TextStyle(fontWeight: FontWeight.w700)),
-                const Icon(Icons.star_rounded, size: 16, color: Color(0xFFEAB308)),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                value: ratio,
-                minHeight: 8,
-                backgroundColor: const Color(0xFFF1F5F9),
-                color: kSellerAccent,
-              ),
-            ),
-          ),
-          SizedBox(width: 36, child: Text('$count', textAlign: TextAlign.end, style: Theme.of(context).textTheme.bodySmall)),
-        ],
-      ),
-    );
-  }
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.label,
+    required this.value,
+  });
 
-  Widget _reviewCard(BuildContext context, _ReviewItem e) {
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFC),
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              const CircleAvatar(radius: 22, child: Icon(Icons.person_rounded)),
-              const SizedBox(width: 10),
-              Expanded(child: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w800))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
-                child: Text('${e.stars.toStringAsFixed(1)} ★', style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.w800, fontSize: 12)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(e.text, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 6),
-          Text(e.date, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kSellerMuted)),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFE5E7EB))),
-            child: Row(
-              children: <Widget>[
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.headphones_rounded),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(e.product, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-              ],
-            ),
-          ),
+          Text(label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: kSellerMuted, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(value,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900)),
         ],
       ),
     );

@@ -2,12 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/auth/data/auth_repository.dart';
 import '../../features/categories/data/category_repository.dart';
+import '../../features/cart/data/promo_repository.dart';
 import '../../features/disputes/data/dispute_repository.dart';
 import '../../features/orders/data/order_repository.dart';
 import '../../features/orders/data/returns_repository.dart';
 import '../../features/products/data/product_repository.dart';
 import '../../features/profile/data/profile_repository.dart';
 import '../../features/profile/data/profile_extras_repository.dart';
+import '../../features/profile/data/wallet_repository.dart';
 import '../../features/seller/data/seller_business_datasource.dart';
 import '../../features/seller/data/seller_repository.dart';
 import '../../features/withdrawals/data/withdrawal_repository.dart';
@@ -34,12 +36,20 @@ final profileExtrasRepositoryProvider =
   );
 });
 
+final walletRepositoryProvider = Provider<WalletRepository>((ref) {
+  return WalletRepository(ref.watch(apiLayerProvider).apiClient);
+});
+
 final productRepositoryProvider = Provider<ProductRepository>((ref) {
   return ref.watch(apiLayerProvider).productRepository;
 });
 
 final orderRepositoryProvider = Provider<OrderRepository>((ref) {
   return ref.watch(apiLayerProvider).orderRepository;
+});
+
+final promoRepositoryProvider = Provider<PromoRepository>((ref) {
+  return PromoRepository(ref.watch(apiLayerProvider).apiClient);
 });
 
 final returnsRepositoryProvider = Provider<ReturnsRepository>((ref) {
@@ -55,7 +65,10 @@ final withdrawalRepositoryProvider = Provider<WithdrawalRepository>((ref) {
 });
 
 final sellerRepositoryProvider = Provider<SellerRepository>((ref) {
-  return SellerRepository(ref.watch(apiLayerProvider).apiClient);
+  return SellerRepository(
+    ref.watch(apiLayerProvider).apiClient,
+    baseUrl: ref.watch(baseUrlProvider),
+  );
 });
 
 final sellerBusinessDataSourceProvider =

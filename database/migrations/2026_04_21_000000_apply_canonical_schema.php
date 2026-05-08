@@ -32,7 +32,8 @@ return new class extends Migration
             'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',
             'payment_transactions', 'payment_intents', 'idempotency_keys', 'order_state_transitions',
             'order_items', 'orders', 'commission_rules', 'membership_plans', 'cart_items', 'carts',
-            'inventory_records', 'product_variants', 'products', 'categories', 'storefronts', 'kyc_documents',
+            'inventory_records', 'product_variants', 'products', 'seller_category_requests', 'categories', 'seller_shipping_methods',
+            'shipping_methods', 'storefronts', 'kyc_documents',
             'kyc_verifications', 'seller_profiles', 'role_permissions', 'user_roles', 'user_auth_tokens', 'permissions', 'roles', 'users',
         ] as $table) {
             Schema::dropIfExists($table);

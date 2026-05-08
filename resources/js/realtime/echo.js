@@ -3,6 +3,11 @@ import Pusher from 'pusher-js';
 
 let echoInstance = null;
 
+function isLocalhostHost(host) {
+    const normalized = String(host || '').trim().toLowerCase();
+    return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '[::1]';
+}
+
 function createAuthorizer(csrfToken) {
     return (channel) => ({
         authorize(socketId, callback) {
@@ -43,26 +48,37 @@ export function getEcho() {
         return null;
     }
 
-    const host = import.meta.env.VITE_REVERB_HOST || import.meta.env.VITE_PUSHER_HOST || window.location.hostname;
-    const port = Number(import.meta.env.VITE_REVERB_PORT || import.meta.env.VITE_PUSHER_PORT || 443);
-    const scheme = import.meta.env.VITE_REVERB_SCHEME || import.meta.env.VITE_PUSHER_SCHEME || 'https';
+    const configuredHost = import.meta.env.VITE_REVERB_HOST || import.meta.env.VITE_PUSHER_HOST || '';
+    const pageHost = window.location.hostname;
+    const host = configuredHost && !isLocalhostHost(configuredHost) ? configuredHost : pageHost;
+    const configuredPort = Number(import.meta.env.VITE_REVERB_PORT || import.meta.env.VITE_PUSHER_PORT || 0);
+    const scheme = import.meta.env.VITE_REVERB_SCHEME || import.meta.env.VITE_PUSHER_SCHEME || window.location.protocol.replace(':', '') || 'https';
     const cluster = import.meta.env.VITE_PUSHER_APP_CLUSTER;
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const isSecure = scheme === 'https' || window.location.protocol === 'https:';
+    const useLocalTransport = isLocalhostHost(host);
 
-    window.Pusher = Pusher;
-
-    echoInstance = new Echo({
+    const echoConfig = {
         broadcaster: 'reverb',
         key,
         wsHost: host,
-        wsPort: port,
-        wssPort: port,
-        forceTLS: scheme === 'https',
-        enabledTransports: ['ws', 'wss'],
+        forceTLS: isSecure,
+        enabledTransports: [isSecure ? 'wss' : 'ws'],
         cluster,
         authEndpoint: '/broadcasting/auth',
         authorizer: createAuthorizer(csrfToken),
-    });
+    };
+
+    if (useLocalTransport && Number.isFinite(configuredPort) && configuredPort > 0) {
+        echoConfig.wsPort = configuredPort;
+        if (isSecure) {
+            echoConfig.wssPort = configuredPort;
+        }
+    }
+
+    window.Pusher = Pusher;
+
+    echoInstance = new Echo(echoConfig);
 
     return echoInstance;
 }

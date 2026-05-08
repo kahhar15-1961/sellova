@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Support\AggregateHttpLookup;
 use App\Domain\Queries\Catalog\ProductCatalogListQuery;
 use App\Http\AppServices;
 use App\Http\Requests\V1\CorrelationIdOptionalRequest;
@@ -61,25 +62,87 @@ final class ProductController
 
     public function store(Request $request): Response
     {
-        $this->app->requireActor($request);
-        StoreProductRequest::payload($request);
+        $actor = $this->app->requireActor($request);
+        $command = StoreProductRequest::toCommand($request, $actor);
+        $result = $this->app->productService()->createProduct($command);
 
-        return ApiEnvelope::notImplemented('products', 'createProduct');
+        return ApiEnvelope::data($result, 201);
     }
 
     public function update(Request $request): Response
     {
-        $this->app->requireActor($request);
-        UpdateProductRequest::payload($request);
+        $actor = $this->app->requireActor($request);
+        $productId = (int) $request->attributes->get('productId');
+        $product = AggregateHttpLookup::product($productId);
+        $command = UpdateProductRequest::toCommand($request, $actor, $product);
+        $result = $this->app->productService()->updateProduct($command);
 
-        return ApiEnvelope::notImplemented('products', 'updateProduct');
+        return ApiEnvelope::data($result);
+    }
+
+    public function sellerIndex(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $sellerProfile = $actor->sellerProfile;
+        if ($sellerProfile === null) {
+            return ApiEnvelope::error('not_found', 'Seller profile not found.', Response::HTTP_NOT_FOUND, [
+                'reason_code' => 'seller_profile_not_found',
+            ]);
+        }
+
+        $page = RequestPagination::pageAndPerPage($request);
+        $result = $this->app->productService()->listSellerProducts(
+            (int) $sellerProfile->id,
+            $page['page'],
+            $page['per_page'],
+        );
+
+        return ApiEnvelope::paginated($result['items'], $result['page'], $result['per_page'], $result['total']);
+    }
+
+    public function sellerStore(Request $request): Response
+    {
+        return $this->store($request);
+    }
+
+    public function sellerUpdate(Request $request): Response
+    {
+        return $this->update($request);
+    }
+
+    public function sellerToggle(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $sellerProfile = $actor->sellerProfile;
+        if ($sellerProfile === null) {
+            return ApiEnvelope::error('not_found', 'Seller profile not found.', Response::HTTP_NOT_FOUND, [
+                'reason_code' => 'seller_profile_not_found',
+            ]);
+        }
+        $productId = (int) $request->attributes->get('productId');
+        $product = AggregateHttpLookup::product($productId);
+        $payload = json_decode($request->getContent(), true);
+        $active = filter_var((string) ($payload['active'] ?? true), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $result = $this->app->productService()->toggleProductStatus($product, (int) $sellerProfile->id, $active ?? true);
+
+        return ApiEnvelope::data($result);
     }
 
     public function destroy(Request $request): Response
     {
-        $this->app->requireActor($request);
-        CorrelationIdOptionalRequest::payload($request);
+        $actor = $this->app->requireActor($request);
+        $sellerProfile = $actor->sellerProfile;
+        if ($sellerProfile === null) {
+            return ApiEnvelope::error('not_found', 'Seller profile not found.', Response::HTTP_NOT_FOUND, [
+                'reason_code' => 'seller_profile_not_found',
+            ]);
+        }
 
-        return ApiEnvelope::notImplemented('products', 'deleteProduct');
+        $productId = (int) $request->attributes->get('productId');
+        $product = AggregateHttpLookup::product($productId);
+        CorrelationIdOptionalRequest::payload($request);
+        $result = $this->app->productService()->deleteProduct($product, (int) $sellerProfile->id);
+
+        return ApiEnvelope::data($result);
     }
 }

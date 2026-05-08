@@ -1,70 +1,150 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/providers/app_providers.dart';
 import '../domain/seller_models.dart';
 import 'seller_product_controller.dart';
 
-final sellerInventoryProvider = NotifierProvider<SellerInventoryController, List<SellerInventoryMovement>>(SellerInventoryController.new);
-const List<String> kSellerWarehouses = <String>['All Warehouses', 'Main Warehouse', 'Dhaka Hub'];
+final sellerInventoryProvider =
+    NotifierProvider<SellerInventoryController, List<SellerInventoryMovement>>(
+        SellerInventoryController.new);
+final sellerWarehouseProvider =
+    NotifierProvider<SellerWarehouseController, List<SellerWarehouse>>(
+        SellerWarehouseController.new);
 
-class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> {
+class SellerWarehouseController extends Notifier<List<SellerWarehouse>> {
+  static const String _prefsKey = 'seller.warehouses.v1';
+  static const List<SellerWarehouse> _defaultWarehouses = <SellerWarehouse>[
+    SellerWarehouse(
+      id: 1,
+      name: 'Main Warehouse',
+      code: 'MAIN',
+      city: 'Dhaka',
+    ),
+    SellerWarehouse(
+      id: 2,
+      name: 'Dhaka Hub',
+      code: 'DHK',
+      city: 'Dhaka',
+    ),
+  ];
+
+  @override
+  List<SellerWarehouse> build() {
+    final raw = ref.read(sharedPreferencesProvider).getString(_prefsKey);
+    if (raw == null || raw.isEmpty) {
+      return _defaultWarehouses;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return _defaultWarehouses;
+      }
+      final saved = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(SellerWarehouse.fromJson)
+          .where((warehouse) => warehouse.id > 0 && warehouse.name.isNotEmpty)
+          .toList();
+      return saved.isEmpty ? _defaultWarehouses : saved;
+    } catch (_) {
+      return _defaultWarehouses;
+    }
+  }
+
+  List<String> names({bool includeAll = false, bool activeOnly = true}) {
+    final activeValues = state
+        .where((warehouse) => !activeOnly || warehouse.isActive)
+        .map((warehouse) => warehouse.name)
+        .toList();
+    final values = activeValues.isEmpty && state.isNotEmpty
+        ? <String>[state.first.name]
+        : activeValues;
+    return <String>[if (includeAll) 'All Warehouses', ...values];
+  }
+
+  void addWarehouse({
+    required String name,
+    String code = '',
+    String city = '',
+  }) {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      return;
+    }
+    if (state.any((warehouse) =>
+        warehouse.name.toLowerCase() == cleanName.toLowerCase())) {
+      return;
+    }
+    final nextId = state.isEmpty
+        ? 1
+        : state
+                .map((warehouse) => warehouse.id)
+                .reduce((a, b) => a > b ? a : b) +
+            1;
+    _setWarehouses(<SellerWarehouse>[
+      ...state,
+      SellerWarehouse(
+        id: nextId,
+        name: cleanName,
+        code: code.trim(),
+        city: city.trim(),
+      ),
+    ]);
+  }
+
+  void updateWarehouse(
+    int id, {
+    required String name,
+    String code = '',
+    String city = '',
+  }) {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      return;
+    }
+    if (state.any((warehouse) =>
+        warehouse.id != id &&
+        warehouse.name.toLowerCase() == cleanName.toLowerCase())) {
+      return;
+    }
+    _setWarehouses(state
+        .map((warehouse) => warehouse.id == id
+            ? warehouse.copyWith(
+                name: cleanName,
+                code: code.trim(),
+                city: city.trim(),
+              )
+            : warehouse)
+        .toList());
+  }
+
+  void setActive(int id, bool active) {
+    _setWarehouses(state
+        .map((warehouse) => warehouse.id == id
+            ? warehouse.copyWith(isActive: active)
+            : warehouse)
+        .toList());
+  }
+
+  void deleteWarehouse(int id) {
+    _setWarehouses(state.where((warehouse) => warehouse.id != id).toList());
+  }
+
+  void _setWarehouses(List<SellerWarehouse> warehouses) {
+    state = warehouses;
+    final encoded = jsonEncode(warehouses.map((e) => e.toJson()).toList());
+    unawaited(
+        ref.read(sharedPreferencesProvider).setString(_prefsKey, encoded));
+  }
+}
+
+class SellerInventoryController
+    extends Notifier<List<SellerInventoryMovement>> {
   @override
   List<SellerInventoryMovement> build() {
-    return <SellerInventoryMovement>[
-      SellerInventoryMovement(
-        id: 18,
-        productId: 1001,
-        productName: 'Wireless Headphones',
-        productSku: 'WH-001',
-        type: SellerMovementType.stockIn,
-        quantity: 20,
-        previousStock: 45,
-        newStock: 65,
-        unitAmount: 1250,
-        currency: 'BDT',
-        warehouse: 'Main Warehouse',
-        referenceId: 'IN-2025-00018',
-        reason: 'New Stock Received',
-        note: 'Received new stock from supplier.',
-        actor: 'Ashikur Rahman (Seller)',
-        at: DateTime(2025, 5, 30, 10, 30),
-      ),
-      SellerInventoryMovement(
-        id: 17,
-        productId: 1004,
-        productName: 'Smart Watch Series 8',
-        productSku: 'SW-008',
-        type: SellerMovementType.stockOut,
-        quantity: -1,
-        previousStock: 10,
-        newStock: 9,
-        unitAmount: 3990,
-        currency: 'BDT',
-        warehouse: 'Main Warehouse',
-        referenceId: 'OUT-2025-00017',
-        reason: 'Order #ORD-2025-000125',
-        note: 'Stock reduced for order.',
-        actor: 'System (Order)',
-        at: DateTime(2025, 5, 30, 10, 15),
-      ),
-      SellerInventoryMovement(
-        id: 16,
-        productId: 1002,
-        productName: 'Bluetooth Speaker',
-        productSku: 'BS-002',
-        type: SellerMovementType.adjustment,
-        quantity: -2,
-        previousStock: 18,
-        newStock: 16,
-        unitAmount: 1250,
-        currency: 'BDT',
-        warehouse: 'Main Warehouse',
-        referenceId: 'ADJ-2025-00016',
-        reason: 'Damaged Items',
-        note: '2 units found damaged during quality check.',
-        actor: 'Ashikur Rahman (Seller)',
-        at: DateTime(2025, 5, 30, 9, 45),
-      ),
-    ];
+    return const <SellerInventoryMovement>[];
   }
 
   SellerInventoryMovement? byId(int id) {
@@ -100,7 +180,7 @@ class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> 
       referenceId: 'IN-${DateTime.now().millisecondsSinceEpoch % 1000000}',
       reason: reason,
       note: note,
-      actor: 'Ashikur Rahman (Seller)',
+      actor: 'Seller',
       at: DateTime.now(),
     );
     final byWarehouse = Map<String, int>.from(product.warehouseStocks);
@@ -110,7 +190,9 @@ class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> 
     await ref.read(sellerProductsProvider.notifier).updateProduct(
           product.copyWith(
             stock: next,
-            status: next > 0 ? SellerProductStatus.active : SellerProductStatus.outOfStock,
+            status: next > 0
+                ? SellerProductStatus.active
+                : SellerProductStatus.outOfStock,
             warehouseStocks: byWarehouse,
           ),
         );
@@ -141,7 +223,7 @@ class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> 
       referenceId: 'OUT-${DateTime.now().millisecondsSinceEpoch % 1000000}',
       reason: reason,
       note: note,
-      actor: 'Ashikur Rahman (Seller)',
+      actor: 'Seller',
       at: DateTime.now(),
     );
     final byWarehouse = Map<String, int>.from(product.warehouseStocks);
@@ -182,7 +264,7 @@ class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> 
       referenceId: 'ADJ-${DateTime.now().millisecondsSinceEpoch % 1000000}',
       reason: reason,
       note: note,
-      actor: 'Ashikur Rahman (Seller)',
+      actor: 'Seller',
       at: DateTime.now(),
     );
     final byWarehouse = Map<String, int>.from(product.warehouseStocks);
@@ -192,7 +274,9 @@ class SellerInventoryController extends Notifier<List<SellerInventoryMovement>> 
     await ref.read(sellerProductsProvider.notifier).updateProduct(
           product.copyWith(
             stock: next,
-            status: next <= 0 ? SellerProductStatus.outOfStock : SellerProductStatus.active,
+            status: next <= 0
+                ? SellerProductStatus.outOfStock
+                : SellerProductStatus.active,
             warehouseStocks: byWarehouse,
           ),
         );

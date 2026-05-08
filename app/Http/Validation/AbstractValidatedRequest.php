@@ -26,7 +26,11 @@ abstract class AbstractValidatedRequest
      */
     public static function validate(Request $request): array
     {
-        $payload = array_merge($request->query->all(), $request->request->all());
+        $payload = array_replace_recursive(
+            $request->query->all(),
+            $request->request->all(),
+            self::jsonPayload($request),
+        );
         $constraint = static::constraint();
         $violations = self::validator()->validate($payload, $constraint);
         if ($violations->count() > 0) {
@@ -34,6 +38,24 @@ abstract class AbstractValidatedRequest
         }
 
         return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function jsonPayload(Request $request): array
+    {
+        $content = trim((string) $request->getContent());
+        if ($content === '') {
+            return [];
+        }
+
+        $decoded = json_decode($content, true);
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        return $decoded;
     }
 
     abstract protected static function constraint(): Constraint;
