@@ -146,9 +146,7 @@ class ProductDto {
       return true;
     }
     final normalized = productType.toLowerCase().replaceAll('-', '_');
-    if (normalized == 'instant_delivery' ||
-        normalized == 'instant' ||
-        normalized == 'digital') {
+    if (normalized == 'instant_delivery' || normalized == 'instant') {
       return true;
     }
     final deliveryType = attributes['delivery_type']?.toString().toLowerCase();

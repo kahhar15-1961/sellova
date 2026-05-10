@@ -47,6 +47,7 @@ class _SellerAddProductScreenState
   int? _selectedCategoryId;
   final List<ProductImageSelection> _images = <ProductImageSelection>[];
   bool _uploadingImage = false;
+  bool _instantDelivery = false;
 
   @override
   void dispose() {
@@ -125,6 +126,7 @@ class _SellerAddProductScreenState
                           category: _category.text.trim(),
                           description: _description.text.trim(),
                           productType: widget.productType,
+                          isInstantDelivery: _isDigital && _instantDelivery,
                           imageUrl: _images.isEmpty
                               ? null
                               : _images.first.storagePath,
@@ -157,6 +159,7 @@ class _SellerAddProductScreenState
   }
 
   bool get _isPhysical => widget.productType == 'physical';
+  bool get _isDigital => widget.productType == 'digital';
 
   Map<String, dynamic> _productAttributes() {
     final tags = _tags.text
@@ -177,10 +180,11 @@ class _SellerAddProductScreenState
         if (_location.text.trim().isNotEmpty)
           'product_location': _location.text.trim(),
       });
-    } else {
+    } else if (_isDigital) {
       data.addAll(<String, dynamic>{
         'condition': 'Digital',
-        'delivery_mode': 'instant',
+        'delivery_mode': _instantDelivery ? 'instant' : 'digital_delivery',
+        'is_instant_delivery': _instantDelivery,
         'access_type': _accessType,
         if (_digitalKind.text.trim().isNotEmpty)
           'digital_product_kind': _digitalKind.text.trim(),
@@ -189,6 +193,13 @@ class _SellerAddProductScreenState
         if (_platform.text.trim().isNotEmpty) 'platform': _platform.text.trim(),
         if (_accountRegion.text.trim().isNotEmpty)
           'account_region': _accountRegion.text.trim(),
+        if (_deliveryNote.text.trim().isNotEmpty)
+          'delivery_note': _deliveryNote.text.trim(),
+      });
+    } else {
+      data.addAll(<String, dynamic>{
+        'condition': 'Service',
+        'delivery_mode': 'manual',
         if (_deliveryNote.text.trim().isNotEmpty)
           'delivery_note': _deliveryNote.text.trim(),
       });
@@ -214,7 +225,16 @@ class _SellerAddProductScreenState
             onChanged: (value) => setState(() => _condition = value),
           ),
           _f('Product Location', _location),
-        ] else ...<Widget>[
+        ] else if (_isDigital) ...<Widget>[
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Instant delivery'),
+            subtitle: const Text(
+              'Enable automatic digital handoff for this product.',
+            ),
+            value: _instantDelivery,
+            onChanged: (value) => setState(() => _instantDelivery = value),
+          ),
           _f('Digital product type', _digitalKind,
               hint: 'Game account, ChatGPT subscription, license key'),
           _selectField(
@@ -233,7 +253,15 @@ class _SellerAddProductScreenState
               hint: '30 days, lifetime, 1 year'),
           _f('Platform', _platform, hint: 'Steam, OpenAI, Netflix, Microsoft'),
           _f('Account region', _accountRegion, hint: 'BD, US, Global'),
-          _f('Instant delivery note', _deliveryNote, lines: 2),
+          _f(
+            _instantDelivery ? 'Instant delivery note' : 'Delivery note',
+            _deliveryNote,
+            lines: 2,
+          ),
+        ] else ...<Widget>[
+          _f('Service scope', _digitalKind,
+              hint: 'Consultation, setup, support, custom work'),
+          _f('Delivery note', _deliveryNote, lines: 2),
         ],
         _selectField(
           label: 'Warranty status',

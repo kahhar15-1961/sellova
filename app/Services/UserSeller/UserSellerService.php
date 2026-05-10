@@ -13,7 +13,6 @@ use App\Domain\Commands\UserSeller\SubmitKycCommand;
 use App\Domain\Commands\UserSeller\UpdateSellerProfileCommand;
 use App\Domain\Commands\UserSeller\UpdateUserProfileCommand;
 use App\Auth\RoleCodes;
-use App\Events\UserNotificationCreated;
 use App\Domain\Enums\KycVerificationStatus;
 use App\Domain\Exceptions\AuthValidationFailedException;
 use App\Domain\Exceptions\InvalidDomainStateTransitionException;
@@ -604,6 +603,36 @@ class UserSellerService
             ->map(fn (Review $r): array => $this->sellerReviewToArray($r))
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function replyToSellerReview(int $userId, int $reviewId, string $reply): array
+    {
+        $profile = $this->sellerProfileForUserOrFail($userId);
+        $reply = trim($reply);
+
+        if ($reply === '' || mb_strlen($reply) > 1000) {
+            throw new AuthValidationFailedException('validation_failed', ['reply' => 'required|max:1000']);
+        }
+
+        /** @var Review|null $review */
+        $review = Review::query()
+            ->with(['buyer', 'product', 'order_item.order'])
+            ->where('seller_profile_id', (int) $profile->id)
+            ->whereKey($reviewId)
+            ->first();
+
+        if ($review === null) {
+            throw new AuthValidationFailedException('review_not_found', ['review_id' => $reviewId]);
+        }
+
+        $review->seller_reply = $reply;
+        $review->seller_replied_at = now();
+        $review->save();
+
+        return $this->sellerReviewToArray($review->fresh(['buyer', 'product', 'order_item.order']));
     }
 
     /**
@@ -1428,7 +1457,19 @@ class UserSellerService
             ->orWhere('code', $code)
             ->first();
 
-        return $method !== null ? (int) $method->id : null;
+        if ($method === null) {
+            $method = ShippingMethod::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'code' => $code !== '' ? $code : 'seller_shipping_'.Str::lower(Str::random(6)),
+                'name' => $trimmed,
+                'suggested_fee' => 0,
+                'processing_time_label' => '1-2 Business Days',
+                'is_active' => true,
+                'sort_order' => 100,
+            ]);
+        }
+
+        return (int) $method->id;
     }
 
     /**
@@ -1683,18 +1724,13 @@ class UserSellerService
         $notification = Notification::query()->create([
             'uuid' => (string) Str::uuid(),
             'user_id' => $userId,
+            'user_role' => $payload['role'] ?? null,
             'channel' => 'in_app',
             'template_code' => $templateCode,
             'payload_json' => $payload,
             'status' => 'queued',
             'sent_at' => now(),
         ]);
-
-        UserNotificationCreated::dispatch(
-            $userId,
-            $this->notificationToArray($notification),
-            Notification::query()->where('user_id', $userId)->whereNull('read_at')->count(),
-        );
 
         app(PushNotificationService::class)->sendToUser($userId, $this->notificationToArray($notification));
     }
@@ -1864,6 +1900,10 @@ class UserSellerService
             'comment' => (string) ($r->comment ?? ''),
             'status' => (string) $r->status,
             'is_verified_buyer' => true,
+            'seller_reply' => (string) ($r->seller_reply ?? ''),
+            'seller_reply_date' => $r->seller_replied_at?->toIso8601String(),
+            'seller_reply_date_label' => $r->seller_replied_at?->format('d M Y') ?? '',
+            'helpful_count' => (int) ($r->helpful_count ?? 0),
             'photo_urls' => [],
             'created_at' => $createdAt?->toIso8601String(),
             'created_at_label' => $createdAt?->format('d M Y') ?? '',

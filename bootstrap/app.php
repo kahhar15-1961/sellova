@@ -40,6 +40,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->validateCsrfTokens(except: [
             'api/*',
+            'webhooks/kyc/*',
         ]);
         $middleware->alias([
             'admin.panel' => \App\Http\Middleware\EnsureCanAccessAdminPanel::class,

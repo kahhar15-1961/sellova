@@ -939,7 +939,10 @@ class _ProductDetailsSection extends StatelessWidget {
     final attrs = product.attributes;
     final rows = <({String label, String value})>[
       (label: 'Category', value: _value(product.raw['category_name'])),
-      (label: 'Product Type', value: _typeLabel(kind, product.productType)),
+      (
+        label: 'Product Type',
+        value: _typeLabel(kind, product.productType, product.isInstantDelivery)
+      ),
       if (kind == _ProductKind.physical) ...<({String label, String value})>[
         (label: 'Brand', value: _value(attrs['brand'] ?? product.raw['brand'])),
         (
@@ -1819,12 +1822,13 @@ String _stockLabel(dynamic value) {
   return '$stock available';
 }
 
-String _typeLabel(_ProductKind kind, String raw) {
+String _typeLabel(_ProductKind kind, String raw, bool isInstantDelivery) {
   return switch (kind) {
     _ProductKind.physical => 'Physical Product',
-    _ProductKind.digital => raw.toLowerCase() == 'instant_delivery'
-        ? 'Instant Digital Delivery'
-        : 'Digital Product',
+    _ProductKind.digital =>
+      isInstantDelivery || raw.toLowerCase() == 'instant_delivery'
+          ? 'Instant Digital Delivery'
+          : 'Digital Product',
     _ProductKind.manual => 'Service',
   };
 }

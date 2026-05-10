@@ -88,6 +88,21 @@ class Order extends Model
         'delivered_at',
         'delivery_submitted_at',
         'buyer_review_started_at',
+        'escrow_status',
+        'escrow_amount',
+        'escrow_fee',
+        'escrow_started_at',
+        'escrow_expires_at',
+        'escrow_released_at',
+        'escrow_auto_release_at',
+        'escrow_release_method',
+        'dispute_deadline_at',
+        'delivery_deadline_at',
+        'delivery_status',
+        'delivery_note',
+        'delivery_version',
+        'delivery_files_count',
+        'buyer_confirmed_at',
         'seller_deadline_at',
         'seller_reminder_at',
         'buyer_review_expires_at',
@@ -114,11 +129,20 @@ class Order extends Model
         'gross_amount' => 'decimal:4',
         'discount_amount' => 'decimal:4',
         'fee_amount' => 'decimal:4',
+        'escrow_amount' => 'decimal:4',
+        'escrow_fee' => 'decimal:4',
         'net_amount' => 'decimal:4',
         'shipped_at' => 'datetime',
         'delivered_at' => 'datetime',
         'delivery_submitted_at' => 'datetime',
         'buyer_review_started_at' => 'datetime',
+        'escrow_started_at' => 'datetime',
+        'escrow_expires_at' => 'datetime',
+        'escrow_released_at' => 'datetime',
+        'escrow_auto_release_at' => 'datetime',
+        'dispute_deadline_at' => 'datetime',
+        'delivery_deadline_at' => 'datetime',
+        'buyer_confirmed_at' => 'datetime',
         'seller_deadline_at' => 'datetime',
         'seller_reminder_at' => 'datetime',
         'buyer_review_expires_at' => 'datetime',
@@ -185,6 +209,16 @@ class Order extends Model
     public function disputeCases(): HasMany
     {
         return $this->hasMany(DisputeCase::class, 'order_id');
+    }
+
+    public function digitalDeliveries(): HasMany
+    {
+        return $this->hasMany(DigitalDelivery::class, 'order_id');
+    }
+
+    public function latestDigitalDelivery(): HasOne
+    {
+        return $this->hasOne(DigitalDelivery::class, 'order_id')->latestOfMany('id');
     }
 
     public function escrowTimeoutEvents(): HasMany

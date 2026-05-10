@@ -417,6 +417,8 @@ class ProductService
     private function productToListArray(Product $p): array
     {
         $attributes = is_array($p->attributes_json) ? $p->attributes_json : [];
+        $isInstantDelivery = $this->isInstantDeliveryProduct($p, $attributes);
+        $productType = $this->displayProductType((string) $p->product_type);
         $reviewCount = (int) Review::query()
             ->where('product_id', (int) $p->id)
             ->where('status', 'visible')
@@ -440,8 +442,8 @@ class ProductService
             'thumbnail_url' => $p->image_url,
             'images' => $p->images_json ?: ($p->image_url ? [$p->image_url] : []),
             'attributes' => $attributes,
-            'product_type' => $p->product_type,
-            'is_instant_delivery' => $this->isInstantDeliveryProduct($p, $attributes),
+            'product_type' => $productType,
+            'is_instant_delivery' => $isInstantDelivery,
             'brand' => $attributes['brand'] ?? null,
             'condition' => $attributes['condition'] ?? null,
             'warranty_status' => $attributes['warranty_status'] ?? null,
@@ -469,7 +471,6 @@ class ProductService
     {
         return $this->productToListArray($p) + [
             'description' => $p->description,
-            'product_type' => $p->product_type,
             'stock' => $p->inventoryRecords->sum('stock_on_hand'),
             'created_at' => $p->created_at?->toIso8601String(),
             'updated_at' => $p->updated_at?->toIso8601String(),
@@ -501,13 +502,17 @@ class ProductService
             return true;
         }
 
+        if (filter_var($attributes['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL)) {
+            return true;
+        }
+
         $deliveryType = strtolower(str_replace('-', '_', (string) ($attributes['delivery_type'] ?? '')));
         $fulfillment = strtolower((string) ($attributes['fulfillment'] ?? ''));
         if (in_array($deliveryType, ['instant_delivery', 'instant'], true) || str_contains($fulfillment, 'instant')) {
             return true;
         }
 
-        return $type === 'digital';
+        return false;
     }
 
     private function assertProductOwner(Product $product, int $sellerProfileId): void
@@ -649,12 +654,31 @@ class ProductService
 
         if ($type === 'physical') {
             $clean['delivery_mode'] = 'seller_shipping';
-            unset($clean['digital_product_kind'], $clean['access_type'], $clean['subscription_duration'], $clean['account_region'], $clean['platform'], $clean['license_type']);
+            $clean['is_instant_delivery'] = false;
+            unset($clean['digital_product_kind'], $clean['access_type'], $clean['subscription_duration'], $clean['account_region'], $clean['platform'], $clean['license_type'], $clean['instant_delivery_expiration_hours']);
+        } elseif ($type === 'service') {
+            $clean['delivery_mode'] = 'manual';
+            $clean['is_instant_delivery'] = false;
+            unset($clean['product_location'], $clean['digital_product_kind'], $clean['access_type'], $clean['subscription_duration'], $clean['account_region'], $clean['platform'], $clean['license_type'], $clean['instant_delivery_expiration_hours']);
         } else {
-            $clean['delivery_mode'] = 'instant';
+            $isInstantDelivery = filter_var($clean['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL);
+            $clean['delivery_mode'] = $isInstantDelivery ? 'instant' : 'digital_delivery';
+            $clean['is_instant_delivery'] = $isInstantDelivery;
             unset($clean['product_location']);
+            if (! $isInstantDelivery) {
+                unset($clean['instant_delivery_expiration_hours']);
+            }
         }
 
         return $clean;
+    }
+
+    private function displayProductType(string $type): string
+    {
+        return match (strtolower(trim($type))) {
+            'instant_delivery' => 'digital',
+            'manual_delivery' => 'service',
+            default => strtolower(trim($type)),
+        };
     }
 }

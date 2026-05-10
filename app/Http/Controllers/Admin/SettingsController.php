@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
-use App\Events\UserNotificationCreated;
 use App\Http\Requests\Admin\UpdatePushNotificationSettingsRequest;
 use App\Http\Requests\Admin\SendPushNotificationTestRequest;
 use App\Models\Notification;
@@ -188,21 +187,6 @@ final class SettingsController extends AdminPageController
             'status' => 'queued',
             'sent_at' => now(),
         ]);
-
-        UserNotificationCreated::dispatch(
-            (int) $recipient->id,
-            [
-                'id' => (int) $notification->id,
-                'uuid' => (string) $notification->uuid,
-                'channel' => 'in_app',
-                'template_code' => 'admin.push.test',
-                'title' => $title,
-                'body' => $body,
-                'is_read' => false,
-                'created_at' => $notification->created_at?->toIso8601String(),
-            ],
-            Notification::query()->where('user_id', $recipient->id)->whereNull('read_at')->count(),
-        );
 
         $this->pushService->sendToUser((int) $recipient->id, [
             'title' => $title,

@@ -62,29 +62,92 @@ use App\Http\Controllers\Admin\WithdrawalReviewController;
 use App\Http\Controllers\Admin\WithdrawalsController;
 use App\Http\Controllers\Admin\WithdrawalShowController;
 use App\Http\Controllers\Web\MarketplaceController;
+use App\Http\Controllers\Web\NotificationController;
+use App\Http\Controllers\Web\WebAuthController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [MarketplaceController::class, 'home'])->name('web.home');
 Route::get('/buyer', [MarketplaceController::class, 'buyer'])->name('web.buyer');
 Route::get('/seller', [MarketplaceController::class, 'seller'])->name('web.seller');
+Route::get('/login', [WebAuthController::class, 'login'])->name('login');
+Route::get('/register', [WebAuthController::class, 'register'])->name('web.register');
+Route::get('/forgot-password', [WebAuthController::class, 'forgotPassword'])->name('password.request');
+Route::post('/login', [WebAuthController::class, 'storeLogin'])->middleware('throttle:6,1')->name('web.login.store');
+Route::post('/register', [WebAuthController::class, 'storeRegister'])->middleware('throttle:6,1')->name('web.register.store');
+Route::post('/forgot-password', [WebAuthController::class, 'storeForgotPassword'])->middleware('throttle:6,1')->name('password.email');
+Route::post('/logout', [WebAuthController::class, 'logout'])->middleware('auth')->name('web.logout');
+Route::post('/webhooks/kyc/{provider}', [MarketplaceController::class, 'kycProviderWebhook'])
+    ->middleware('throttle:60,1')
+    ->name('webhooks.kyc.provider');
 Route::get('/marketplace', [MarketplaceController::class, 'marketplace'])->name('web.marketplace');
 Route::get('/products/{productId}', [MarketplaceController::class, 'product'])->whereNumber('productId')->name('web.products.show');
 Route::get('/{view}', [MarketplaceController::class, 'buyerView'])
-    ->where('view', 'cart|checkout|orders|wishlist|profile|support')
+    ->where('view', 'dashboard|cart|checkout|orders|order-details|escrow-orders|refund-requests|return-requests|replacement-requests|wishlist|saved-items|favorite-stores|recently-viewed|profile|profile-settings|security-settings|address-book|wallet|top-up-history|transaction-history|referral-dashboard|loyalty-rewards|coupons-promotions|support|support-tickets|notifications|messages|product-reviews|seller-reviews|kyc-verification|device-management')
     ->name('web.buyer.view');
+Route::get('/seller/withdraw/history', static fn () => redirect('/seller/withdraw-history'));
+Route::get('/seller/products/create', [MarketplaceController::class, 'sellerView'])->defaults('view', 'products-create')->name('web.seller.products.create');
+Route::get('/seller/products/{product}/edit', [MarketplaceController::class, 'sellerView'])->whereNumber('product')->defaults('view', 'products-edit')->name('web.seller.products.edit');
+Route::get('/seller/products/{product}/preview', [MarketplaceController::class, 'sellerView'])->whereNumber('product')->defaults('view', 'products-preview')->name('web.seller.products.preview');
 Route::get('/seller/{view?}', [MarketplaceController::class, 'sellerView'])
-    ->where('view', 'dashboard|products|inventory|orders|payouts|delivery|offers|business|analytics|support')
+    ->where('view', 'dashboard|products|products-create|categories|inventory|stock-history|orders|order-details|payouts|wallet|top-up|top-up-history|withdraw-request|withdraw-history|transactions|delivery|offers|business|analytics|reports|earnings|support|messages|menu|kyc|reviews|notifications|store-profile|profile|store-settings|business-settings|shipping-settings|bank-payment-methods|warehouses|warehouse-form|returns|refunds|disputes')
     ->name('web.seller.view');
 Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
+    Route::middleware(['auth', 'throttle:90,1'])->prefix('notifications')->name('notifications.')->group(function (): void {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount'])->name('unread-count');
+        Route::get('/{notification}', [NotificationController::class, 'show'])->whereNumber('notification')->name('show');
+        Route::post('/{notification}/read', [NotificationController::class, 'markRead'])->whereNumber('notification')->name('read');
+        Route::post('/mark-all-read', [NotificationController::class, 'markAllRead'])->name('read-all');
+        Route::post('/{notification}/delete', [NotificationController::class, 'destroy'])->whereNumber('notification')->name('delete');
+        Route::post('/clear-all', [NotificationController::class, 'clearAll'])->name('clear-all');
+    });
+
     Route::post('cart/add', [MarketplaceController::class, 'cartAdd'])->name('cart.add');
     Route::post('cart/update', [MarketplaceController::class, 'cartUpdate'])->name('cart.update');
     Route::post('checkout', [MarketplaceController::class, 'checkout'])->name('checkout');
     Route::post('wishlist/toggle', [MarketplaceController::class, 'wishlistToggle'])->name('wishlist.toggle');
+    Route::post('buyer/payment-methods', [MarketplaceController::class, 'buyerPaymentMethodStore'])->name('buyer.payment-methods.store');
+    Route::post('buyer/payment-methods/{paymentMethod}', [MarketplaceController::class, 'buyerPaymentMethodUpdate'])->whereNumber('paymentMethod')->name('buyer.payment-methods.update');
+    Route::post('buyer/payment-methods/{paymentMethod}/default', [MarketplaceController::class, 'buyerPaymentMethodDefault'])->whereNumber('paymentMethod')->name('buyer.payment-methods.default');
+    Route::post('buyer/payment-methods/{paymentMethod}/delete', [MarketplaceController::class, 'buyerPaymentMethodDestroy'])->whereNumber('paymentMethod')->name('buyer.payment-methods.destroy');
+    Route::post('buyer/wallets/{wallet}/top-up', [MarketplaceController::class, 'buyerWalletTopUpStore'])->whereNumber('wallet')->name('buyer.wallets.top-up.store');
+    Route::post('buyer/password', [MarketplaceController::class, 'profilePasswordUpdate'])->name('buyer.password.update');
+    Route::post('buyer/profile-photo', [MarketplaceController::class, 'buyerProfilePhotoUpload'])->name('buyer.profile-photo.upload');
+    Route::post('buyer/notification-preferences', [MarketplaceController::class, 'buyerNotificationPreferencesUpdate'])->name('buyer.notification-preferences.update');
+    Route::post('buyer/addresses', [MarketplaceController::class, 'buyerAddressStore'])->name('buyer.addresses.store');
+    Route::post('buyer/addresses/{address}', [MarketplaceController::class, 'buyerAddressUpdate'])->whereNumber('address')->name('buyer.addresses.update');
+    Route::post('buyer/addresses/{address}/delete', [MarketplaceController::class, 'buyerAddressDestroy'])->whereNumber('address')->name('buyer.addresses.destroy');
     Route::post('seller/products', [MarketplaceController::class, 'sellerProductStore'])->name('seller.products.store');
+    Route::post('seller/products/{product}', [MarketplaceController::class, 'sellerProductUpdate'])->whereNumber('product')->name('seller.products.update');
+    Route::post('seller/products/{product}/duplicate', [MarketplaceController::class, 'sellerProductDuplicate'])->whereNumber('product')->name('seller.products.duplicate');
+    Route::post('seller/products/bulk', [MarketplaceController::class, 'sellerProductBulk'])->name('seller.products.bulk');
+    Route::post('seller/media/upload', [MarketplaceController::class, 'sellerMediaUpload'])->name('seller.media.upload');
     Route::post('seller/inventory/adjust', [MarketplaceController::class, 'inventoryAdjust'])->name('seller.inventory.adjust');
+    Route::post('seller/warehouses', [MarketplaceController::class, 'warehouseStore'])->name('seller.warehouses.store');
+    Route::post('seller/warehouses/{sellerWarehouse}/delete', [MarketplaceController::class, 'warehouseDestroy'])->whereNumber('sellerWarehouse')->name('seller.warehouses.destroy');
+    Route::post('seller/shipping-settings', [MarketplaceController::class, 'sellerShippingSettingsUpdate'])->name('seller.shipping-settings.update');
+    Route::post('seller/payout-methods', [MarketplaceController::class, 'payoutMethodStore'])->name('seller.payout-methods.store');
+    Route::post('seller/payout-methods/{payoutAccount}/delete', [MarketplaceController::class, 'payoutMethodDestroy'])->whereNumber('payoutAccount')->name('seller.payout-methods.destroy');
+    Route::post('seller/top-ups', [MarketplaceController::class, 'topUpRequestStore'])->name('seller.top-ups.store');
+    Route::post('seller/kyc/save', [MarketplaceController::class, 'sellerKycSave'])->middleware('throttle:20,1')->name('seller.kyc.save');
+    Route::post('seller/kyc/submit', [MarketplaceController::class, 'sellerKycSubmit'])->middleware('throttle:6,1')->name('seller.kyc.submit');
+    Route::post('seller/kyc/documents', [MarketplaceController::class, 'sellerKycDocumentUpload'])->middleware('throttle:30,1')->name('seller.kyc.documents.upload');
+    Route::get('seller/kyc/documents/{document}/preview', [MarketplaceController::class, 'sellerKycDocumentPreview'])->middleware('signed')->name('seller.kyc.documents.preview');
+    Route::get('support/attachments/{message}', [MarketplaceController::class, 'supportAttachmentPreview'])->whereNumber('message')->name('support.attachments.preview');
     Route::post('seller/coupons', [MarketplaceController::class, 'couponStore'])->name('seller.coupons.store');
+    Route::post('seller/coupons/{promotion}', [MarketplaceController::class, 'couponUpdate'])->whereNumber('promotion')->name('seller.coupons.update');
+    Route::post('seller/coupons/{promotion}/toggle', [MarketplaceController::class, 'couponToggle'])->whereNumber('promotion')->name('seller.coupons.toggle');
+    Route::post('seller/coupons/{promotion}/delete', [MarketplaceController::class, 'couponDestroy'])->whereNumber('promotion')->name('seller.coupons.destroy');
     Route::post('seller/payouts', [MarketplaceController::class, 'payoutRequestStore'])->name('seller.payouts.store');
     Route::post('support/messages', [MarketplaceController::class, 'supportMessageStore'])->name('support.messages.store');
+    Route::get('orders/{order}/escrow', [MarketplaceController::class, 'orderEscrowDetail'])->whereNumber('order')->name('orders.escrow.show');
+    Route::post('orders/{order}/escrow/release', [MarketplaceController::class, 'buyerOrderRelease'])->whereNumber('order')->name('orders.escrow.release');
+    Route::post('orders/{order}/escrow/dispute', [MarketplaceController::class, 'buyerOrderDisputeStore'])->whereNumber('order')->name('orders.escrow.dispute');
+    Route::post('orders/{order}/escrow/delivery', [MarketplaceController::class, 'sellerOrderDeliveryStore'])->whereNumber('order')->name('orders.escrow.delivery');
+    Route::post('orders/{order}/escrow/messages', [MarketplaceController::class, 'orderEscrowMessageStore'])->whereNumber('order')->name('orders.escrow.messages.store');
+    Route::post('orders/{order}/escrow/messages/read', [MarketplaceController::class, 'orderEscrowMessagesRead'])->whereNumber('order')->name('orders.escrow.messages.read');
+    Route::get('orders/delivery-files/{digitalDeliveryFile}/download', [MarketplaceController::class, 'deliveryFileDownload'])->middleware('signed')->whereNumber('digitalDeliveryFile')->name('orders.delivery-files.download');
+    Route::get('orders/message-attachments/{orderMessageAttachment}/download', [MarketplaceController::class, 'orderMessageAttachmentDownload'])->middleware('signed')->whereNumber('orderMessageAttachment')->name('orders.messages.attachments.download');
     Route::post('profile', [MarketplaceController::class, 'profileUpdate'])->name('profile.update');
     Route::post('business', [MarketplaceController::class, 'businessUpdate'])->name('business.update');
 });

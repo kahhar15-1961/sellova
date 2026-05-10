@@ -12,8 +12,17 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string|null $uuid
  * @property int $seller_profile_id
+ * @property int|null $submitted_by_user_id
  * @property string $status
+ * @property array|null $personal_info_encrypted
+ * @property array|null $business_info_encrypted
+ * @property array|null $bank_info_encrypted
+ * @property array|null $address_info_encrypted
  * @property string|null $provider_ref
+ * @property int|null $provider_id
+ * @property string|null $provider_session_id
+ * @property string|null $provider_session_url
+ * @property array|null $provider_result_json
  * @property int|null $assigned_to_user_id
  * @property Carbon|null $assigned_at
  * @property Carbon|null $sla_due_at
@@ -39,8 +48,18 @@ class KycVerification extends Model
     protected $fillable = [
         'uuid',
         'seller_profile_id',
+        'submitted_by_user_id',
         'status',
+        'personal_info_encrypted',
+        'business_info_encrypted',
+        'bank_info_encrypted',
+        'address_info_encrypted',
         'provider_ref',
+        'provider_id',
+        'provider_session_id',
+        'provider_session_url',
+        'provider_result_json',
+        'risk_level',
         'assigned_to_user_id',
         'assigned_at',
         'sla_due_at',
@@ -51,11 +70,19 @@ class KycVerification extends Model
         'reviewed_at',
         'rejection_reason',
         'submitted_at',
+        'expires_at',
     ];
 
     protected $casts = [
         'seller_profile_id' => 'integer',
+        'submitted_by_user_id' => 'integer',
         'status' => 'string',
+        'personal_info_encrypted' => 'encrypted:array',
+        'business_info_encrypted' => 'encrypted:array',
+        'bank_info_encrypted' => 'encrypted:array',
+        'address_info_encrypted' => 'encrypted:array',
+        'provider_id' => 'integer',
+        'provider_result_json' => 'array',
         'assigned_to_user_id' => 'integer',
         'assigned_at' => 'datetime',
         'sla_due_at' => 'datetime',
@@ -65,6 +92,7 @@ class KycVerification extends Model
         'reviewed_by' => 'integer',
         'reviewed_at' => 'datetime',
         'submitted_at' => 'datetime',
+        'expires_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -92,5 +120,10 @@ class KycVerification extends Model
     public function notes(): HasMany
     {
         return $this->hasMany(KycVerificationNote::class, 'kyc_verification_id');
+    }
+
+    public function statusHistories(): HasMany
+    {
+        return $this->hasMany(KycStatusHistory::class, 'kyc_verification_id');
     }
 }

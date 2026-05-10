@@ -43,9 +43,8 @@ class _SellerAddProductTypeScreenState
               style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
           _tile('Physical Product', 'physical'),
-          _tile('Instant Delivery', 'instant_delivery'),
           _tile('Digital Product', 'digital'),
-          _tile('Manual / Custom Delivery', 'manual_delivery'),
+          _tile('Service', 'service'),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () => context.push('/seller/products/add?type=$_type'),

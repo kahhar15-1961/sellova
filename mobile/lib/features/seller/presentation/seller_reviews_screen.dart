@@ -8,23 +8,47 @@ import 'seller_feedback_widgets.dart';
 import 'seller_scaffold.dart';
 import 'seller_ui.dart';
 
-class SellerReviewsScreen extends ConsumerWidget {
+class SellerReviewsScreen extends ConsumerStatefulWidget {
   const SellerReviewsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SellerReviewsScreen> createState() =>
+      _SellerReviewsScreenState();
+}
+
+class _SellerReviewsScreenState extends ConsumerState<SellerReviewsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  int? _ratingFilter;
+  int _visibleCount = 5;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final reviews = ref.watch(sellerReviewsProvider);
-    final positive = reviews.where((e) => e.rating >= 4).length;
-    final negative = reviews.where((e) => e.rating <= 2).length;
     final total = reviews.length;
     final average =
         total == 0 ? 0.0 : reviews.fold<int>(0, (s, e) => s + e.rating) / total;
-    final filtered = reviews;
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = reviews.where((review) {
+      final matchesQuery = query.isEmpty ||
+          review.productName.toLowerCase().contains(query) ||
+          review.buyerName.toLowerCase().contains(query) ||
+          review.comment.toLowerCase().contains(query);
+      final matchesRating =
+          _ratingFilter == null || review.rating == _ratingFilter;
+      return matchesQuery && matchesRating;
+    }).toList();
+    final visible = filtered.take(_visibleCount).toList();
 
     return SellerScaffold(
       selectedNavIndex: 4,
       appBar: AppBar(
-        title: const Text('Reviews'),
+        title: const Text('Vendor Reputation'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => context.pop(),
@@ -40,86 +64,53 @@ class SellerReviewsScreen extends ConsumerWidget {
       body: RefreshIndicator(
         onRefresh: () => ref.read(sellerReviewsProvider.notifier).refresh(),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 22),
           children: <Widget>[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: kSellerPrimaryGradient,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: <BoxShadow>[sellerGradientShadow(alpha: 0.16)],
-              ),
-              child: Row(
-                children: <Widget>[
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(Icons.star_rounded,
-                        color: Colors.white, size: 30),
+            Text(
+              'Verified reviews from completed escrow transactions.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: kSellerMuted,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          average.toStringAsFixed(1),
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
-                        Text(
-                          '$total reviews',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.82)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(
-                    child: _MiniStat(label: 'Positive', value: '$positive')),
-                const SizedBox(width: 10),
-                Expanded(
-                    child: _MiniStat(label: 'Negative', value: '$negative')),
-              ],
+            _ScoreCard(reviews: reviews, average: average),
+            const SizedBox(height: 12),
+            _ReviewToolbar(
+              controller: _searchController,
+              ratingFilter: _ratingFilter,
+              onChanged: () => setState(() => _visibleCount = 5),
+              onRatingChanged: (value) {
+                setState(() {
+                  _ratingFilter = value;
+                  _visibleCount = 5;
+                });
+              },
             ),
-            const SizedBox(height: 14),
-            Text('Recent reviews',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900)),
             const SizedBox(height: 10),
-            if (filtered.isEmpty)
+            if (visible.isEmpty)
               const SellerEmptyState(
                 title: 'No reviews yet',
-                subtitle: 'Buyer reviews will appear here.',
+                subtitle: 'Verified buyer reviews will appear here.',
               )
             else
-              ...filtered.map(
-                (review) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ReviewCard(
-                    review: review,
-                    onTap: () => context.push('/seller/reviews/${review.id}'),
+              ...visible.asMap().entries.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _ReviewCard(
+                        review: entry.value,
+                        highlighted: entry.key == 3,
+                        onTap: () =>
+                            context.push('/seller/reviews/${entry.value.id}'),
+                      ),
+                    ),
                   ),
+            if (filtered.length > visible.length)
+              TextButton(
+                onPressed: () => setState(() => _visibleCount += 5),
+                child: const Text(
+                  'Load More Reviews',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
           ],
@@ -133,10 +124,12 @@ class _ReviewCard extends StatelessWidget {
   const _ReviewCard({
     required this.review,
     required this.onTap,
+    required this.highlighted,
   });
 
   final SellerReview review;
   final VoidCallback onTap;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -145,72 +138,166 @@ class _ReviewCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         child: Ink(
           padding: const EdgeInsets.all(14),
-          decoration: sellerCardDecoration(cs),
+          decoration: BoxDecoration(
+            color: highlighted ? const Color(0xFFF8FAFC) : cs.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE5EAF2)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const CircleAvatar(child: Icon(Icons.person_rounded)),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(review.buyerName,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 2),
                         Text(review.productName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: kSellerMuted)),
+                            style: TextStyle(
+                              color: highlighted
+                                  ? kSellerAccent
+                                  : const Color(0xFF0F172A),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            )),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            Text(review.buyerName,
+                                style: const TextStyle(
+                                    color: Color(0xFF334155),
+                                    fontWeight: FontWeight.w700)),
+                            const Text('•',
+                                style: TextStyle(color: Color(0xFFCBD5E1))),
+                            Text(sellerShortDate(review.date),
+                                style: const TextStyle(
+                                    color: Color(0xFF64748B),
+                                    fontWeight: FontWeight.w700)),
+                            if (review.isVerifiedBuyer) const _VerifiedBadge(),
+                          ],
+                        ),
                       ],
                     ),
                   ),
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF5),
-                      borderRadius: BorderRadius.circular(999),
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
                     ),
-                    child: Text(
-                      '${review.rating.toStringAsFixed(1)} ★',
-                      style: const TextStyle(
-                          color: Color(0xFF15803D),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFFF59E0B), size: 16),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${review.rating}',
+                          style: const TextStyle(
+                              color: Color(0xFFD97706),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Text(review.comment,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
+              Text(
+                review.comment.isEmpty ? 'No written comment.' : review.comment,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF334155),
+                      height: 1.35,
+                    ),
+              ),
+              if ((review.sellerReply ?? '').isNotEmpty) ...<Widget>[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Seller reply: ',
+                      style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w900),
+                      children: <InlineSpan>[
+                        TextSpan(
+                          text: review.sellerReply,
+                          style: const TextStyle(
+                              color: Color(0xFF475569),
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 11),
               Row(
                 children: <Widget>[
-                  Text(review.orderNumber,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: kSellerMuted)),
-                  const Spacer(),
-                  if (review.sellerReply != null)
-                    const Chip(
-                      label: Text('Replied'),
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: Color(0xFFF0FDF4),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: highlighted
+                          ? const Color(0xFFEEF2FF)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(999),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.thumb_up_alt_outlined,
+                            color: highlighted
+                                ? kSellerAccent
+                                : const Color(0xFF64748B),
+                            size: 15),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Helpful (${review.helpfulCount})',
+                          style: TextStyle(
+                            color: highlighted
+                                ? kSellerAccent
+                                : const Color(0xFF64748B),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  if ((review.sellerReply ?? '').isNotEmpty)
+                    const Text('Replied',
+                        style: TextStyle(
+                            color: Color(0xFF059669),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12)),
                 ],
               ),
             ],
@@ -221,14 +308,133 @@ class _ReviewCard extends StatelessWidget {
   }
 }
 
-class _MiniStat extends StatelessWidget {
-  const _MiniStat({
-    required this.label,
-    required this.value,
+class _ScoreCard extends StatelessWidget {
+  const _ScoreCard({required this.reviews, required this.average});
+
+  final List<SellerReview> reviews;
+  final double average;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = reviews.length;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.star_rounded,
+                    color: kSellerAccent, size: 21),
+              ),
+              const SizedBox(width: 10),
+              const Text('Review Score',
+                  style: TextStyle(
+                      color: Color(0xFF0F172A),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17)),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Text(average.toStringAsFixed(1),
+              style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 54,
+                  height: 0.95,
+                  fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              _Stars(rating: average),
+              const SizedBox(width: 8),
+              Text('Based on $total reviews',
+                  style: const TextStyle(
+                      color: Color(0xFF64748B), fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ...<int>[5, 4, 3, 2, 1].map((rating) {
+            final count = reviews.where((r) => r.rating == rating).length;
+            final progress = total == 0 ? 0.0 : count / total;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 34,
+                    child: Row(
+                      children: <Widget>[
+                        Text('$rating',
+                            style: const TextStyle(
+                                color: Color(0xFF475569),
+                                fontWeight: FontWeight.w900)),
+                        const Icon(Icons.star_rounded,
+                            color: Color(0xFF475569), size: 13),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 7,
+                        backgroundColor: const Color(0xFFF1F5F9),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFFBBF24)),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 28,
+                    child: Text('$count',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12)),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewToolbar extends StatelessWidget {
+  const _ReviewToolbar({
+    required this.controller,
+    required this.ratingFilter,
+    required this.onChanged,
+    required this.onRatingChanged,
   });
 
-  final String label;
-  final String value;
+  final TextEditingController controller;
+  final int? ratingFilter;
+  final VoidCallback onChanged;
+  final ValueChanged<int?> onRatingChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -237,22 +443,129 @@ class _MiniStat extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(label,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: kSellerMuted, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(value,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900)),
+          Row(
+            children: <Widget>[
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.chat_bubble_outline_rounded,
+                    color: Color(0xFF059669)),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('All Reviews',
+                    style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17)),
+              ),
+              PopupMenuButton<int?>(
+                tooltip: 'Filter',
+                initialValue: ratingFilter,
+                onSelected: onRatingChanged,
+                itemBuilder: (context) => <PopupMenuEntry<int?>>[
+                  const PopupMenuItem<int?>(value: null, child: Text('All')),
+                  ...<int>[5, 4, 3, 2, 1].map(
+                    (rating) => PopupMenuItem<int?>(
+                      value: rating,
+                      child: Text('$rating Star'),
+                    ),
+                  ),
+                ],
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(Icons.tune_rounded, size: 18),
+                      const SizedBox(width: 6),
+                      Text(ratingFilter == null ? 'Filter' : '$ratingFilter'),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            onChanged: (_) => onChanged(),
+            decoration: InputDecoration(
+              hintText: 'Search reviews...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Stars extends StatelessWidget {
+  const _Stars({required this.rating});
+
+  final double rating;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List<Widget>.generate(5, (index) {
+        final filled = index < rating.round();
+        return Icon(Icons.star_rounded,
+            color: filled ? const Color(0xFFFBBF24) : const Color(0xFFE2E8F0),
+            size: 18);
+      }),
+    );
+  }
+}
+
+class _VerifiedBadge extends StatelessWidget {
+  const _VerifiedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.check_circle_outline_rounded,
+              color: Color(0xFF059669), size: 13),
+          SizedBox(width: 3),
+          Text('Verified',
+              style: TextStyle(
+                  color: Color(0xFF059669),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12)),
         ],
       ),
     );

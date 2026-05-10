@@ -20,6 +20,7 @@ use App\Models\Wallet;
  * @property string $requested_amount
  * @property string|null $payment_method
  * @property string|null $payment_reference
+ * @property string|null $payment_proof_url
  * @property string|null $currency
  * @property int|null $reviewed_by_user_id
  * @property Carbon|null $reviewed_at
@@ -43,6 +44,7 @@ class WalletTopUpRequest extends Model
         'requested_amount',
         'payment_method',
         'payment_reference',
+        'payment_proof_url',
         'currency',
         'reviewed_by_user_id',
         'reviewed_at',

@@ -10,6 +10,8 @@ use App\Models\AuditLog;
 use App\Models\KycDocument;
 use App\Models\KycVerification;
 use App\Models\KycVerificationNote;
+use App\Models\KycStatusHistory;
+use App\Models\KycVerificationLog;
 use App\Models\User;
 use App\Services\Audit\AuditLogWriter;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -172,6 +174,43 @@ final class SellerVerificationReadService
             ->values()
             ->all();
 
+        $statusHistory = class_exists(KycStatusHistory::class)
+            ? KycStatusHistory::query()
+                ->where('kyc_verification_id', $kyc->id)
+                ->latest('id')
+                ->limit(40)
+                ->get()
+                ->map(static fn (KycStatusHistory $row): array => [
+                    'id' => $row->id,
+                    'from_status' => $row->from_status,
+                    'to_status' => $row->to_status,
+                    'reason_code' => $row->reason_code,
+                    'note' => $row->note,
+                    'created_at' => $row->created_at?->toIso8601String(),
+                ])
+                ->values()
+                ->all()
+            : [];
+
+        $providerLogs = class_exists(KycVerificationLog::class)
+            ? KycVerificationLog::query()
+                ->where('kyc_verification_id', $kyc->id)
+                ->latest('id')
+                ->limit(30)
+                ->get()
+                ->map(static fn (KycVerificationLog $log): array => [
+                    'id' => $log->id,
+                    'direction' => $log->direction,
+                    'event_type' => $log->event_type,
+                    'signature_status' => $log->signature_status,
+                    'payload_json' => $log->payload_json,
+                    'response_json' => $log->response_json,
+                    'created_at' => $log->created_at?->toIso8601String(),
+                ])
+                ->values()
+                ->all()
+            : [];
+
         $reviewerEmail = null;
         $reviewedById = $kyc->getAttribute('reviewed_by');
         if ($reviewedById !== null && (int) $reviewedById > 0) {
@@ -185,13 +224,17 @@ final class SellerVerificationReadService
             'flags' => [
                 'can_claim' => $canVerify && $status === 'submitted',
                 'can_review' => $canVerify && in_array($status, ['submitted', 'under_review'], true),
-                'is_terminal' => in_array($status, ['approved', 'rejected', 'expired'], true),
+                'is_terminal' => in_array($status, ['approved', 'verified', 'rejected', 'expired', 'resubmission_required'], true),
             ],
             'kyc' => [
                 'id' => $kyc->id,
                 'uuid' => $kyc->uuid,
                 'status' => $kyc->status,
                 'provider_ref' => $kyc->provider_ref,
+                'provider_session_id' => $kyc->provider_session_id ?? null,
+                'provider_session_url' => $kyc->provider_session_url ?? null,
+                'provider_result_json' => $kyc->provider_result_json ?? null,
+                'risk_level' => $kyc->risk_level ?? null,
                 'assigned_to_user_id' => $kyc->assigned_to_user_id,
                 'assigned_at' => $kyc->assigned_at?->toIso8601String(),
                 'assigned_to_email' => $kyc->assigned_to_user?->email,
@@ -222,6 +265,8 @@ final class SellerVerificationReadService
             'documents' => $documents,
             'notes' => $notes,
             'history' => $history,
+            'status_history' => $statusHistory,
+            'provider_logs' => $providerLogs,
             'reviewers' => $this->reviewers(),
             'document_insights' => $this->documentInsights($kyc),
             'routes' => [

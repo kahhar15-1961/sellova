@@ -28,8 +28,9 @@ function fmtDate(iso) {
 
 function ProductTypeBadge({ type, label, hint }) {
     const normalized = String(type || '').toLowerCase();
-    const Icon = normalized === 'physical' ? Truck : normalized === 'instant_delivery' ? Zap : normalized === 'service' ? Package : Download;
-    const variant = normalized === 'physical' ? 'outline' : normalized === 'digital' || normalized === 'instant_delivery' ? 'success' : 'secondary';
+    const isInstantDelivery = String(label || '').toLowerCase().includes('instant');
+    const Icon = normalized === 'physical' ? Truck : isInstantDelivery ? Zap : normalized === 'service' ? Package : Download;
+    const variant = normalized === 'physical' ? 'outline' : normalized === 'digital' ? 'success' : 'secondary';
 
     return (
         <div className="flex min-w-40 items-center gap-2">
@@ -59,7 +60,8 @@ export default function ProductsIndex({
     seller_options,
     category_options,
     status_options,
-    type_options,
+    create_type_options,
+    filter_type_options,
     summary,
     bulk_moderate_url,
 }) {
@@ -71,6 +73,8 @@ export default function ProductsIndex({
     const [discountValue, setDiscountValue] = useState('10');
     const [discountLabel, setDiscountLabel] = useState('Birthday offer');
     const [selectAllFiltered, setSelectAllFiltered] = useState(false);
+    const [createProductType, setCreateProductType] = useState('physical');
+    const [createInstantDelivery, setCreateInstantDelivery] = useState(false);
     const visibleIds = useMemo(() => rows.map((r) => Number(r.row_id)).filter(Boolean), [rows]);
     const allChecked = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
     const tableRows = useMemo(
@@ -212,8 +216,38 @@ export default function ProductsIndex({
                                     <EnterpriseSelect name="category_id" required placeholder="Choose category" options={category_options || []} />
                                 </Field>
                                 <Field label="Fulfillment" required>
-                                    <EnterpriseSelect name="product_type" required defaultValue="physical" placeholder={null} options={type_options || []} />
+                                    <EnterpriseSelect
+                                        name="product_type"
+                                        required
+                                        value={createProductType}
+                                        onChange={(e) => {
+                                            const nextType = e.target.value;
+                                            setCreateProductType(nextType);
+                                            if (nextType !== 'digital') {
+                                                setCreateInstantDelivery(false);
+                                            }
+                                        }}
+                                        placeholder={null}
+                                        options={create_type_options || []}
+                                    />
                                 </Field>
+                                {createProductType === 'digital' ? (
+                                    <Field label="Digital fulfillment" className="xl:col-span-2">
+                                        <input type="hidden" name="is_instant_delivery" value="0" />
+                                        <label className="flex min-h-11 items-center gap-3 rounded-md border border-border/70 bg-muted/20 px-3 text-sm font-medium text-foreground">
+                                            <input
+                                                type="checkbox"
+                                                name="is_instant_delivery"
+                                                value="1"
+                                                checked={createInstantDelivery}
+                                                onChange={(e) => setCreateInstantDelivery(e.target.checked)}
+                                            />
+                                            Instant delivery
+                                        </label>
+                                    </Field>
+                                ) : (
+                                    <input type="hidden" name="is_instant_delivery" value="0" />
+                                )}
                                 <Field label="Title" required className="xl:col-span-2">
                                 <Input name="title" required placeholder="Professional product title" />
                                 </Field>
@@ -327,7 +361,7 @@ export default function ProductsIndex({
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All types</SelectItem>
-                                {(type_options || []).map((o) => (
+                                {(filter_type_options || []).map((o) => (
                                     <SelectItem key={o.value} value={o.value}>
                                         {o.label}
                                     </SelectItem>

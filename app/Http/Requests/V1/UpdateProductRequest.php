@@ -35,6 +35,13 @@ final class UpdateProductRequest extends AbstractValidatedRequest
         $imageUrl = array_key_exists('image_url', $payload)
             ? trim((string) $payload['image_url'])
             : (array_key_exists('images', $payload) ? ($imageUrls[0] ?? null) : ($product->image_url ?? null));
+        $productType = array_key_exists('product_type', $payload)
+            ? StoreProductRequest::normalizeProductType((string) $payload['product_type'])
+            : StoreProductRequest::normalizeProductType((string) $product->product_type);
+        $existingAttributes = is_array($product->attributes_json) ? $product->attributes_json : [];
+        $isInstantDelivery = array_key_exists('is_instant_delivery', $payload)
+            ? $payload['is_instant_delivery']
+            : ($existingAttributes['is_instant_delivery'] ?? in_array(strtolower((string) $product->product_type), ['instant_delivery', 'instant'], true));
 
         return new UpdateProductCommand(
             productId: $product->id,
@@ -42,7 +49,7 @@ final class UpdateProductRequest extends AbstractValidatedRequest
             draft: new ProductDraft(
                 storefrontId: (int) $product->storefront_id,
                 categoryId: (int) ($payload['category_id'] ?? $product->category_id),
-                productType: (string) ($payload['product_type'] ?? $product->product_type),
+                productType: $productType,
                 title: (string) ($payload['title'] ?? $product->title ?? ''),
                 description: array_key_exists('description', $payload) ? (string) $payload['description'] : $product->description,
                 basePrice: (string) ($payload['base_price'] ?? $product->base_price),
@@ -54,8 +61,8 @@ final class UpdateProductRequest extends AbstractValidatedRequest
                 imageUrl: $imageUrl,
                 imageUrls: $imageUrls,
                 attributes: array_key_exists('attributes', $payload)
-                    ? StoreProductRequest::normalizeAttributes($payload['attributes'])
-                    : ($product->attributes_json ?? []),
+                    ? StoreProductRequest::normalizeAttributes($payload['attributes'], $productType, $isInstantDelivery)
+                    : StoreProductRequest::normalizeAttributes($existingAttributes, $productType, $isInstantDelivery),
             ),
         );
     }
@@ -77,6 +84,7 @@ final class UpdateProductRequest extends AbstractValidatedRequest
                 'image_url' => new Optional([new Type('string')]),
                 'images' => new Optional([new Type('array')]),
                 'attributes' => new Optional([new Type('array')]),
+                'is_instant_delivery' => new Optional([new Type('bool')]),
             ],
             'allowMissingFields' => true,
             'allowExtraFields' => false,

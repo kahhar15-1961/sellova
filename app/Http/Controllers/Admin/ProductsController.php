@@ -16,6 +16,7 @@ use App\Services\Product\ProductService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -75,7 +76,12 @@ final class ProductsController extends AdminPageController
             'status_options' => collect(['draft', 'active', 'inactive', 'archived', 'published'])
                 ->map(static fn (string $s): array => ['value' => $s, 'label' => ucfirst($s)])
                 ->all(),
-            'type_options' => [
+            'create_type_options' => [
+                ['value' => 'physical', 'label' => 'Physical'],
+                ['value' => 'digital', 'label' => 'Digital'],
+                ['value' => 'service', 'label' => 'Service'],
+            ],
+            'filter_type_options' => [
                 ['value' => 'physical', 'label' => 'Physical'],
                 ['value' => 'digital', 'label' => 'Digital'],
                 ['value' => 'instant_delivery', 'label' => 'Instant delivery'],
@@ -89,7 +95,9 @@ final class ProductsController extends AdminPageController
         $data = $request->validate([
             'seller_profile_id' => ['required', 'integer', 'min:1', 'exists:seller_profiles,id'],
             'category_id' => ['required', 'integer', 'min:1', 'exists:categories,id'],
-            'product_type' => ['required', 'string', 'in:physical,digital,instant_delivery,service'],
+            'product_type' => ['required', 'string', 'in:physical,digital,service'],
+            'is_instant_delivery' => ['nullable', 'boolean'],
+            'instant_delivery_expiration_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'base_price' => ['required', 'numeric', 'min:0'],
@@ -122,12 +130,17 @@ final class ProductsController extends AdminPageController
         }
 
         $images = array_values(array_unique(array_filter($images)));
+        $productType = (string) $data['product_type'];
+        $isInstantDelivery = $productType === 'digital'
+            && filter_var($data['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL);
         $attributes = array_filter([
             'brand' => $data['brand'] ?? null,
             'condition' => $data['condition'] ?? null,
             'warranty_status' => $data['warranty_status'] ?? null,
             'product_location' => $data['product_location'] ?? null,
             'tags' => $this->tags($data['tags'] ?? ''),
+            'is_instant_delivery' => $productType === 'digital' ? $isInstantDelivery : null,
+            'instant_delivery_expiration_hours' => $isInstantDelivery ? (int) ($data['instant_delivery_expiration_hours'] ?? 72) : null,
         ], static fn ($value): bool => $value !== null && $value !== '' && $value !== []);
 
         $result = $this->products->createProduct(new CreateProductCommand(
@@ -135,7 +148,7 @@ final class ProductsController extends AdminPageController
             draft: new ProductDraft(
                 storefrontId: (int) ($seller->storefront?->id ?? 0),
                 categoryId: (int) $data['category_id'],
-                productType: (string) $data['product_type'],
+                productType: $productType,
                 title: (string) $data['title'],
                 description: isset($data['description']) ? (string) $data['description'] : null,
                 basePrice: (string) $data['base_price'],
@@ -191,7 +204,7 @@ final class ProductsController extends AdminPageController
                 $query->where('status', $fStatus);
             }
             if ($fType !== '') {
-                $query->where('product_type', $fType);
+                $this->applyProductTypeFilter($query, $fType);
             }
             if ($fq !== '') {
                 $query->where(static function ($w) use ($fq): void {
@@ -257,5 +270,48 @@ final class ProductsController extends AdminPageController
         Storage::disk('local')->putFileAs($relativeDir, $file, $safeName);
 
         return $relativeDir.'/'.$safeName;
+    }
+
+    private function applyProductTypeFilter(Builder $query, string $type): void
+    {
+        $normalized = strtolower(trim($type));
+
+        if ($normalized === 'instant_delivery') {
+            $query->where(static function (Builder $builder): void {
+                $builder->where('product_type', 'instant_delivery')
+                    ->orWhere(static function (Builder $digital): void {
+                        $digital->where('product_type', 'digital')
+                            ->where(static function (Builder $flags): void {
+                                $flags->where('attributes_json', 'like', '%"is_instant_delivery":true%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":"1"%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":1%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_mode":"instant"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant_delivery"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant"%');
+                            });
+                    });
+            });
+
+            return;
+        }
+
+        if ($normalized === 'digital') {
+            $query->where('product_type', 'digital')
+                ->where(static function (Builder $builder): void {
+                    $builder->whereNull('attributes_json')
+                        ->orWhere(static function (Builder $flags): void {
+                            $flags->where('attributes_json', 'not like', '%"is_instant_delivery":true%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":"1"%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":1%')
+                                ->where('attributes_json', 'not like', '%"delivery_mode":"instant"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant_delivery"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant"%');
+                        });
+                });
+
+            return;
+        }
+
+        $query->where('product_type', $normalized);
     }
 }

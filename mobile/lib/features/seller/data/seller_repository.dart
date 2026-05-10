@@ -91,11 +91,13 @@ class SellerRepository {
     required String category,
     required String description,
     required String productType,
+    bool isInstantDelivery = false,
     String? imageUrl,
     List<String> imageUrls = const <String>[],
     Map<String, dynamic> attributes = const <String, dynamic>{},
   }) async {
     final categoryId = await _resolveCategoryId(category);
+    final normalizedProductType = _normalizeProductType(productType);
     await _apiClient.post('/api/v1/seller/products', data: <String, dynamic>{
       'title': title,
       'currency': 'BDT',
@@ -103,8 +105,14 @@ class SellerRepository {
       'stock': stock,
       'category_id': categoryId,
       'description': description,
-      'product_type': _normalizeProductType(productType),
-      'attributes': attributes,
+      'product_type': normalizedProductType,
+      'is_instant_delivery':
+          normalizedProductType == 'digital' && isInstantDelivery,
+      'attributes': <String, dynamic>{
+        ...attributes,
+        if (normalizedProductType == 'digital')
+          'is_instant_delivery': isInstantDelivery,
+      },
       if ((imageUrl ?? '').trim().isNotEmpty) 'image_url': imageUrl!.trim(),
       if (imageUrls.isNotEmpty) 'images': imageUrls,
     });
@@ -119,11 +127,13 @@ class SellerRepository {
     required String description,
     required String status,
     required String productType,
+    bool isInstantDelivery = false,
     String? imageUrl,
     List<String> imageUrls = const <String>[],
     Map<String, dynamic> attributes = const <String, dynamic>{},
   }) async {
     final categoryId = await _resolveCategoryId(category);
+    final normalizedProductType = _normalizeProductType(productType);
     await _apiClient
         .patch('/api/v1/seller/products/$productId', data: <String, dynamic>{
       'title': title,
@@ -132,8 +142,14 @@ class SellerRepository {
       'stock': stock,
       'category_id': categoryId,
       'description': description,
-      'product_type': _normalizeProductType(productType),
-      'attributes': attributes,
+      'product_type': normalizedProductType,
+      'is_instant_delivery':
+          normalizedProductType == 'digital' && isInstantDelivery,
+      'attributes': <String, dynamic>{
+        ...attributes,
+        if (normalizedProductType == 'digital')
+          'is_instant_delivery': isInstantDelivery,
+      },
       if ((imageUrl ?? '').trim().isNotEmpty) 'image_url': imageUrl!.trim(),
       'images': imageUrls,
     });
@@ -402,15 +418,16 @@ class SellerRepository {
 
   String _normalizeProductType(String productType) {
     final normalized = productType.trim().toLowerCase();
-    if (normalized == 'manual') {
-      return 'manual_delivery';
+    if (normalized == 'manual' ||
+        normalized == 'manual_delivery' ||
+        normalized == 'manual-delivery' ||
+        normalized == 'service') {
+      return 'service';
     }
     if (normalized == 'instant' ||
         normalized == 'instant_delivery' ||
-        normalized == 'instant-delivery') {
-      return 'instant_delivery';
-    }
-    if (normalized == 'digital') {
+        normalized == 'instant-delivery' ||
+        normalized == 'digital') {
       return 'digital';
     }
     return 'physical';
@@ -620,6 +637,9 @@ SellerReview _mapSellerReview(Map<String, dynamic> raw) {
     orderNumber: (raw['order_number'] ?? raw['order_no'] ?? '').toString(),
     photoUrls: photoUrls(raw['photo_urls']),
     isVerifiedBuyer: (raw['is_verified_buyer'] as bool?) ?? true,
+    helpfulCount: (raw['helpful_count'] as num?)?.toInt() ??
+        int.tryParse('${raw['helpful_count']}') ??
+        0,
     sellerReply: raw['seller_reply']?.toString(),
     sellerReplyDate:
         DateTime.tryParse((raw['seller_reply_date'] ?? '').toString())

@@ -50,6 +50,8 @@ use App\Policies\OrderPolicy;
 use App\Domain\Value\LedgerPostingLine;
 use App\Services\Escrow\EscrowService;
 use App\Services\Escrow\EscrowReleaseService;
+use App\Services\Notification\NotificationService;
+use App\Services\Order\OrderMessageService;
 use App\Services\PaymentGateway\PaymentGatewayService;
 use App\Services\Promotion\PromotionService;
 use App\Services\Support\FinancialCritical;
@@ -78,6 +80,8 @@ class OrderService
     private readonly FulfillmentService $fulfillmentService;
     private readonly EscrowReleaseService $escrowReleaseService;
     private readonly OrderTimeoutSnapshotService $timeoutSnapshots;
+    private readonly NotificationService $notificationService;
+    private readonly OrderMessageService $orderMessageService;
 
     public function __construct(
         ?WalletLedgerService $walletLedgerService = null,
@@ -92,6 +96,8 @@ class OrderService
         $this->fulfillmentService = new FulfillmentService($this->stateMachine);
         $this->escrowReleaseService = new EscrowReleaseService($this->escrowService);
         $this->timeoutSnapshots = new OrderTimeoutSnapshotService();
+        $this->notificationService = new NotificationService();
+        $this->orderMessageService = new OrderMessageService();
     }
 
     public function createOrder(CreateOrderCommand $command): array
@@ -656,6 +662,17 @@ class OrderService
                 $order,
                 Product::query()->whereKey((int) ($order->primary_product_id ?? 0))->first(),
             );
+            $order->refresh();
+            $order->escrow_status = 'held';
+            $order->escrow_amount = (string) $order->net_amount;
+            $order->escrow_fee = (string) ($order->escrow_fee ?? '0.0000');
+            $order->escrow_started_at = $order->escrowAccount?->held_at ?? now();
+            $order->escrow_expires_at = $order->buyer_review_expires_at;
+            $order->escrow_auto_release_at = $order->auto_release_at;
+            $order->dispute_deadline_at = $order->buyer_review_expires_at;
+            $order->delivery_deadline_at = $order->seller_deadline_at;
+            $order->delivery_status = 'preparing';
+            $order->save();
 
             $this->recordOrderStateTransition(
                 order: $order,
@@ -667,6 +684,7 @@ class OrderService
             );
 
             $this->notifySellerEscrowFunded($order);
+            $this->orderMessageService->sendSystemNotice($order->fresh(), 'Order funds secured in escrow.', 'escrow_secured');
 
             $escrow = EscrowAccount::query()->where('order_id', $order->id)->firstOrFail();
 
@@ -1161,6 +1179,12 @@ class OrderService
             if ($this->hasOrderColumn('delivered_at') && $order->delivered_at === null) {
                 $order->delivered_at = now();
             }
+            $order->buyer_confirmed_at = $order->buyer_confirmed_at ?? now();
+            $order->delivery_status = 'accepted';
+            $order->escrow_status = 'released';
+            $order->escrow_released_at = now();
+            $order->escrow_release_method = $order->escrow_release_method
+                ?: (str_contains((string) ($command->correlationId ?? ''), 'timeout:auto_release:') ? 'auto_release' : 'buyer_release');
             $order->save();
 
             $order->loadMissing('orderItems');
@@ -1179,6 +1203,32 @@ class OrderService
                 actorUserId: $command->actorUserId,
                 correlationId: $command->correlationId ?? (string) Str::uuid(),
             );
+
+            if ((int) ($order->seller_user_id ?? 0) > 0) {
+                $this->notificationService->notify(
+                    userId: (int) $order->seller_user_id,
+                    template: 'escrow.order.released_seller',
+                    title: 'Funds released',
+                    body: 'Escrow funds were released for order '.($order->order_number ?? '#'.$order->id).'.',
+                    payload: [
+                        'order_id' => (int) $order->id,
+                        'order_number' => (string) ($order->order_number ?? $order->id),
+                        'escrow_status' => 'released',
+                    ],
+                );
+            }
+            $this->notificationService->notify(
+                userId: (int) $order->buyer_user_id,
+                template: 'escrow.order.released_buyer',
+                title: 'Order completed',
+                body: 'You released escrow funds for order '.($order->order_number ?? '#'.$order->id).'.',
+                payload: [
+                    'order_id' => (int) $order->id,
+                    'order_number' => (string) ($order->order_number ?? $order->id),
+                    'escrow_status' => 'released',
+                ],
+            );
+            $this->orderMessageService->sendSystemNotice($order->fresh(), 'Escrow funds released to the seller.', 'escrow_released');
 
             return [
                 'order_id' => $order->id,
@@ -1211,6 +1261,7 @@ class OrderService
 
             $from = $order->status;
             $order->status = OrderStatus::Disputed;
+            $order->escrow_status = 'disputed';
             $order->save();
 
             $this->recordOrderStateTransition(

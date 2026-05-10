@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DisputeController;
+use App\Http\Controllers\Api\V1\EscrowOrderController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PromotionAdminController;
 use App\Http\Controllers\Api\V1\PromoCodeController;
@@ -54,6 +55,7 @@ final class ApiRouteRegistrar
         self::categoryRoutes($routes, $app);
         self::productRoutes($routes, $app);
         self::orderRoutes($routes, $app);
+        self::escrowOrderRoutes($routes, $app);
         self::disputeRoutes($routes, $app);
         self::withdrawalRoutes($routes, $app);
         self::paymentGatewayRoutes($routes, $app);
@@ -247,6 +249,15 @@ final class ApiRouteRegistrar
             '',
             [],
             ['GET'],
+        ));
+        $routes->add('api.v1.seller.reviews.reply', new Route(
+            '/api/v1/seller/reviews/{reviewId}/reply',
+            ['_controller' => $c->replyToSellerReview(...), '_auth' => true],
+            [],
+            [],
+            '',
+            [],
+            ['POST'],
         ));
         $routes->add('api.v1.me.payment_methods.index', new Route(
             '/api/v1/me/payment-methods',
@@ -1075,6 +1086,110 @@ final class ApiRouteRegistrar
             '',
             [],
             ['POST'],
+        ));
+    }
+
+    private static function escrowOrderRoutes(RouteCollection $routes, AppServices $app): void
+    {
+        $c = new EscrowOrderController($app);
+        $routes->add('api.v1.orders.escrow.show', new Route(
+            '/api/v1/orders/{orderId}/escrow',
+            ['_controller' => $c->show(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.escrow.countdown', new Route(
+            '/api/v1/orders/{orderId}/escrow/countdown',
+            ['_controller' => $c->countdown(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.escrow.release', new Route(
+            '/api/v1/orders/{orderId}/escrow/release',
+            ['_controller' => $c->release(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.escrow.dispute', new Route(
+            '/api/v1/orders/{orderId}/escrow/dispute',
+            ['_controller' => $c->openDispute(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.escrow.delivery', new Route(
+            '/api/v1/orders/{orderId}/escrow/delivery',
+            ['_controller' => $c->submitDelivery(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.escrow.messages.index', new Route(
+            '/api/v1/orders/{orderId}/escrow/messages',
+            ['_controller' => $c->messages(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.escrow.messages.store', new Route(
+            '/api/v1/orders/{orderId}/escrow/messages',
+            ['_controller' => $c->sendMessage(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.escrow.messages.read', new Route(
+            '/api/v1/orders/{orderId}/escrow/messages/read',
+            ['_controller' => $c->markRead(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['POST'],
+        ));
+        $routes->add('api.v1.orders.escrow.timeline', new Route(
+            '/api/v1/orders/{orderId}/escrow/timeline',
+            ['_controller' => $c->timeline(...), '_auth' => true],
+            ['orderId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.escrow.delivery_file.download', new Route(
+            '/api/v1/orders/escrow/delivery-files/{digitalDeliveryFileId}/download',
+            ['_controller' => $c->downloadDeliveryFile(...), '_auth' => true],
+            ['digitalDeliveryFileId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
+        ));
+        $routes->add('api.v1.orders.escrow.message_attachment.download', new Route(
+            '/api/v1/orders/escrow/message-attachments/{orderMessageAttachmentId}/download',
+            ['_controller' => $c->downloadMessageAttachment(...), '_auth' => true],
+            ['orderMessageAttachmentId' => '\d+'],
+            [],
+            '',
+            [],
+            ['GET'],
         ));
     }
 

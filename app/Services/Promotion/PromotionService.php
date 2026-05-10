@@ -529,7 +529,7 @@ final class PromotionService
             'products' => in_array((int) $product->id, $promotion->target_product_ids ?? [], true),
             'sellers' => in_array((int) $product->seller_profile_id, $promotion->target_seller_profile_ids ?? [], true),
             'categories' => in_array((int) $product->category_id, $promotion->target_category_ids ?? [], true),
-            'product_types' => in_array((string) $product->product_type, $promotion->target_product_types ?? [], true),
+            'product_types' => $this->promotionTargetsProductType($promotion, $product),
             default => true,
         };
     }
@@ -565,6 +565,35 @@ final class PromotionService
             static fn (mixed $type): string => strtolower(trim((string) $type)),
             $value,
         ), static fn (string $type): bool => in_array($type, ['physical', 'digital', 'instant_delivery', 'service'], true))));
+    }
+
+    private function promotionTargetsProductType(Promotion $promotion, Product $product): bool
+    {
+        $targets = $promotion->target_product_types ?? [];
+        $type = strtolower(trim((string) ($product->product_type ?? '')));
+        $attributes = is_array($product->attributes_json) ? $product->attributes_json : [];
+        $isInstantDelivery = in_array($type, ['instant_delivery', 'instant'], true)
+            || filter_var($attributes['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL)
+            || strtolower(trim((string) ($attributes['delivery_mode'] ?? ''))) === 'instant'
+            || in_array(strtolower(trim((string) ($attributes['delivery_type'] ?? ''))), ['instant_delivery', 'instant'], true);
+
+        foreach ($targets as $target) {
+            $normalizedTarget = strtolower(trim((string) $target));
+            if ($normalizedTarget === 'instant_delivery' && $isInstantDelivery) {
+                return true;
+            }
+            if ($normalizedTarget === 'digital' && $type === 'digital' && ! $isInstantDelivery) {
+                return true;
+            }
+            if ($normalizedTarget === 'service' && in_array($type, ['service', 'manual_delivery'], true)) {
+                return true;
+            }
+            if ($normalizedTarget === 'physical' && $type === 'physical') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function currencyLabel(float $amount, string $currency): string

@@ -15,7 +15,10 @@ use Illuminate\Support\Carbon;
  * @property int $product_id
  * @property int $rating
  * @property string|null $comment
+ * @property string|null $seller_reply
+ * @property Carbon|null $seller_replied_at
  * @property string $status
+ * @property int $helpful_count
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read OrderItem|null $order_item
@@ -35,7 +38,10 @@ class Review extends Model
         'product_id',
         'rating',
         'comment',
+        'seller_reply',
+        'seller_replied_at',
         'status',
+        'helpful_count',
     ];
 
     protected $casts = [
@@ -44,7 +50,9 @@ class Review extends Model
         'seller_profile_id' => 'integer',
         'product_id' => 'integer',
         'rating' => 'integer',
+        'seller_replied_at' => 'datetime',
         'status' => 'string',
+        'helpful_count' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

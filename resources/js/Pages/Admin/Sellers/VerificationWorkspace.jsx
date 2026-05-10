@@ -49,6 +49,8 @@ export default function VerificationWorkspace({ header, workspace }) {
     const documents = workspace?.documents ?? [];
     const notes = workspace?.notes ?? [];
     const history = workspace?.history ?? [];
+    const statusHistory = workspace?.status_history ?? [];
+    const providerLogs = workspace?.provider_logs ?? [];
     const reviewers = workspace?.reviewers ?? [];
     const documentInsights = workspace?.document_insights ?? {};
     const routes = workspace?.routes ?? {};
@@ -125,6 +127,9 @@ export default function VerificationWorkspace({ header, workspace }) {
                             </Button>
                             <Button type="button" variant="destructive" onClick={() => postReview('rejected')}>
                                 Reject case
+                            </Button>
+                            <Button type="button" variant="outline" onClick={() => postReview('resubmission_required')}>
+                                Request resubmission
                             </Button>
                         </>
                     ) : null}
@@ -332,6 +337,34 @@ export default function VerificationWorkspace({ header, workspace }) {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <Card className="border-border/80 shadow-sm">
+                        <CardHeader>
+                            <CardTitle className="text-base">Third-party verification</CardTitle>
+                            <CardDescription>Provider session, automated result, and webhook evidence.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Session</p>
+                                    <p className="mt-1 break-all font-mono text-xs">{kyc.provider_session_id ?? '—'}</p>
+                                </div>
+                                <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Risk</p>
+                                    <p className="mt-1 text-sm font-semibold">{kyc.risk_level ?? 'Pending'}</p>
+                                </div>
+                                <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Provider ref</p>
+                                    <p className="mt-1 break-all font-mono text-xs">{kyc.provider_ref ?? '—'}</p>
+                                </div>
+                            </div>
+                            {kyc.provider_result_json ? (
+                                <pre className="max-h-64 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(kyc.provider_result_json, null, 2)}</pre>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">No provider result has been received yet.</p>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
 
                 <div className="space-y-6">
@@ -516,6 +549,49 @@ export default function VerificationWorkspace({ header, workspace }) {
                     )}
                 </CardContent>
             </Card>
+
+            <div className="mt-8 grid gap-6 xl:grid-cols-2">
+                <Card className="border-border/80 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-base">Status timeline</CardTitle>
+                        <CardDescription>Seller-facing status changes and system transitions.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {!statusHistory.length ? <p className="text-sm text-muted-foreground">No status history recorded.</p> : (
+                            <div className="space-y-3">
+                                {statusHistory.map((row) => (
+                                    <div key={row.id} className="rounded-lg border border-border/80 p-3 text-sm">
+                                        <p className="font-medium">{row.from_status ?? 'new'} → {row.to_status}</p>
+                                        <p className="mt-1 text-muted-foreground">{row.reason_code ?? 'status_update'} · {fmtDate(row.created_at)}</p>
+                                        {row.note ? <p className="mt-2 text-muted-foreground">{row.note}</p> : null}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+                <Card className="border-border/80 shadow-sm">
+                    <CardHeader>
+                        <CardTitle className="text-base">Webhook logs</CardTitle>
+                        <CardDescription>Inbound and outbound provider events with signature state.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {!providerLogs.length ? <p className="text-sm text-muted-foreground">No provider logs recorded.</p> : (
+                            <div className="space-y-3">
+                                {providerLogs.map((log) => (
+                                    <div key={log.id} className="rounded-lg border border-border/80 p-3 text-sm">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="font-medium">{log.direction} · {log.event_type}</p>
+                                            <Badge variant="outline">{log.signature_status ?? '—'}</Badge>
+                                        </div>
+                                        <p className="mt-1 text-xs text-muted-foreground">{fmtDate(log.created_at)}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
 
             <ConfirmDialog
                 open={approveOpen}

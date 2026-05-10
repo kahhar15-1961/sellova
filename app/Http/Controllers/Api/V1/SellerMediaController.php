@@ -62,13 +62,17 @@ final class SellerMediaController
     public function show(Request $request): Response
     {
         $path = trim((string) $request->attributes->get('path', ''), '/');
-        if ($path === '' || str_contains($path, '..') || ! str_starts_with($path, 'seller-uploads/')) {
+        if ($path === '' || str_contains($path, '..')) {
             return ApiEnvelope::error('not_found', 'Media file not found.', Response::HTTP_NOT_FOUND);
         }
 
         $parts = explode('/', $path);
+        $root = $parts[0] ?? '';
         $purpose = $parts[2] ?? '';
-        if (! in_array($purpose, ['store_media', 'product_image', 'profile'], true)) {
+        $isSellerMedia = $root === 'seller-uploads' && in_array($purpose, ['store_media', 'product_image', 'profile'], true);
+        $isBuyerProfile = $root === 'buyer-uploads' && $purpose === 'profile';
+
+        if (! $isSellerMedia && ! $isBuyerProfile) {
             return ApiEnvelope::error('not_found', 'Media file not found.', Response::HTTP_NOT_FOUND);
         }
 

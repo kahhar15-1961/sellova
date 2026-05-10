@@ -204,14 +204,21 @@ class _SellerProductsScreenState extends ConsumerState<SellerProductsScreen>
   }
 
   String _productSubtitle(SellerProduct product) {
-    final type = product.productType == 'digital'
-        ? 'Digital'
-        : product.productType == 'manual_delivery'
-            ? 'Manual delivery'
-            : 'Physical';
+    final type = product.isInstantDelivery
+        ? 'Instant delivery'
+        : product.productType == 'digital'
+            ? 'Digital'
+            : product.productType == 'service' ||
+                    product.productType == 'manual_delivery'
+                ? 'Service'
+                : 'Physical';
     final stock = product.productType == 'physical'
         ? 'Stock ${product.stock}'
-        : 'Instant delivery';
+        : product.isInstantDelivery
+            ? 'Instant fulfillment'
+            : product.productType == 'digital'
+                ? 'Digital delivery'
+                : 'Service workflow';
     return '${product.priceLabel} • $stock • $type';
   }
 

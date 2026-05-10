@@ -20,8 +20,9 @@ function fmtDate(iso) {
 
 function ProductTypeBadge({ product }) {
     const normalized = String(product?.type || '').toLowerCase();
-    const Icon = normalized === 'physical' ? Truck : normalized === 'instant_delivery' ? Zap : normalized === 'service' ? Package : Download;
-    const variant = normalized === 'physical' ? 'outline' : normalized === 'digital' || normalized === 'instant_delivery' ? 'success' : 'secondary';
+    const isInstantDelivery = Boolean(product?.is_instant_delivery);
+    const Icon = normalized === 'physical' ? Truck : isInstantDelivery ? Zap : normalized === 'service' ? Package : Download;
+    const variant = normalized === 'physical' ? 'outline' : normalized === 'digital' ? 'success' : 'secondary';
 
     return (
         <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-background p-4">

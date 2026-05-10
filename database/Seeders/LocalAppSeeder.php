@@ -27,6 +27,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Permission;
+use App\Models\Promotion;
+use App\Models\Review;
 use App\Models\Role;
 use App\Models\SellerProfile;
 use App\Models\ShippingMethod;
@@ -219,6 +221,34 @@ final class LocalAppSeeder
             $productsBySeller[$si][] = $prod;
         }
 
+        Promotion::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'code' => 'FLASH25',
+            'title' => 'Flash Deals',
+            'description' => 'Limited-time catalog campaign for the storefront flash deals section.',
+            'badge' => 'Flash Deal',
+            'campaign_type' => 'catalog',
+            'scope_type' => 'products',
+            'target_product_ids' => array_map(static fn (Product $product): int => (int) $product->id, array_slice($products, 0, 5)),
+            'target_seller_profile_ids' => [],
+            'target_category_ids' => [],
+            'target_product_types' => [],
+            'currency' => 'USD',
+            'discount_type' => 'percentage',
+            'discount_value' => '0.2500',
+            'min_spend' => '0.0000',
+            'max_discount_amount' => null,
+            'starts_at' => now()->subHour(),
+            'ends_at' => now()->endOfDay(),
+            'daily_start_time' => null,
+            'daily_end_time' => null,
+            'usage_limit' => null,
+            'priority' => 500,
+            'marketing_channel' => 'homepage',
+            'used_count' => 0,
+            'is_active' => true,
+        ]);
+
         $wallet = new WalletLedgerService();
         $escrow = new EscrowService($wallet);
 
@@ -328,7 +358,7 @@ final class LocalAppSeeder
                 'placed_at' => $placed,
                 'completed_at' => $completed,
             ]);
-            OrderItem::query()->create([
+            $item = OrderItem::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'order_id' => $o->id,
                 'seller_profile_id' => $sellerProfile->id,
@@ -343,6 +373,18 @@ final class LocalAppSeeder
                 'commission_rule_snapshot_json' => [],
                 'delivery_state' => 'not_started',
             ]);
+            if ($st === OrderStatus::Completed) {
+                Review::query()->create([
+                    'uuid' => (string) Str::uuid(),
+                    'order_item_id' => $item->id,
+                    'buyer_user_id' => $buyerUser->id,
+                    'seller_profile_id' => $sellerProfile->id,
+                    'product_id' => $productForLine->id,
+                    'rating' => [5, 4, 5][$idx % 3],
+                    'comment' => 'Verified purchase review from the local seed dataset.',
+                    'status' => 'visible',
+                ]);
+            }
             $orders[] = ['order' => $o, 'escrow' => $spec['escrow'], 'amount' => $spec['amt']];
         }
 
@@ -397,6 +439,16 @@ final class LocalAppSeeder
                 'line_total_snapshot' => '40.0000',
                 'commission_rule_snapshot_json' => [],
                 'delivery_state' => 'delivered',
+            ]);
+            Review::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'order_item_id' => $item->id,
+                'buyer_user_id' => $buyerUser->id,
+                'seller_profile_id' => $sellerProfile->id,
+                'product_id' => $productForLine->id,
+                'rating' => [5, 5, 4, 3, 4, 5][$i % 6],
+                'comment' => 'Marketplace quality signal generated from a completed seed order.',
+                'status' => 'visible',
             ]);
             $disputeOrders[] = ['order' => $o, 'item' => $item, 'buyer' => $buyerUser];
         }
@@ -517,6 +569,46 @@ final class LocalAppSeeder
                 'name' => 'Beauty & Health',
                 'description' => 'Skincare, grooming, cosmetics, wellness, and personal-care items.',
                 'children' => ['Skincare', 'Hair Care', 'Makeup', 'Personal Care', 'Health Devices'],
+            ],
+            [
+                'name' => 'Baby & Kids',
+                'description' => 'Baby care, toys, kids fashion, nursery goods, and learning essentials.',
+                'children' => ['Baby Care', 'Toys & Games', 'Kids Clothing', 'Nursery', 'School Essentials'],
+            ],
+            [
+                'name' => 'Grocery & Food',
+                'description' => 'Pantry staples, snacks, drinks, organic foods, and household groceries.',
+                'children' => ['Pantry Staples', 'Snacks', 'Beverages', 'Organic Food', 'Household Supplies'],
+            ],
+            [
+                'name' => 'Pet Supplies',
+                'description' => 'Food, care, toys, grooming, and accessories for pets.',
+                'children' => ['Pet Food', 'Pet Grooming', 'Pet Toys', 'Beds & Carriers', 'Aquarium Supplies'],
+            ],
+            [
+                'name' => 'Industrial & Tools',
+                'description' => 'Tools, safety gear, electrical supplies, and business equipment.',
+                'children' => ['Power Tools', 'Hand Tools', 'Safety Equipment', 'Electrical Supplies', 'Office Equipment'],
+            ],
+            [
+                'name' => 'Jewelry & Accessories',
+                'description' => 'Jewelry, eyewear, fashion accessories, and premium personal items.',
+                'children' => ['Fine Jewelry', 'Fashion Jewelry', 'Eyewear', 'Belts', 'Scarves'],
+            ],
+            [
+                'name' => 'Travel & Luggage',
+                'description' => 'Bags, luggage, travel organizers, and trip-ready accessories.',
+                'children' => ['Suitcases', 'Backpacks', 'Travel Organizers', 'Travel Electronics', 'Outdoor Travel'],
+            ],
+            [
+                'name' => 'Gaming',
+                'description' => 'Consoles, accessories, games, collectibles, and gaming services.',
+                'children' => ['Consoles', 'Games', 'Controllers', 'Gaming Chairs', 'Collectibles'],
+            ],
+            [
+                'name' => 'Music & Instruments',
+                'description' => 'Instruments, audio gear, studio equipment, and learning accessories.',
+                'children' => ['Guitars', 'Keyboards', 'Drums', 'Studio Equipment', 'Instrument Accessories'],
             ],
         ];
 

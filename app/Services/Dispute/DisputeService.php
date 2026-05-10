@@ -31,6 +31,8 @@ use App\Models\IdempotencyKey;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\Escrow\EscrowService;
+use App\Services\Notification\NotificationService;
+use App\Services\Order\OrderMessageService;
 use App\Services\Order\OrderService;
 use App\Services\Support\FinancialCritical;
 use App\Services\WalletLedger\WalletLedgerService;
@@ -47,6 +49,8 @@ class DisputeService
     private readonly EscrowService $escrowService;
 
     private readonly OrderService $orderService;
+    private readonly NotificationService $notificationService;
+    private readonly OrderMessageService $orderMessageService;
 
     public function __construct(
         ?WalletLedgerService $walletLedgerService = null,
@@ -56,6 +60,8 @@ class DisputeService
         $ledger = $walletLedgerService ?? new WalletLedgerService();
         $this->escrowService = $escrowService ?? new EscrowService($ledger);
         $this->orderService = $orderService ?? new OrderService($ledger, $this->escrowService);
+        $this->notificationService = new NotificationService();
+        $this->orderMessageService = new OrderMessageService();
     }
 
     /**
@@ -211,6 +217,32 @@ class DisputeService
                 escrowAccountId: $escrow->id,
                 disputeCaseId: $case->id,
             ));
+
+            $this->notificationService->notify(
+                userId: (int) $order->buyer_user_id,
+                template: 'escrow.dispute.opened_buyer',
+                title: 'Dispute opened',
+                body: 'A dispute was opened for order '.($order->order_number ?? '#'.$order->id).'.',
+                payload: [
+                    'order_id' => (int) $order->id,
+                    'dispute_case_id' => (int) $case->id,
+                    'escrow_status' => 'disputed',
+                ],
+            );
+            if ((int) ($order->seller_user_id ?? 0) > 0) {
+                $this->notificationService->notify(
+                    userId: (int) $order->seller_user_id,
+                    template: 'escrow.dispute.opened_seller',
+                    title: 'Buyer opened a dispute',
+                    body: 'A dispute was opened for order '.($order->order_number ?? '#'.$order->id).'.',
+                    payload: [
+                        'order_id' => (int) $order->id,
+                        'dispute_case_id' => (int) $case->id,
+                        'escrow_status' => 'disputed',
+                    ],
+                );
+            }
+            $this->orderMessageService->sendSystemNotice($order->fresh(), 'A dispute has been opened on this escrow order.', 'escrow_disputed');
 
             if ($idem !== null) {
                 $this->markDisputeIdempotencySucceeded($idem['idempotency'], [

@@ -16,6 +16,8 @@ use App\Models\KycDocument;
 use App\Models\KycVerificationNote;
 use App\Models\KycVerification;
 use App\Models\User;
+use App\Models\KycStatusHistory;
+use App\Models\Notification;
 use App\Services\Admin\SellerVerificationReadService;
 use App\Services\UserSeller\UserSellerService;
 use App\Services\Audit\AuditLogWriter;
@@ -107,6 +109,47 @@ final class SellerVerificationController extends AdminPageController
         $user = $request->user();
         $validated = $request->validated();
 
+        if ((string) $validated['decision'] === 'resubmission_required') {
+            $before = (string) $kyc->status;
+            $kyc->forceFill([
+                'status' => 'resubmission_required',
+                'reviewed_by' => (int) $user->id,
+                'reviewed_at' => now(),
+                'rejection_reason' => (string) ($validated['reason'] ?? 'Resubmission required.'),
+            ])->save();
+            $kyc->seller_profile?->forceFill(['verification_status' => 'resubmission_required'])->save();
+            KycStatusHistory::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'kyc_verification_id' => (int) $kyc->id,
+                'from_status' => $before,
+                'to_status' => 'resubmission_required',
+                'actor_user_id' => (int) $user->id,
+                'reason_code' => 'admin_resubmission_required',
+                'note' => (string) ($validated['reason'] ?? ''),
+                'metadata_json' => [],
+            ]);
+            Notification::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'user_id' => (int) $kyc->seller_profile->user_id,
+                'channel' => 'in_app',
+                'template_code' => 'seller.kyc.resubmission_required',
+                'payload_json' => [
+                    'title' => 'KYC resubmission required',
+                    'body' => (string) ($validated['reason'] ?? 'Please update your KYC application.'),
+                    'href' => '/seller/kyc',
+                    'kyc_id' => $kyc->id,
+                    'status' => 'resubmission_required',
+                ],
+                'status' => 'sent',
+                'sent_at' => now(),
+            ]);
+
+            return redirect()
+                ->route('admin.sellers.kyc.show', ['kyc' => $kyc->id])
+                ->with('success', 'Resubmission requested.');
+        }
+
+        $beforeStatus = (string) $kyc->status;
         try {
             $this->userSeller->reviewKyc(new ReviewKycCommand(
                 kycVerificationId: (int) $kyc->id,
@@ -122,6 +165,18 @@ final class SellerVerificationController extends AdminPageController
         } catch (AuthValidationFailedException $e) {
             return back()->withErrors(['review' => $e->getMessage()])->with('error', 'Unable to complete review.');
         }
+
+        $kyc->refresh();
+        KycStatusHistory::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'kyc_verification_id' => (int) $kyc->id,
+            'from_status' => $beforeStatus,
+            'to_status' => (string) $kyc->status,
+            'actor_user_id' => (int) $user->id,
+            'reason_code' => 'admin_decision',
+            'note' => (string) ($validated['reason'] ?? ''),
+            'metadata_json' => [],
+        ]);
 
         return redirect()
             ->route('admin.sellers.kyc.show', ['kyc' => $kyc->id])

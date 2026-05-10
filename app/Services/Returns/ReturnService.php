@@ -624,12 +624,18 @@ final class ReturnService
     private function notifyUsers(ReturnRequest $return, string $templateCode): void
     {
         foreach (array_filter([(int) $return->buyer_user_id, (int) ($return->seller_user_id ?? 0)]) as $userId) {
+            $role = $userId === (int) ($return->seller_user_id ?? 0) ? Notification::ROLE_SELLER : Notification::ROLE_BUYER;
+
             Notification::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'user_id' => $userId,
+                'user_role' => $role,
                 'channel' => 'in_app',
                 'template_code' => $templateCode,
                 'payload_json' => [
+                    'title' => 'Return request updated',
+                    'body' => 'A return or refund case has been updated.',
+                    'href' => $role === Notification::ROLE_SELLER ? '/seller/returns' : '/refund-requests',
                     'return_request_id' => (int) $return->id,
                     'order_id' => (int) $return->order_id,
                     'status' => (string) $return->status,
@@ -642,4 +648,3 @@ final class ReturnService
         }
     }
 }
-

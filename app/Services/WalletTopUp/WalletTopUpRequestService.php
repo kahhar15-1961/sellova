@@ -532,29 +532,13 @@ final class WalletTopUpRequestService
         $notification = Notification::query()->create([
             'uuid' => (string) Str::uuid(),
             'user_id' => $userId,
+            'user_role' => $payload['role'] ?? null,
             'channel' => 'in_app',
             'template_code' => $templateCode,
             'payload_json' => $payload,
             'status' => 'queued',
             'sent_at' => now(),
         ]);
-
-        \App\Events\UserNotificationCreated::dispatch(
-            $userId,
-            [
-                'id' => (int) $notification->id,
-                'uuid' => (string) $notification->uuid,
-                'channel' => (string) $notification->channel,
-                'template_code' => $templateCode,
-                'title' => (string) ($payload['title'] ?? $templateCode),
-                'body' => (string) ($payload['body'] ?? ''),
-                'href' => (string) ($payload['href'] ?? ''),
-                'payload' => $payload,
-                'is_read' => false,
-                'created_at' => $notification->created_at?->toIso8601String(),
-            ],
-            Notification::query()->where('user_id', $userId)->whereNull('read_at')->count(),
-        );
 
         app(PushNotificationService::class)->sendToUser($userId, [
             'title' => (string) ($payload['title'] ?? $templateCode),

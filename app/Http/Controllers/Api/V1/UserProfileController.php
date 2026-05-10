@@ -149,6 +149,23 @@ final class UserProfileController
         return ApiEnvelope::data($items);
     }
 
+    public function replyToSellerReview(Request $request): Response
+    {
+        $actor = $this->app->requireActor($request);
+        $body = json_decode($request->getContent(), true);
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        $review = $this->app->userSellerService()->replyToSellerReview(
+            (int) $actor->id,
+            (int) $request->attributes->get('reviewId'),
+            (string) ($body['reply'] ?? ''),
+        );
+
+        return ApiEnvelope::data($review);
+    }
+
     public function submitSellerKyc(Request $request): Response
     {
         $actor = $this->app->requireActor($request);

@@ -48,6 +48,8 @@ final class PaymentGatewayService
      */
     public function forMethod(string $method): array
     {
+        $this->bootstrapDefaults();
+
         $method = strtolower(trim($method));
 
         return PaymentGateway::query()

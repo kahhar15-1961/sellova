@@ -124,6 +124,7 @@ class SellerReview {
     required this.orderNumber,
     required this.photoUrls,
     required this.isVerifiedBuyer,
+    this.helpfulCount = 0,
     this.sellerReply,
     this.sellerReplyDate,
     this.moderationState,
@@ -138,6 +139,7 @@ class SellerReview {
   final String orderNumber;
   final List<String> photoUrls;
   final bool isVerifiedBuyer;
+  final int helpfulCount;
   final String? sellerReply;
   final DateTime? sellerReplyDate;
   final String? moderationState;
@@ -157,6 +159,7 @@ class SellerReview {
       orderNumber: orderNumber,
       photoUrls: photoUrls,
       isVerifiedBuyer: isVerifiedBuyer,
+      helpfulCount: helpfulCount,
       sellerReply: sellerReply ?? this.sellerReply,
       sellerReplyDate: sellerReplyDate ?? this.sellerReplyDate,
       moderationState: moderationState ?? this.moderationState,
@@ -211,6 +214,42 @@ class SellerProduct {
   final String productType;
   final Map<String, dynamic> attributes;
   final Map<String, int> warehouseStocks;
+
+  bool get isPhysical => productType.toLowerCase() == 'physical';
+
+  bool get isService {
+    final normalized = productType.toLowerCase();
+    return normalized == 'service' || normalized == 'manual_delivery';
+  }
+
+  bool get isInstantDelivery {
+    if (productType.toLowerCase() == 'instant_delivery') {
+      return true;
+    }
+    final explicit = attributes['is_instant_delivery'];
+    if (explicit is bool) {
+      return explicit;
+    }
+    if (explicit is num) {
+      return explicit != 0;
+    }
+    final explicitText = explicit?.toString().trim().toLowerCase();
+    if (explicitText == 'true' ||
+        explicitText == '1' ||
+        explicitText == 'yes') {
+      return true;
+    }
+    final deliveryType =
+        (attributes['delivery_type'] ?? '').toString().toLowerCase();
+    final deliveryMode =
+        (attributes['delivery_mode'] ?? '').toString().toLowerCase();
+    final fulfillment =
+        (attributes['fulfillment'] ?? '').toString().toLowerCase();
+    return deliveryType == 'instant_delivery' ||
+        deliveryType == 'instant' ||
+        deliveryMode == 'instant' ||
+        fulfillment.contains('instant');
+  }
 
   String get priceLabel {
     final t = price.toStringAsFixed(2);

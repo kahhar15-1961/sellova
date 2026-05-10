@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\DatabaseSchema;
 
 abstract class TestCase extends BaseTestCase
@@ -30,6 +32,67 @@ abstract class TestCase extends BaseTestCase
         $this->ensureWalletBalanceSnapshotsUpdatedAtColumn();
         $this->ensureWithdrawalRequestsIdempotencyKeyColumn();
         $this->ensureEscrowTimeoutTables();
+        $this->ensurePaymentGatewaysTable();
+        $this->ensureNotificationPanelSchema();
+        $this->ensureDigitalEscrowSupportSchema();
+    }
+
+    private function ensurePaymentGatewaysTable(): void
+    {
+        if (Schema::hasTable('payment_gateways')) {
+            return;
+        }
+
+        Schema::create('payment_gateways', function (Blueprint $table): void {
+            $table->id();
+            $table->string('code', 64)->unique();
+            $table->string('name', 160);
+            $table->string('method', 32);
+            $table->string('driver', 32)->default('manual');
+            $table->boolean('is_enabled')->default(false);
+            $table->boolean('is_default')->default(false);
+            $table->unsignedInteger('priority')->default(0);
+            $table->json('supported_methods')->nullable();
+            $table->string('checkout_url', 512)->nullable();
+            $table->string('callback_url', 512)->nullable();
+            $table->string('webhook_url', 512)->nullable();
+            $table->string('public_key', 256)->nullable();
+            $table->string('merchant_id', 256)->nullable();
+            $table->longText('credentials_json')->nullable();
+            $table->json('extra_json')->nullable();
+            $table->text('description')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    private function ensureNotificationPanelSchema(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('notifications')) {
+            return;
+        }
+
+        foreach ([
+            'type' => 'VARCHAR(128) NULL AFTER channel',
+            'title' => 'VARCHAR(191) NULL AFTER template_code',
+            'message' => 'TEXT NULL AFTER title',
+            'icon' => 'VARCHAR(64) NULL AFTER message',
+            'color' => 'VARCHAR(32) NULL AFTER icon',
+            'action_url' => 'VARCHAR(2048) NULL AFTER color',
+            'metadata_json' => 'JSON NULL AFTER payload_json',
+            'user_role' => 'VARCHAR(32) NULL AFTER user_id',
+            'priority' => 'VARCHAR(16) NULL AFTER user_role',
+        ] as $column => $definition) {
+            if ($schema->hasColumn('notifications', $column)) {
+                continue;
+            }
+
+            try {
+                DB::connection()->statement("ALTER TABLE notifications ADD COLUMN {$column} {$definition}");
+            } catch (\Throwable) {
+                // Column may already exist.
+            }
+        }
     }
 
     private function mysqlTestsAreAvailable(): bool
@@ -64,7 +127,8 @@ abstract class TestCase extends BaseTestCase
             'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
             'withdrawal_requests', 'wallet_top_up_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
             'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',
-            'payment_transactions', 'payment_intents', 'idempotency_keys', 'order_state_transitions',
+            'payment_transactions', 'payment_intents', 'payment_gateways', 'idempotency_keys', 'order_state_transitions',
+            'order_message_attachments', 'digital_delivery_files', 'digital_deliveries',
             'order_items', 'orders', 'commission_rules', 'membership_plans', 'cart_items', 'carts',
             'inventory_records', 'product_variants', 'products', 'seller_shipping_methods', 'shipping_methods',
             'seller_category_requests', 'categories', 'storefronts', 'kyc_documents',
@@ -350,6 +414,124 @@ abstract class TestCase extends BaseTestCase
                 updated_at TIMESTAMP NULL,
                 UNIQUE KEY uq_timeout_events_order_type (order_id, event_type)
             )");
+        }
+    }
+
+    protected function ensureDigitalEscrowSupportSchema(): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (! $schema->hasTable('orders')) {
+            return;
+        }
+
+        foreach ([
+            'escrow_status' => 'VARCHAR(32) NULL AFTER status',
+            'escrow_amount' => 'DECIMAL(14,4) NOT NULL DEFAULT 0 AFTER fee_amount',
+            'escrow_fee' => 'DECIMAL(14,4) NOT NULL DEFAULT 0 AFTER escrow_amount',
+            'escrow_started_at' => 'DATETIME(6) NULL AFTER placed_at',
+            'escrow_expires_at' => 'DATETIME(6) NULL AFTER escrow_started_at',
+            'escrow_released_at' => 'DATETIME(6) NULL AFTER escrow_expires_at',
+            'escrow_auto_release_at' => 'DATETIME(6) NULL AFTER escrow_released_at',
+            'escrow_release_method' => 'VARCHAR(32) NULL AFTER escrow_auto_release_at',
+            'dispute_deadline_at' => 'DATETIME(6) NULL AFTER escrow_release_method',
+            'delivery_deadline_at' => 'DATETIME(6) NULL AFTER dispute_deadline_at',
+            'delivery_status' => 'VARCHAR(32) NULL AFTER delivery_deadline_at',
+            'delivery_note' => 'TEXT NULL AFTER delivery_status',
+            'delivery_version' => 'VARCHAR(32) NULL AFTER delivery_note',
+            'delivery_files_count' => 'INT UNSIGNED NOT NULL DEFAULT 0 AFTER delivery_version',
+            'buyer_confirmed_at' => 'DATETIME(6) NULL AFTER delivery_files_count',
+        ] as $column => $definition) {
+            if ($schema->hasColumn('orders', $column)) {
+                continue;
+            }
+            try {
+                DB::connection()->statement("ALTER TABLE orders ADD COLUMN {$column} {$definition}");
+            } catch (\Throwable) {
+                // ignore
+            }
+        }
+
+        if ($schema->hasTable('escrow_accounts')) {
+            foreach ([
+                'escrow_fee' => 'DECIMAL(14,4) NOT NULL DEFAULT 0 AFTER held_amount',
+                'started_at' => 'DATETIME(6) NULL AFTER held_at',
+                'expires_at' => 'DATETIME(6) NULL AFTER started_at',
+                'released_at' => 'DATETIME(6) NULL AFTER expires_at',
+                'auto_release_at' => 'DATETIME(6) NULL AFTER released_at',
+                'release_method' => 'VARCHAR(32) NULL AFTER auto_release_at',
+                'dispute_deadline_at' => 'DATETIME(6) NULL AFTER release_method',
+                'delivery_deadline_at' => 'DATETIME(6) NULL AFTER dispute_deadline_at',
+            ] as $column => $definition) {
+                if ($schema->hasColumn('escrow_accounts', $column)) {
+                    continue;
+                }
+                try {
+                    DB::connection()->statement("ALTER TABLE escrow_accounts ADD COLUMN {$column} {$definition}");
+                } catch (\Throwable) {
+                    // ignore
+                }
+            }
+        }
+
+        if (! $schema->hasTable('digital_deliveries')) {
+            Schema::create('digital_deliveries', function (Blueprint $table): void {
+                $table->id();
+                $table->uuid('uuid')->unique();
+                $table->unsignedBigInteger('order_id');
+                $table->unsignedBigInteger('seller_user_id');
+                $table->unsignedBigInteger('buyer_user_id');
+                $table->string('status', 32)->default('pending');
+                $table->string('version', 32)->nullable();
+                $table->string('external_url', 1000)->nullable();
+                $table->text('delivery_note')->nullable();
+                $table->unsignedInteger('files_count')->default(0);
+                $table->timestamp('delivered_at')->nullable();
+                $table->timestamp('buyer_confirmed_at')->nullable();
+                $table->timestamp('revision_requested_at')->nullable();
+                $table->timestamp('accepted_at')->nullable();
+                $table->timestamp('rejected_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (! $schema->hasTable('digital_delivery_files')) {
+            Schema::create('digital_delivery_files', function (Blueprint $table): void {
+                $table->id();
+                $table->uuid('uuid')->unique();
+                $table->unsignedBigInteger('digital_delivery_id');
+                $table->unsignedBigInteger('order_id');
+                $table->unsignedBigInteger('uploaded_by_user_id');
+                $table->string('disk', 32)->default('local');
+                $table->string('path', 1000);
+                $table->string('original_name', 255);
+                $table->string('mime_type', 191)->nullable();
+                $table->unsignedBigInteger('size_bytes')->default(0);
+                $table->string('visibility', 32)->default('escrow');
+                $table->string('scan_status', 32)->default('pending');
+                $table->timestamp('scan_completed_at')->nullable();
+                $table->timestamp('downloaded_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (! $schema->hasTable('order_message_attachments')) {
+            Schema::create('order_message_attachments', function (Blueprint $table): void {
+                $table->id();
+                $table->uuid('uuid')->unique();
+                $table->unsignedBigInteger('chat_message_id');
+                $table->unsignedBigInteger('order_id');
+                $table->unsignedBigInteger('uploaded_by_user_id');
+                $table->string('disk', 32)->default('local');
+                $table->string('path', 1000);
+                $table->string('original_name', 255);
+                $table->string('mime_type', 191)->nullable();
+                $table->unsignedBigInteger('size_bytes')->default(0);
+                $table->string('attachment_kind', 32)->default('file');
+                $table->string('visibility', 32)->default('escrow');
+                $table->string('scan_status', 32)->default('pending');
+                $table->timestamp('scan_completed_at')->nullable();
+                $table->timestamps();
+            });
         }
     }
 }

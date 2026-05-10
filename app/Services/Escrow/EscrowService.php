@@ -192,7 +192,15 @@ class EscrowService
             $from = $escrow->state;
             $escrow->state = EscrowState::Held;
             $escrow->held_at = now();
+            if (property_exists($escrow, 'started_at') || isset($escrow->started_at)) {
+                $escrow->started_at = $escrow->held_at;
+            }
             $escrow->save();
+
+            $order->escrow_status = 'held';
+            $order->escrow_amount = (string) $escrow->held_amount;
+            $order->escrow_started_at = $escrow->held_at;
+            $order->save();
 
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
@@ -274,8 +282,16 @@ class EscrowService
             $from = $escrow->state;
             $escrow->released_amount = $this->fromScale($this->toScale((string) $escrow->released_amount) + $remaining);
             $this->applyTerminalStateAfterSettlement($escrow, EscrowState::Released);
+            $escrow->released_at = now();
+            $escrow->release_method = $escrow->release_method ?: 'buyer_release';
             $escrow->save();
             $this->consumeEscrowHoldIfTerminal($escrow);
+
+            Order::query()->whereKey($escrow->order_id)->update([
+                'escrow_status' => 'released',
+                'escrow_released_at' => $escrow->released_at,
+                'escrow_release_method' => $escrow->release_method,
+            ]);
 
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
@@ -365,6 +381,10 @@ class EscrowService
             $escrow->save();
             $this->consumeEscrowHoldIfTerminal($escrow);
 
+            Order::query()->whereKey($escrow->order_id)->update([
+                'escrow_status' => 'refunded',
+            ]);
+
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),
                 'escrow_account_id' => $escrow->id,
@@ -405,6 +425,10 @@ class EscrowService
             $from = $escrow->state;
             $escrow->state = EscrowState::UnderDispute;
             $escrow->save();
+
+            Order::query()->whereKey($escrow->order_id)->update([
+                'escrow_status' => 'disputed',
+            ]);
 
             EscrowEvent::query()->create([
                 'uuid' => (string) Str::uuid(),

@@ -36,6 +36,8 @@ final class ProductShowController extends AdminPageController
 
         $canModerate = $request->user()?->hasPermissionCode(AdminPermission::PRODUCTS_MODERATE) ?? false;
         $attributes = is_array($product->attributes_json) ? $product->attributes_json : [];
+        $isInstantDelivery = $this->isInstantDeliveryProduct((string) ($product->product_type ?? ''), $attributes);
+        $displayType = $this->displayProductType((string) ($product->product_type ?? ''));
         $images = $this->productImages($product);
         $activeCampaign = $this->promotionService->bestCatalogCampaignForProduct($product);
         $qualityChecks = [
@@ -110,9 +112,10 @@ final class ProductShowController extends AdminPageController
                 'discount_percentage' => (string) ($product->discount_percentage ?? '0'),
                 'discount_label' => $product->discount_label,
                 'active_campaign' => $activeCampaign,
-                'type' => $product->product_type,
-                'type_label' => $this->productTypeLabel((string) ($product->product_type ?? '')),
-                'type_hint' => $this->productTypeHint((string) ($product->product_type ?? '')),
+                'type' => $displayType,
+                'is_instant_delivery' => $isInstantDelivery,
+                'type_label' => $this->productTypeLabel((string) ($product->product_type ?? ''), $isInstantDelivery),
+                'type_hint' => $this->productTypeHint((string) ($product->product_type ?? ''), $isInstantDelivery),
                 'uuid' => $product->uuid,
                 'image_url' => $this->imageUrl($product->image_url),
                 'images' => $images,
@@ -209,26 +212,66 @@ final class ProductShowController extends AdminPageController
         ]);
     }
 
-    private function productTypeLabel(string $type): string
+    private function productTypeLabel(string $type, bool $isInstantDelivery = false): string
     {
+        if ($isInstantDelivery) {
+            return 'Instant delivery';
+        }
+
         return match ($type) {
             'physical' => 'Physical',
             'digital' => 'Digital',
-            'instant_delivery' => 'Instant delivery',
+            'instant_delivery' => 'Digital',
             'service' => 'Service',
             default => $type !== '' ? ucfirst(str_replace('_', ' ', $type)) : '—',
         };
     }
 
-    private function productTypeHint(string $type): string
+    private function productTypeHint(string $type, bool $isInstantDelivery = false): string
     {
+        if ($isInstantDelivery) {
+            return 'Digital product with automatic instant fulfillment.';
+        }
+
         return match ($type) {
             'physical' => 'Shipping, stock, and delivery tracking apply.',
             'digital' => 'Digital delivery is handled through proof or file handoff.',
-            'instant_delivery' => 'Automatic digital fulfillment is expected.',
+            'instant_delivery' => 'Digital product with automatic instant fulfillment.',
             'service' => 'Service delivery workflow applies after purchase.',
             default => 'Product fulfillment type is not classified.',
         };
+    }
+
+    private function displayProductType(string $type): string
+    {
+        return match (strtolower(trim($type))) {
+            'instant_delivery' => 'digital',
+            'manual_delivery' => 'service',
+            default => strtolower(trim($type)),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $attributes
+     */
+    private function isInstantDeliveryProduct(string $type, array $attributes): bool
+    {
+        $normalized = strtolower(trim($type));
+        if (in_array($normalized, ['instant_delivery', 'instant'], true)) {
+            return true;
+        }
+
+        if (filter_var($attributes['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL)) {
+            return true;
+        }
+
+        $deliveryType = strtolower(trim((string) ($attributes['delivery_type'] ?? '')));
+        $deliveryMode = strtolower(trim((string) ($attributes['delivery_mode'] ?? '')));
+        $fulfillment = strtolower(trim((string) ($attributes['fulfillment'] ?? '')));
+
+        return in_array($deliveryType, ['instant_delivery', 'instant'], true)
+            || $deliveryMode === 'instant'
+            || str_contains($fulfillment, 'instant');
     }
 
     /**

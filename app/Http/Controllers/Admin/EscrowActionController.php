@@ -28,13 +28,16 @@ final class EscrowActionController extends AdminPageController
         $actor = $request->user();
 
         $data = $request->validate([
-            'action' => ['required', 'string', 'in:release,refund,dispute,settle'],
+            'action' => ['required', 'string', 'in:release,refund,dispute,settle,extend_deadline'],
             'reason_code' => ['required', 'string', 'max:120'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'refund_amount' => ['nullable', 'numeric', 'gt:0'],
             'dispute_case_id' => ['nullable', 'integer', 'exists:dispute_cases,id'],
             'buyer_refund_amount' => ['nullable', 'numeric', 'gte:0'],
             'seller_release_amount' => ['nullable', 'numeric', 'gte:0'],
+            'delivery_deadline_at' => ['nullable', 'date'],
+            'dispute_deadline_at' => ['nullable', 'date'],
+            'escrow_expires_at' => ['nullable', 'date'],
         ]);
 
         $before = [
@@ -42,6 +45,9 @@ final class EscrowActionController extends AdminPageController
             'held_amount' => (string) $escrow->held_amount,
             'released_amount' => (string) $escrow->released_amount,
             'refunded_amount' => (string) $escrow->refunded_amount,
+            'expires_at' => $escrow->expires_at?->toIso8601String(),
+            'delivery_deadline_at' => $escrow->delivery_deadline_at?->toIso8601String(),
+            'dispute_deadline_at' => $escrow->dispute_deadline_at?->toIso8601String(),
         ];
 
         try {
@@ -66,6 +72,36 @@ final class EscrowActionController extends AdminPageController
                     sellerReleaseAmount: (string) ($data['seller_release_amount'] ?? '0.0000'),
                     idempotencyKey: (string) Str::ulid(),
                 )),
+                'extend_deadline' => tap([
+                    'delivery_deadline_at' => $data['delivery_deadline_at'] ?? null,
+                    'dispute_deadline_at' => $data['dispute_deadline_at'] ?? null,
+                    'escrow_expires_at' => $data['escrow_expires_at'] ?? null,
+                ], function (array $dates) use ($escrow): void {
+                    $order = $escrow->order()->first();
+                    if ($dates['delivery_deadline_at']) {
+                        $escrow->delivery_deadline_at = $dates['delivery_deadline_at'];
+                        if ($order) {
+                            $order->delivery_deadline_at = $dates['delivery_deadline_at'];
+                            $order->seller_deadline_at = $dates['delivery_deadline_at'];
+                        }
+                    }
+                    if ($dates['dispute_deadline_at']) {
+                        $escrow->dispute_deadline_at = $dates['dispute_deadline_at'];
+                        if ($order) {
+                            $order->dispute_deadline_at = $dates['dispute_deadline_at'];
+                            $order->buyer_review_expires_at = $dates['dispute_deadline_at'];
+                        }
+                    }
+                    if ($dates['escrow_expires_at']) {
+                        $escrow->expires_at = $dates['escrow_expires_at'];
+                        if ($order) {
+                            $order->escrow_expires_at = $dates['escrow_expires_at'];
+                            $order->escrow_auto_release_at = $dates['escrow_expires_at'];
+                        }
+                    }
+                    $escrow->save();
+                    $order?->save();
+                }),
                 default => throw new \RuntimeException('Unsupported action.'),
             };
         } catch (\Throwable $e) {
@@ -80,6 +116,9 @@ final class EscrowActionController extends AdminPageController
             'held_amount' => (string) $escrow->held_amount,
             'released_amount' => (string) $escrow->released_amount,
             'refunded_amount' => (string) $escrow->refunded_amount,
+            'expires_at' => $escrow->expires_at?->toIso8601String(),
+            'delivery_deadline_at' => $escrow->delivery_deadline_at?->toIso8601String(),
+            'dispute_deadline_at' => $escrow->dispute_deadline_at?->toIso8601String(),
             'notes' => $data['notes'] ?? null,
             'result' => $result,
         ];

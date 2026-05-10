@@ -21,6 +21,7 @@ final class UserNotificationCreated implements ShouldBroadcastNow
      */
     public function __construct(
         public readonly int $userId,
+        public readonly string $role,
         public readonly array $notification,
         public readonly int $unreadCount,
     ) {}
@@ -42,6 +43,7 @@ final class UserNotificationCreated implements ShouldBroadcastNow
     {
         return [
             'user_id' => $this->userId,
+            'role' => $this->role,
             'notification' => $this->notification,
             'unread_count' => $this->unreadCount,
         ];

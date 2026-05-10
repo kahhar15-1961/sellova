@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\BulkProductModerationRequest;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Audit\AuditLogWriter;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 
 final class ProductBulkModerationController
@@ -33,7 +34,7 @@ final class ProductBulkModerationController
                 $productsQuery->where('status', $fStatus);
             }
             if ($fType !== '') {
-                $productsQuery->where('product_type', $fType);
+                $this->applyProductTypeFilter($productsQuery, $fType);
             }
             if ($fq !== '') {
                 $productsQuery->where(function ($w) use ($fq): void {
@@ -73,5 +74,48 @@ final class ProductBulkModerationController
         }
 
         return redirect()->route('admin.products.index')->with('success', "Bulk moderation applied to {$updated} product(s).");
+    }
+
+    private function applyProductTypeFilter(Builder $query, string $type): void
+    {
+        $normalized = strtolower(trim($type));
+
+        if ($normalized === 'instant_delivery') {
+            $query->where(static function (Builder $builder): void {
+                $builder->where('product_type', 'instant_delivery')
+                    ->orWhere(static function (Builder $digital): void {
+                        $digital->where('product_type', 'digital')
+                            ->where(static function (Builder $flags): void {
+                                $flags->where('attributes_json', 'like', '%"is_instant_delivery":true%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":"1"%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":1%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_mode":"instant"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant_delivery"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant"%');
+                            });
+                    });
+            });
+
+            return;
+        }
+
+        if ($normalized === 'digital') {
+            $query->where('product_type', 'digital')
+                ->where(static function (Builder $builder): void {
+                    $builder->whereNull('attributes_json')
+                        ->orWhere(static function (Builder $flags): void {
+                            $flags->where('attributes_json', 'not like', '%"is_instant_delivery":true%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":"1"%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":1%')
+                                ->where('attributes_json', 'not like', '%"delivery_mode":"instant"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant_delivery"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant"%');
+                        });
+                });
+
+            return;
+        }
+
+        $query->where('product_type', $normalized);
     }
 }

@@ -29,13 +29,14 @@ final class StoreProductRequest extends AbstractValidatedRequest
         }
 
         $storefrontId = (int) ($payload['storefront_id'] ?? ($sellerProfile->storefront?->id ?? 0));
+        $productType = self::normalizeProductType((string) ($payload['product_type'] ?? 'physical'));
 
         return new CreateProductCommand(
             sellerProfileId: (int) $sellerProfile->id,
             draft: new ProductDraft(
                 storefrontId: $storefrontId,
                 categoryId: (int) $payload['category_id'],
-                productType: (string) ($payload['product_type'] ?? 'physical'),
+                productType: $productType,
                 title: (string) $payload['title'],
                 description: isset($payload['description']) ? (string) $payload['description'] : null,
                 basePrice: (string) $payload['base_price'],
@@ -46,7 +47,7 @@ final class StoreProductRequest extends AbstractValidatedRequest
                 discountLabel: isset($payload['discount_label']) ? (string) $payload['discount_label'] : null,
                 imageUrl: isset($payload['image_url']) ? trim((string) $payload['image_url']) : null,
                 imageUrls: self::normalizeImages($payload['images'] ?? null, $payload['image_url'] ?? null),
-                attributes: self::normalizeAttributes($payload['attributes'] ?? []),
+                attributes: self::normalizeAttributes($payload['attributes'] ?? [], $productType, $payload['is_instant_delivery'] ?? null),
             ),
         );
     }
@@ -68,6 +69,7 @@ final class StoreProductRequest extends AbstractValidatedRequest
                 'image_url' => new Type('string'),
                 'images' => new Type('array'),
                 'attributes' => new Type('array'),
+                'is_instant_delivery' => new Type('bool'),
             ],
             'allowMissingFields' => true,
             'allowExtraFields' => false,
@@ -77,10 +79,14 @@ final class StoreProductRequest extends AbstractValidatedRequest
     /**
      * @return array<string, mixed>
      */
-    public static function normalizeAttributes(mixed $raw): array
+    public static function normalizeAttributes(
+        mixed $raw,
+        string $productType = 'physical',
+        mixed $isInstantDelivery = null,
+    ): array
     {
         if (! is_array($raw)) {
-            return [];
+            $raw = [];
         }
         $allowed = [
             'brand',
@@ -102,6 +108,7 @@ final class StoreProductRequest extends AbstractValidatedRequest
             'buyer_confirmation_hours',
             'instant_delivery_expiration_hours',
             'digital_access_validity_hours',
+            'is_instant_delivery',
         ];
         $attributes = [];
         foreach ($allowed as $key) {
@@ -136,7 +143,28 @@ final class StoreProductRequest extends AbstractValidatedRequest
             }
         }
 
+        $normalizedType = self::normalizeProductType($productType);
+        if ($normalizedType === 'digital') {
+            $flag = $isInstantDelivery;
+            if ($flag === null && array_key_exists('is_instant_delivery', $raw)) {
+                $flag = $raw['is_instant_delivery'];
+            }
+            $attributes['is_instant_delivery'] = filter_var($flag ?? false, FILTER_VALIDATE_BOOL);
+        } else {
+            unset($attributes['is_instant_delivery'], $attributes['instant_delivery_expiration_hours']);
+        }
+
         return $attributes;
+    }
+
+    public static function normalizeProductType(string $type): string
+    {
+        return match (strtolower(trim($type))) {
+            'instant_delivery', 'instant-delivery', 'instant' => 'digital',
+            'manual_delivery', 'manual-delivery', 'manual' => 'service',
+            'digital', 'service' => strtolower(trim($type)),
+            default => 'physical',
+        };
     }
 
     /**

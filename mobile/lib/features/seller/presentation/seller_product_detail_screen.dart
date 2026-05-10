@@ -31,7 +31,9 @@ class SellerProductDetailScreen extends ConsumerWidget {
       );
     }
     final galleryUrls = _productGalleryUrls(p);
-    final productType = _productTypeLabel(p.productType);
+    final productType = p.isInstantDelivery
+        ? 'Instant Delivery'
+        : _productTypeLabel(p.productType);
     final stockTone = p.stock <= 0
         ? const Color(0xFFDC2626)
         : p.stock <= 5
@@ -602,7 +604,8 @@ String _labelFromKey(String key) {
 
 String _productTypeLabel(String value) {
   return switch (value) {
-    'manual_delivery' => 'Manual Delivery',
+    'manual_delivery' => 'Service',
+    'service' => 'Service',
     'digital' => 'Digital',
     'physical' => 'Physical',
     _ => _labelFromKey(value),

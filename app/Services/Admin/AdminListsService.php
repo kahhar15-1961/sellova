@@ -171,7 +171,7 @@ final class AdminListsService
             $builder->where('status', $status);
         }
         if ($type !== '') {
-            $builder->where('product_type', $type);
+            $this->applyProductTypeFilter($builder, $type);
         }
         if ($q !== '') {
             $builder->where(function ($w) use ($q): void {
@@ -183,6 +183,7 @@ final class AdminListsService
         $total = (int) $builder->count();
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $product) {
+            $isInstantDelivery = $this->isInstantDeliveryProduct($product);
             $hasMissingMetadata = $product->title === null || $product->description === null || $product->category_id === null;
             $campaign = $this->promotionService->bestCatalogCampaignForProduct($product);
             $rows[] = [
@@ -190,9 +191,10 @@ final class AdminListsService
                 'sku' => '#'.$product->id,
                 'title' => $product->title ?? '—',
                 'thumbnail_url' => $this->imageUrl($product->image_url),
-                'type' => (string) ($product->product_type ?? '—'),
-                'type_label' => $this->productTypeLabel((string) ($product->product_type ?? '')),
-                'type_hint' => $this->productTypeHint((string) ($product->product_type ?? '')),
+                'type' => $this->displayProductType((string) ($product->product_type ?? '')),
+                'is_instant_delivery' => $isInstantDelivery,
+                'type_label' => $this->productTypeLabel((string) ($product->product_type ?? ''), $isInstantDelivery),
+                'type_hint' => $this->productTypeHint((string) ($product->product_type ?? ''), $isInstantDelivery),
                 'status' => (string) $product->status,
                 'seller' => $product->seller_profile?->display_name ?? '—',
                 'price' => trim(($product->currency ?? '').' '.(string) $product->base_price),
@@ -215,7 +217,11 @@ final class AdminListsService
                 'draft' => (int) Product::query()->where('status', 'draft')->count(),
                 'inactive' => (int) Product::query()->where('status', 'inactive')->count(),
                 'physical' => (int) Product::query()->where('product_type', 'physical')->count(),
-                'digital' => (int) Product::query()->where('product_type', 'digital')->count(),
+                'digital' => (function (): int {
+                    $query = Product::query();
+                    $this->applyProductTypeFilter($query, 'digital');
+                    return (int) $query->count();
+                })(),
                 'needs_attention' => (int) Product::query()
                     ->where(static function ($q): void {
                         $q->whereNull('title')
@@ -227,26 +233,107 @@ final class AdminListsService
         ];
     }
 
-    private function productTypeLabel(string $type): string
+    private function productTypeLabel(string $type, bool $isInstantDelivery = false): string
     {
+        if ($isInstantDelivery) {
+            return 'Instant delivery';
+        }
+
         return match ($type) {
             'physical' => 'Physical',
             'digital' => 'Digital',
-            'instant_delivery' => 'Instant delivery',
+            'instant_delivery' => 'Digital',
             'service' => 'Service',
             default => $type !== '' ? ucfirst(str_replace('_', ' ', $type)) : '—',
         };
     }
 
-    private function productTypeHint(string $type): string
+    private function productTypeHint(string $type, bool $isInstantDelivery = false): string
     {
+        if ($isInstantDelivery) {
+            return 'Digital product with automatic instant fulfillment';
+        }
+
         return match ($type) {
             'physical' => 'Requires shipping and inventory handling',
             'digital' => 'Delivered through digital proof or files',
-            'instant_delivery' => 'Prepared for automatic digital fulfillment',
+            'instant_delivery' => 'Digital product with automatic instant fulfillment',
             'service' => 'Fulfilled through service delivery workflow',
             default => 'Product fulfillment type',
         };
+    }
+
+    private function displayProductType(string $type): string
+    {
+        return match (strtolower(trim($type))) {
+            'instant_delivery' => 'digital',
+            'manual_delivery' => 'service',
+            default => strtolower(trim($type)),
+        };
+    }
+
+    private function isInstantDeliveryProduct(Product $product): bool
+    {
+        $type = strtolower(trim((string) ($product->product_type ?? '')));
+        if (in_array($type, ['instant_delivery', 'instant'], true)) {
+            return true;
+        }
+
+        $attributes = is_array($product->attributes_json) ? $product->attributes_json : [];
+        if (filter_var($attributes['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL)) {
+            return true;
+        }
+
+        $deliveryType = strtolower(trim((string) ($attributes['delivery_type'] ?? '')));
+        $deliveryMode = strtolower(trim((string) ($attributes['delivery_mode'] ?? '')));
+        $fulfillment = strtolower(trim((string) ($attributes['fulfillment'] ?? '')));
+
+        return in_array($deliveryType, ['instant_delivery', 'instant'], true)
+            || $deliveryMode === 'instant'
+            || str_contains($fulfillment, 'instant');
+    }
+
+    private function applyProductTypeFilter($builder, string $type): void
+    {
+        $normalized = strtolower(trim($type));
+
+        if ($normalized === 'instant_delivery') {
+            $builder->where(static function ($query): void {
+                $query->where('product_type', 'instant_delivery')
+                    ->orWhere(static function ($digital): void {
+                        $digital->where('product_type', 'digital')
+                            ->where(static function ($flags): void {
+                                $flags->where('attributes_json', 'like', '%"is_instant_delivery":true%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":"1"%')
+                                    ->orWhere('attributes_json', 'like', '%"is_instant_delivery":1%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_mode":"instant"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant_delivery"%')
+                                    ->orWhere('attributes_json', 'like', '%"delivery_type":"instant"%');
+                            });
+                    });
+            });
+
+            return;
+        }
+
+        if ($normalized === 'digital') {
+            $builder->where('product_type', 'digital')
+                ->where(static function ($flags): void {
+                    $flags->whereNull('attributes_json')
+                        ->orWhere(static function ($noInstant): void {
+                            $noInstant->where('attributes_json', 'not like', '%"is_instant_delivery":true%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":"1"%')
+                                ->where('attributes_json', 'not like', '%"is_instant_delivery":1%')
+                                ->where('attributes_json', 'not like', '%"delivery_mode":"instant"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant_delivery"%')
+                                ->where('attributes_json', 'not like', '%"delivery_type":"instant"%');
+                        });
+                });
+
+            return;
+        }
+
+        $builder->where('product_type', $normalized === 'service' ? 'service' : $normalized);
     }
 
     private function imageUrl(?string $image): ?string
