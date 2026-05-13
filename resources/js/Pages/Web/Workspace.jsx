@@ -1274,6 +1274,23 @@ export function AppShell({
         }
     }, [isAuthenticated]);
 
+    const isBuyerCommandCenter = mode === 'buyer' && view === 'dashboard';
+
+    if (isBuyerCommandCenter) {
+        return (
+            <div className="min-h-screen bg-[#eef3f9] text-slate-950">
+                <Head title="Buyer Dashboard" />
+                {notice ? (
+                    <div className={cn('fixed right-4 top-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border p-4 text-sm font-semibold shadow-xl', notice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
+                        {notice.type === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <Check className="mt-0.5 size-4 shrink-0" />}
+                        <span>{notice.body}</span>
+                    </div>
+                ) : null}
+                {children}
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[#f6f8fb] text-slate-950">
             <Head title="Marketplace" />
@@ -3445,6 +3462,60 @@ function BuyerMetricsGrid({ items }) {
     return <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">{items.map((item) => <Stat key={item.label} {...item} />)}</div>;
 }
 
+function BuyerCommandIcon({ href, label, icon: Icon, active = false }) {
+    return (
+        <Link
+            href={href}
+            title={label}
+            aria-label={label}
+            className={cn(
+                'relative flex size-[46px] items-center justify-center rounded-xl border transition',
+                active
+                    ? 'border-slate-950 bg-slate-950 text-white shadow-[0_16px_34px_-24px_rgba(7,17,31,0.8)] before:absolute before:-left-[11px] before:h-6 before:w-1 before:rounded-full before:bg-indigo-600'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600',
+            )}
+        >
+            <Icon className="size-5" />
+        </Link>
+    );
+}
+
+function BuyerDashboardStat({ label, value, hint, icon: Icon }) {
+    return (
+        <div className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+            <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.13em] text-slate-500">{label}</p>
+                {Icon ? <Icon className="size-4 text-slate-400" /> : null}
+            </div>
+            <p className="mt-3 text-2xl font-black tracking-tight text-slate-950">{value}</p>
+            <p className="mt-2 text-xs font-extrabold leading-5 text-slate-500">{hint}</p>
+        </div>
+    );
+}
+
+function BuyerDashboardStatus({ children, tone = 'slate' }) {
+    const classes = {
+        amber: 'bg-amber-50 text-amber-700',
+        emerald: 'bg-emerald-50 text-emerald-700',
+        indigo: 'bg-indigo-50 text-indigo-700',
+        rose: 'bg-rose-50 text-rose-700',
+        slate: 'bg-slate-100 text-slate-600',
+    };
+
+    return <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black', classes[tone] || classes.slate)}>{children}</span>;
+}
+
+function buyerDashboardStatusTone(order) {
+    const status = String(order?.status || '').toLowerCase();
+    const escrow = String(order?.escrowState || '').toLowerCase();
+
+    if (status.includes('cancel') || status.includes('refund')) return 'rose';
+    if (status.includes('completed') || status.includes('delivered')) return 'emerald';
+    if (escrow.includes('fund') || escrow.includes('hold') || escrow.includes('active')) return 'indigo';
+    if (status.includes('pending') || status.includes('processing') || status.includes('shipped')) return 'amber';
+    return 'slate';
+}
+
 function humanizeOrderState(value) {
     return String(value || 'active')
         .replaceAll('_', ' ')
@@ -3493,92 +3564,276 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
     const walletSummary = buyerOps.walletSummary || {};
     const detailedOrders = buyerOps.ordersDetailed || [];
     const activeOrders = detailedOrders.filter((order) => !['completed', 'cancelled', 'refunded'].includes(String(order.status || '').toLowerCase()));
-    const recentOrders = detailedOrders.slice(0, 5);
+    const priorityOrders = (activeOrders.length ? activeOrders : detailedOrders).slice(0, 4);
     const recentlyViewed = buyerOps.recentlyViewed || [];
     const favoriteStores = buyerOps.favoriteStores || [];
     const recommendations = state.products.filter((product) => !state.wishlist.includes(product.id)).slice(0, 4);
     const notifications = (buyerOps.notifications || []).filter((item) => !(item.is_read ?? item.read));
     const unreadNotificationCount = buyerOps.unreadNotificationCount ?? notifications.length;
+    const pendingReturns = (buyerOps.returns || []).filter((item) => String(item.refundStatus || item.status || '').toLowerCase().includes('pending')).length;
+    const reviewOrders = activeOrders.filter((order) => String(order.status || '').toLowerCase().includes('delivered') || String(order.status || '').toLowerCase().includes('review'));
+    const firstActionOrder = reviewOrders[0] || activeOrders[0] || detailedOrders[0];
+    const firstTicket = (state.supportTickets || [])[0];
+    const firstNotification = notifications[0];
+    const security = buyerOps.security || {};
+    const securityScore = Math.min(100, Math.max(72, Number(security.score || security.trustScore || 86)));
+    const railLinks = [
+        ['/', 'Home', Home, false],
+        ['/dashboard', 'Dashboard', LayoutDashboard, true],
+        ['/marketplace', 'Marketplace', PackageSearch, false],
+        ['/orders', 'Orders', Truck, false],
+        ['/wallet', 'Wallet', WalletCards, false],
+        ['/wishlist', 'Saved', Heart, false],
+        ['/support', 'Inbox', MessageSquareText, false],
+        ['/profile', 'Profile', User, false],
+    ];
+    const actionQueue = [
+        firstActionOrder ? {
+            label: String(firstActionOrder.status || '').toLowerCase().includes('delivered') ? 'Confirm delivery' : 'Open active order',
+            hint: `${firstActionOrder.code || 'Order'} ${firstActionOrder.escrowState ? `is ${humanizeOrderState(firstActionOrder.escrowState).toLowerCase()}` : 'needs your attention'}.`,
+            href: `/orders/${firstActionOrder.id}`,
+        } : {
+            label: 'Start a protected order',
+            hint: 'Browse marketplace products and keep checkout protected by escrow.',
+            href: '/marketplace',
+        },
+        firstTicket ? {
+            label: 'Reply to support',
+            hint: firstTicket.subject || firstTicket.title || 'A support conversation needs a buyer response.',
+            href: '/support',
+        } : {
+            label: 'Review trust settings',
+            hint: 'Keep devices, addresses, and notification preferences current.',
+            href: '/profile',
+        },
+        firstNotification ? {
+            label: 'Read latest alert',
+            hint: firstNotification.title || firstNotification.body || 'A new marketplace alert is unread.',
+            href: '/notifications',
+        } : {
+            label: 'Explore saved sellers',
+            hint: `${favoriteStores.length} favorite ${favoriteStores.length === 1 ? 'seller' : 'sellers'} ready for reorder.`,
+            href: '/wishlist',
+        },
+    ];
+    const activityRows = [
+        detailedOrders[0] ? {
+            icon: ShieldCheck,
+            title: `Escrow ${detailedOrders[0].escrowState ? humanizeOrderState(detailedOrders[0].escrowState).toLowerCase() : 'protected'} for ${detailedOrders[0].code || 'latest order'}`,
+            body: detailedOrders[0].seller ? `${detailedOrders[0].seller} transaction is protected until completion.` : 'Payment stays protected until completion.',
+            meta: 'Now',
+        } : null,
+        firstNotification ? {
+            icon: Bell,
+            title: firstNotification.title || 'New buyer notification',
+            body: firstNotification.body || 'A new update is ready in your buyer inbox.',
+            meta: 'Live',
+        } : null,
+        {
+            icon: WalletCards,
+            title: 'Wallet and escrow synced',
+            body: `${money(walletSummary.available)} available with ${money(walletSummary.held)} currently protected.`,
+            meta: '1h',
+        },
+    ].filter(Boolean);
 
     return (
-        <BuyerPanelShell
-            activeKey="dashboard"
-            eyebrow="Buyer workspace"
-            title="One command center for shopping, escrow, and account trust"
-            description="Shared authentication, role-aware switching, wallet balance, notifications, active escrow, and buyer-side account controls all stay synchronized in one premium buyer panel."
-            aside={<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Role switch</p><div className="mt-4 grid gap-3">{state.user?.hasSellerProfile ? <Button asChild variant="outline" className="justify-start"><Link href="/seller/dashboard"><Store className="size-4" />Seller workspace</Link></Button> : <Button asChild variant="outline" className="justify-start"><Link href="/seller/dashboard"><Store className="size-4" />Become a seller</Link></Button>}<Button asChild className="justify-start bg-slate-950 hover:bg-indigo-600"><Link href="/marketplace"><ShoppingBag className="size-4" />Continue shopping</Link></Button></div></div>}
-        >
-            <BuyerMetricsGrid items={[
-                { label: 'Wallet balance', value: money(walletSummary.available), hint: `${walletSummary.topUps || 0} recent top-ups`, icon: WalletCards },
-                { label: 'Escrow hold', value: money(walletSummary.held), hint: 'Protected until fulfillment clears', icon: ShieldCheck },
-                { label: 'Active orders', value: activeOrders.length, hint: `${detailedOrders.length} total orders`, icon: Truck },
-                { label: 'Unread alerts', value: unreadNotificationCount, hint: `${favoriteStores.length} favorite stores`, icon: Bell },
-            ]} />
+        <div className="grid min-h-screen grid-cols-1 bg-[#eef3f9] lg:grid-cols-[72px_minmax(0,1fr)]">
+            <aside className="sticky top-0 hidden h-screen flex-col items-center gap-4 border-r border-slate-200 bg-white/85 px-2.5 py-3.5 backdrop-blur-xl lg:flex">
+                <Link href="/" title="Sellova home" className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_18px_36px_-22px_rgba(88,71,245,0.95)]">
+                    <ShoppingBag className="size-5" />
+                </Link>
+                <nav className="grid gap-2">
+                    {railLinks.map(([href, label, Icon, active]) => <BuyerCommandIcon key={href} href={href} label={label} icon={Icon} active={active} />)}
+                </nav>
+                <div className="mt-auto grid gap-2">
+                    <BuyerCommandIcon href="/profile" label="Security" icon={ShieldCheck} />
+                    <BuyerCommandIcon href="/profile-settings" label="Settings" icon={Settings} />
+                </div>
+            </aside>
 
-            <section className="grid gap-5 2xl:grid-cols-[1.3fr_0.9fr]">
-                <Panel title="Recent orders" icon={Truck} actions={<Button asChild variant="outline"><Link href="/orders">Open orders</Link></Button>}>
-                    <div className="grid gap-3">
-                        {recentOrders.length ? recentOrders.map((order) => (
-                            <div key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <p className="font-extrabold text-slate-950">{order.code}</p>
-                                        <p className="mt-1 text-sm font-semibold text-slate-500">{order.product}</p>
-                                        <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-400">{order.seller} {order.paymentMethod ? `· ${order.paymentMethod}` : ''}</p>
+            <section className="min-w-0">
+                <header className="sticky top-0 z-30 grid min-h-[68px] gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(220px,340px)_minmax(260px,1fr)_auto] lg:items-center lg:px-6">
+                    <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Buyer workspace</p>
+                        <h1 className="mt-1 flex items-baseline gap-1 text-xl font-black leading-none tracking-tight text-slate-950"><span>Command</span><span>Center</span></h1>
+                    </div>
+                    <form action="/marketplace" className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-extrabold text-slate-400">
+                        <Search className="size-5 shrink-0" />
+                        <input name="q" className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-extrabold text-slate-700 placeholder:text-slate-400 focus:ring-0" placeholder="Search orders, sellers, disputes, products..." />
+                    </form>
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        <Link href="/orders" className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700">
+                            <ShieldCheck className="size-4" /> Escrow secured
+                        </Link>
+                        <Link href="/wallet" className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{money(walletSummary.available)}</Link>
+                        <Link href="/notifications" className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{unreadNotificationCount} alerts</Link>
+                        <Link href="/profile" className="flex size-10 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white">{String(state.user?.name || 'B1').slice(0, 2).toUpperCase()}</Link>
+                    </div>
+                </header>
+
+                <main className="grid min-w-0 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
+                    <div className="grid min-w-0 gap-4">
+                        <section className="relative grid min-h-[176px] overflow-hidden rounded-2xl border border-slate-950/10 bg-[linear-gradient(135deg,#07111f,#222b48_55%,#5847f5)] p-5 text-white shadow-[0_24px_70px_-52px_rgba(7,17,31,0.8)] lg:grid-cols-[1fr_260px] lg:p-6">
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:36px_36px]" />
+                            <div className="relative">
+                                <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/10 px-3 text-[11px] font-black uppercase tracking-[0.09em] text-indigo-100">Live buyer operations</span>
+                                <h2 className="mt-4 max-w-3xl text-3xl font-black leading-[1.06] tracking-tight md:text-[34px]">Everything important in one dense, secure workspace.</h2>
+                                <p className="mt-3 max-w-3xl text-sm font-bold leading-7 text-slate-300">Orders, escrow, wallet, alerts, saved sellers, and support actions stay visible without a wide side menu. The page works like an enterprise console, not a marketing page.</p>
+                            </div>
+                            <div className="relative mt-5 hidden rounded-xl border border-white/15 bg-white/10 p-4 lg:grid lg:content-center">
+                                {[
+                                    ['Role', 'Buyer'],
+                                    ['Trust level', securityScore >= 80 ? 'Verified' : 'Review'],
+                                    ['Next action', firstActionOrder ? 'Review delivery' : 'Start shopping'],
+                                ].map(([label, value]) => (
+                                    <div key={label} className="flex justify-between gap-4 border-b border-white/10 py-2.5 text-xs font-extrabold text-slate-300 last:border-b-0">
+                                        <span>{label}</span>
+                                        <strong className="text-white">{value}</strong>
                                     </div>
-                                    <Badge variant={String(order.status).toLowerCase().includes('completed') ? 'success' : 'secondary'}>{String(order.status || 'processing').replaceAll('_', ' ')}</Badge>
-                                </div>
-                                <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                                    <span className="rounded-full bg-white px-3 py-1 ring-1 ring-slate-200">{money(order.amount)}</span>
-                                    <span className="rounded-full bg-white px-3 py-1 ring-1 ring-slate-200">Escrow: {order.escrowState || 'n/a'}</span>
-                                    {order.trackingId ? <span className="rounded-full bg-white px-3 py-1 ring-1 ring-slate-200">Tracking: {order.trackingId}</span> : null}
-                                </div>
+                                ))}
                             </div>
-                        )) : <Empty title="No buyer orders yet" action="/marketplace" label="Start shopping" />}
-                    </div>
-                </Panel>
+                        </section>
 
-                <Panel title="Trust and support" icon={ShieldCheck}>
-                    <div className="grid gap-3">
-                        {[
-                            { label: 'Pending payments', value: detailedOrders.filter((order) => String(order.paymentStatus || '').toLowerCase().includes('pending')).length, hint: 'Orders waiting for final funding' },
-                            { label: 'Refund requests', value: (buyerOps.returns || []).filter((item) => String(item.refundStatus || '').toLowerCase().includes('pending')).length, hint: 'Returns currently in review' },
-                            { label: 'Support tickets', value: state.supportTickets.length, hint: 'Buyer and seller conversations' },
-                            { label: 'Favorite stores', value: favoriteStores.length, hint: 'Most active merchants in your history' },
-                        ].map((item) => (
-                            <div key={item.label} className="rounded-2xl border border-slate-200 p-4">
-                                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">{item.label}</p>
-                                <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{item.value}</p>
-                                <p className="mt-1 text-sm font-semibold text-slate-500">{item.hint}</p>
-                            </div>
-                        ))}
-                    </div>
-                </Panel>
-            </section>
+                        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <BuyerDashboardStat label="Wallet balance" value={money(walletSummary.available)} hint={`${money(walletSummary.held)} protected in escrow`} icon={WalletCards} />
+                            <BuyerDashboardStat label="Active escrow" value={activeOrders.length} hint={`${reviewOrders.length || 0} deliveries awaiting confirmation`} icon={ShieldCheck} />
+                            <BuyerDashboardStat label="Open orders" value={detailedOrders.length} hint={`${activeOrders.length} active, ${pendingReturns} in refund review`} icon={Truck} />
+                            <BuyerDashboardStat label="Risk alerts" value={unreadNotificationCount} hint={`${state.supportTickets.length} support conversations`} icon={AlertCircle} />
+                        </section>
 
-            <section className="grid gap-5 2xl:grid-cols-[1fr_1fr]">
-                <Panel title="Recently viewed" icon={Eye} actions={<Button asChild variant="outline"><Link href="/recently-viewed">See all</Link></Button>}>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {recentlyViewed.length ? recentlyViewed.slice(0, 4).map((product) => (
-                            <div key={product.id} className="grid grid-cols-[72px_1fr] gap-3 rounded-2xl border border-slate-200 p-3">
-                                <ProductMedia src={product.image} alt={product.title} className="size-[72px] rounded-xl object-cover" />
-                                <div className="min-w-0">
-                                    <Link href={`/products/${product.id}`} className="line-clamp-2 font-bold text-slate-950 hover:text-indigo-600">{product.title}</Link>
-                                    <p className="mt-2 text-sm font-extrabold text-rose-600">{money(product.price)}</p>
+                        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <div className="flex min-h-[58px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                                <h2 className="text-base font-black tracking-tight text-slate-950">Active orders</h2>
+                                <div className="flex gap-1.5">
+                                    {['Priority', 'Escrow', 'Transit', 'Completed'].map((item, index) => <span key={item} className={cn('rounded-lg px-3 py-2 text-[11px] font-black', index === 0 ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500')}>{item}</span>)}
                                 </div>
                             </div>
-                        )) : <p className="rounded-2xl bg-slate-50 p-5 text-sm font-semibold text-slate-500">Viewed products will appear here after you browse the catalog.</p>}
+                            {priorityOrders.length ? (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-[760px] table-fixed">
+                                        <thead>
+                                            <tr className="border-b border-slate-100 text-left text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
+                                                <th className="w-[34%] px-4 py-3">Order</th>
+                                                <th className="px-4 py-3">Seller</th>
+                                                <th className="px-4 py-3">Status</th>
+                                                <th className="px-4 py-3">Amount</th>
+                                                <th className="px-4 py-3">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {priorityOrders.map((order) => (
+                                                <tr key={order.id} className="border-b border-slate-100 last:border-b-0">
+                                                    <td className="px-4 py-3 align-middle">
+                                                        <Link href={`/orders/${order.id}`} className="line-clamp-2 text-sm font-black leading-5 text-slate-950 hover:text-indigo-600">{order.code || `Order #${order.id}`} {order.product || ''}</Link>
+                                                        <p className="mt-1 truncate text-xs font-extrabold text-slate-400">{order.trackingId ? `Tracking: ${order.trackingId}` : order.paymentMethod || 'Escrow protected checkout'}</p>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm font-extrabold text-slate-700">{order.seller || 'Verified seller'}</td>
+                                                    <td className="px-4 py-3"><BuyerDashboardStatus tone={buyerDashboardStatusTone(order)}>{humanizeOrderState(order.status || order.escrowState || 'Active')}</BuyerDashboardStatus></td>
+                                                    <td className="px-4 py-3 text-sm font-black text-slate-700">{money(order.amount)}</td>
+                                                    <td className="px-4 py-3"><Button asChild className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-black hover:bg-indigo-700"><Link href={`/orders/${order.id}`}>Open</Link></Button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="p-6">
+                                    <Empty title="No buyer orders yet" action="/marketplace" label="Shop marketplace" />
+                                </div>
+                            )}
+                        </section>
+
+                        <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                                <div className="flex min-h-[58px] items-center justify-between border-b border-slate-200 px-4 py-3">
+                                    <h2 className="text-base font-black tracking-tight text-slate-950">Recent activity</h2>
+                                    <div className="flex gap-1.5"><span className="rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-black text-white">Live</span><span className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-black text-slate-500">All</span></div>
+                                </div>
+                                <div className="grid gap-3 p-4">
+                                    {activityRows.map(({ icon: Icon, title, body, meta }) => (
+                                        <div key={title} className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3">
+                                            <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><Icon className="size-4" /></span>
+                                            <span className="min-w-0"><strong className="block truncate text-sm font-black text-slate-950">{title}</strong><span className="block truncate text-xs font-extrabold text-slate-500">{body}</span></span>
+                                            <span className="text-xs font-black text-slate-500">{meta}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                                <div className="flex min-h-[58px] items-center justify-between border-b border-slate-200 px-4 py-3">
+                                    <h2 className="text-base font-black tracking-tight text-slate-950">Smart recommendations</h2>
+                                    <Button asChild className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-black hover:bg-indigo-700"><Link href="/marketplace">Shop</Link></Button>
+                                </div>
+                                <div className="grid gap-3 p-4">
+                                    {(recommendations.length ? recommendations.slice(0, 3) : recentlyViewed.slice(0, 3)).map((product, index) => (
+                                        <div key={product.id || index} className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3">
+                                            <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">{index === 0 ? <Plus className="size-4" /> : <Sparkles className="size-4" />}</span>
+                                            <span className="min-w-0"><Link href={`/products/${product.id}`} className="block truncate text-sm font-black text-slate-950 hover:text-indigo-600">{product.title}</Link><span className="block truncate text-xs font-extrabold text-slate-500">{product.category || product.productTypeLabel || 'Verified marketplace'}</span></span>
+                                            <span className="text-xs font-black text-slate-500">{money(product.price)}</span>
+                                        </div>
+                                    ))}
+                                    {!recommendations.length && !recentlyViewed.length ? (
+                                        <div className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3">
+                                            <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><PackageSearch className="size-4" /></span>
+                                            <span><strong className="block text-sm font-black text-slate-950">Browse verified sellers</strong><span className="block text-xs font-extrabold text-slate-500">Start with protected products and escrow checkout.</span></span>
+                                            <Link href="/marketplace" className="text-xs font-black text-indigo-600">Open</Link>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </section>
                     </div>
-                </Panel>
-                <Panel title="Recommended for you" icon={Sparkles}>
-                    <div className="grid gap-5 sm:grid-cols-2">
-                        {recommendations.map((product) => (
-                            <ProductCard key={`buyer-rec-${product.id}`} product={product} addToCart={addToCart} toggleWishlist={toggleWishlist} wished={state.wishlist.includes(product.id)} />
-                        ))}
-                    </div>
-                </Panel>
+
+                    <aside className="grid gap-3 self-start lg:sticky lg:top-[88px]">
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Action queue</h2>
+                            <div className="mt-3 divide-y divide-slate-100">
+                                {actionQueue.map((item, index) => (
+                                    <Link key={item.label} href={item.href} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 py-3">
+                                        <span className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">{index + 1}</span>
+                                        <span className="min-w-0"><strong className="block text-sm font-black text-slate-950">{item.label}</strong><span className="mt-1 block text-xs font-extrabold leading-5 text-slate-500">{item.hint}</span></span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Security posture</h2>
+                            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+                                <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-indigo-600" style={{ width: `${securityScore}%` }} />
+                            </div>
+                            <div className="mt-4 grid grid-cols-[32px_minmax(0,1fr)] gap-3">
+                                <span className="flex size-8 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">{securityScore}</span>
+                                <span><strong className="block text-sm font-black text-slate-950">Enterprise-ready account</strong><span className="mt-1 block text-xs font-extrabold leading-5 text-slate-500">Escrow, wallet, notification, and device checks are active.</span></span>
+                            </div>
+                            <Button asChild className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-xs font-black hover:bg-indigo-700"><Link href="/profile">Open security center</Link></Button>
+                        </section>
+
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Saved sellers</h2>
+                            <div className="mt-3 divide-y divide-slate-100">
+                                {(favoriteStores.length ? favoriteStores.slice(0, 3) : [
+                                    { id: 'marketplace', name: 'Verified sellers', orders: detailedOrders.length, rating: 'Live' },
+                                    { id: 'escrow', name: 'Escrow partners', orders: activeOrders.length, rating: '4.9' },
+                                    { id: 'digital', name: 'Instant delivery', orders: recommendations.length, rating: 'New' },
+                                ]).map((store, index) => {
+                                    const name = store.name || store.store || store.seller || `Seller ${index + 1}`;
+                                    return (
+                                        <Link key={store.id || name} href="/wishlist" className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 py-3">
+                                            <span className="flex size-[38px] items-center justify-center rounded-lg bg-sky-100 text-sm font-black text-sky-700">{name.slice(0, 2).toUpperCase()}</span>
+                                            <span className="min-w-0"><strong className="block truncate text-sm font-black text-slate-950">{name}</strong><span className="block truncate text-[11px] font-extrabold text-slate-500">{store.orders || store.orderCount || 0} orders placed</span></span>
+                                            <span className={cn('text-xs font-black', index === 0 ? 'rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700' : 'text-slate-500')}>{store.rating || (index === 0 ? 'Live' : '4.8')}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    </aside>
+                </main>
             </section>
-        </BuyerPanelShell>
+        </div>
     );
 }
 
@@ -10986,10 +11241,10 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
             onMarkAllNotificationsRead={() => api.markAllNotificationsRead(normalizedMode)}
             onDeleteNotification={(notification) => api.deleteNotification(notification?.recipient_context || notification?.context || notification?.role || normalizedMode, notification?.id)}
             onClearNotifications={() => api.clearNotifications(normalizedMode)}
-        >
-            {content}
-            <CheckoutTransitionOverlay transition={api.routeTransition} />
-            {normalizedMode === 'seller' ? null : <EnterpriseFooter trustItems={api.state.trustItems} />}
-        </AppShell>
-    );
+	        >
+	            {content}
+	            <CheckoutTransitionOverlay transition={api.routeTransition} />
+	            {normalizedMode === 'seller' || activeView === 'dashboard' ? null : <EnterpriseFooter trustItems={api.state.trustItems} />}
+	        </AppShell>
+	    );
 }

@@ -1,0 +1,1 @@
+import{r as o,j as a}from"./app-x5nl3b84.js";import{c as i}from"./button-Dh7rPUiH.js";const m=o.forwardRef(({className:t,type:r,...e},s)=>a.jsx("input",{type:r,className:i("ds-control flex min-w-0 file:border-0 file:bg-transparent file:text-sm file:font-medium",t),ref:s,...e}));m.displayName="Input";export{m as I};
