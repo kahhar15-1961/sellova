@@ -93,11 +93,11 @@ export function NotificationBell({
                         void runAction(onRefresh);
                     }
                 }}
-                className={cn('relative inline-flex size-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-[0_16px_38px_-28px_rgba(15,23,42,0.45)] transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600', animate && 'animate-[pulse_1.6s_ease-in-out_2]')}
+                className={cn('relative inline-flex size-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900', animate && 'animate-[pulse_1.6s_ease-in-out_2]')}
                 aria-label="Open notifications"
                 aria-expanded={open}
             >
-                <Bell className={cn('size-5', unreadCount ? 'text-slate-900' : 'text-slate-500')} />
+                <Bell className={cn('size-4.5', unreadCount ? 'text-slate-900' : 'text-slate-500')} />
                 <NotificationBadge count={unreadCount} />
             </button>
 

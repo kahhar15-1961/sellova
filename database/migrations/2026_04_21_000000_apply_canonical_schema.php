@@ -26,7 +26,7 @@ return new class extends Migration
         Schema::disableForeignKeyConstraints();
 
         foreach ([
-            'outbox_events', 'audit_logs', 'notifications', 'reviews', 'dispute_decisions', 'dispute_evidences',
+            'outbox_events', 'audit_logs', 'notifications', 'buyer_reviews', 'reviews', 'dispute_decisions', 'dispute_evidences',
             'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
             'withdrawal_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
             'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',

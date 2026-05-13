@@ -39,6 +39,8 @@ class Notification extends Model
 
     public const ROLE_SELLER = 'seller';
 
+    public const ROLE_ADMIN = 'admin';
+
     public const ROLE_ALL = 'all';
 
     protected $table = 'notifications';
@@ -144,7 +146,7 @@ class Notification extends Model
     {
         $normalized = Str::lower(trim($role));
 
-        return in_array($normalized, [self::ROLE_BUYER, self::ROLE_SELLER, self::ROLE_ALL], true)
+        return in_array($normalized, [self::ROLE_BUYER, self::ROLE_SELLER, self::ROLE_ADMIN, self::ROLE_ALL], true)
             ? $normalized
             : self::ROLE_BUYER;
     }

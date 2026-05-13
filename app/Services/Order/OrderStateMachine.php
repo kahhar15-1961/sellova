@@ -7,11 +7,15 @@ use App\Domain\Exceptions\InvalidOrderStateTransitionException;
 use App\Models\Order;
 use App\Models\OrderStateTransition;
 use App\Services\Audit\AuditService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Str;
 
 final class OrderStateMachine
 {
-    public function __construct(private readonly AuditService $audit = new AuditService())
+    public function __construct(
+        private readonly AuditService $audit = new AuditService(),
+        private readonly NotificationService $notifications = new NotificationService(),
+    )
     {
     }
 
@@ -81,5 +85,58 @@ final class OrderStateMachine
             reasonCode: $reasonCode,
             correlationId: $correlationId,
         );
+
+        if ($from !== $to) {
+            $this->notifyParticipants($order, $from, $to, $reasonCode, $actorUserId);
+        }
+    }
+
+    private function notifyParticipants(Order $order, OrderStatus $from, OrderStatus $to, string $reasonCode, ?int $actorUserId): void
+    {
+        $orderNumber = (string) ($order->order_number ?? 'ORD-'.$order->id);
+        $fromLabel = $this->statusLabel($from->value);
+        $toLabel = $this->statusLabel($to->value);
+        $title = 'Order status changed';
+        $body = "Order {$orderNumber} changed from {$fromLabel} to {$toLabel}.";
+
+        $participants = [
+            [(int) $order->buyer_user_id, 'buyer', '/buyer/orders/'.(int) $order->id],
+            [(int) ($order->seller_user_id ?? 0), 'seller', '/seller/orders/'.(int) $order->id],
+        ];
+
+        foreach ($participants as [$userId, $role, $href]) {
+            if ($userId <= 0) {
+                continue;
+            }
+
+            $this->notifications->notify(
+                $userId,
+                'order.status.changed',
+                $title,
+                $body,
+                [
+                    'role' => $role,
+                    'recipient_context' => $role,
+                    'recipient_role' => $role,
+                    'order_id' => (int) $order->id,
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $order->id,
+                    'context_route_name' => $role.'.orders.show',
+                    'from_status' => $from->value,
+                    'to_status' => $to->value,
+                    'reason_code' => $reasonCode,
+                    'changed_by_user_id' => $actorUserId,
+                    'href' => $href,
+                    'action_url' => $href,
+                    'icon' => 'receipt-text',
+                    'color' => 'indigo',
+                ],
+            );
+        }
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return ucwords(str_replace('_', ' ', $status));
     }
 }

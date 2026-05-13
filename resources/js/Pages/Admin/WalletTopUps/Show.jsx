@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { formatMoney } from '@/lib/utils';
 
 export default function WalletTopUpShow({ header, request, can_review, review_open, list_href, review_url }) {
     const page = usePage();
@@ -53,7 +54,7 @@ export default function WalletTopUpShow({ header, request, can_review, review_op
                             <div className="text-right">
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Requested</p>
                                 <p className="text-lg font-semibold text-foreground">
-                                    {request.currency} {request.requested_amount}
+                                    {formatMoney(request.requested_amount, request.currency, { currencyDisplay: 'code' })}
                                 </p>
                             </div>
                         </div>

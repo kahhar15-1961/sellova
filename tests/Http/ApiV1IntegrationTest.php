@@ -415,7 +415,7 @@ final class ApiV1IntegrationTest extends TestCase
         self::assertSame('published', $created['json']['data']['status']);
         self::assertSame('digital', $created['json']['data']['product_type']);
         self::assertGreaterThan(0, (int) $created['json']['data']['storefront_id']);
-        self::assertSame('instant', $created['json']['data']['attributes']['delivery_mode']);
+        self::assertSame('digital_delivery', $created['json']['data']['attributes']['delivery_mode']);
         self::assertSame('OpenAI', $created['json']['data']['attributes']['platform']);
         self::assertNotNull($seller->fresh()->storefront);
 

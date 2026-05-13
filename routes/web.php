@@ -62,6 +62,7 @@ use App\Http\Controllers\Admin\WithdrawalReviewController;
 use App\Http\Controllers\Admin\WithdrawalsController;
 use App\Http\Controllers\Admin\WithdrawalShowController;
 use App\Http\Controllers\Web\MarketplaceController;
+use App\Http\Controllers\Web\MarketplaceProfileController;
 use App\Http\Controllers\Web\NotificationController;
 use App\Http\Controllers\Web\WebAuthController;
 use Illuminate\Support\Facades\Route;
@@ -81,6 +82,12 @@ Route::post('/webhooks/kyc/{provider}', [MarketplaceController::class, 'kycProvi
     ->name('webhooks.kyc.provider');
 Route::get('/marketplace', [MarketplaceController::class, 'marketplace'])->name('web.marketplace');
 Route::get('/products/{productId}', [MarketplaceController::class, 'product'])->whereNumber('productId')->name('web.products.show');
+Route::get('/profiles/sellers/{seller}', [MarketplaceProfileController::class, 'sellerPage'])->whereNumber('seller')->name('profiles.sellers.show');
+Route::middleware('auth')->group(function (): void {
+    Route::get('/profiles/buyers/{buyer}', [MarketplaceProfileController::class, 'buyerPage'])->whereNumber('buyer')->name('profiles.buyers.show');
+});
+Route::get('/buyer/orders/{order}', [MarketplaceController::class, 'buyerOrderShow'])->whereNumber('order')->name('buyer.orders.show');
+Route::get('/seller/orders/{order}', [MarketplaceController::class, 'sellerOrderShow'])->whereNumber('order')->name('seller.orders.show');
 Route::get('/{view}', [MarketplaceController::class, 'buyerView'])
     ->where('view', 'dashboard|cart|checkout|orders|order-details|escrow-orders|refund-requests|return-requests|replacement-requests|wishlist|saved-items|favorite-stores|recently-viewed|profile|profile-settings|security-settings|address-book|wallet|top-up-history|transaction-history|referral-dashboard|loyalty-rewards|coupons-promotions|support|support-tickets|notifications|messages|product-reviews|seller-reviews|kyc-verification|device-management')
     ->name('web.buyer.view');
@@ -140,8 +147,13 @@ Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
     Route::post('seller/coupons/{promotion}/delete', [MarketplaceController::class, 'couponDestroy'])->whereNumber('promotion')->name('seller.coupons.destroy');
     Route::post('seller/payouts', [MarketplaceController::class, 'payoutRequestStore'])->name('seller.payouts.store');
     Route::post('support/messages', [MarketplaceController::class, 'supportMessageStore'])->name('support.messages.store');
+    Route::get('buyer/orders/{order}', [MarketplaceController::class, 'buyerOrderApiShow'])->whereNumber('order')->name('buyer.orders.show-api');
+    Route::get('seller/orders/{order}', [MarketplaceController::class, 'sellerOrderApiShow'])->whereNumber('order')->name('seller.orders.show-api');
     Route::get('orders/{order}/escrow', [MarketplaceController::class, 'orderEscrowDetail'])->whereNumber('order')->name('orders.escrow.show');
     Route::post('orders/{order}/escrow/release', [MarketplaceController::class, 'buyerOrderRelease'])->whereNumber('order')->name('orders.escrow.release');
+    Route::post('orders/{order}/review', [MarketplaceController::class, 'buyerOrderReviewStore'])->whereNumber('order')->name('orders.review.store');
+    Route::post('orders/{order}/buyer-review', [MarketplaceController::class, 'sellerBuyerReviewStore'])->whereNumber('order')->name('orders.buyer-review.store');
+    Route::post('reviews/{review}/helpful', [MarketplaceController::class, 'reviewHelpfulStore'])->whereNumber('review')->name('reviews.helpful.store');
     Route::post('orders/{order}/escrow/dispute', [MarketplaceController::class, 'buyerOrderDisputeStore'])->whereNumber('order')->name('orders.escrow.dispute');
     Route::post('orders/{order}/escrow/delivery', [MarketplaceController::class, 'sellerOrderDeliveryStore'])->whereNumber('order')->name('orders.escrow.delivery');
     Route::post('orders/{order}/escrow/messages', [MarketplaceController::class, 'orderEscrowMessageStore'])->whereNumber('order')->name('orders.escrow.messages.store');
@@ -152,12 +164,40 @@ Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
     Route::post('business', [MarketplaceController::class, 'businessUpdate'])->name('business.update');
 });
 
+Route::middleware(['auth', 'throttle:90,1'])->prefix('api')->name('marketplace.api.')->group(function (): void {
+    Route::get('buyer/sellers/{seller}', [MarketplaceProfileController::class, 'sellerForBuyer'])->whereNumber('seller')->name('buyer.sellers.show');
+    Route::get('seller/buyers/{buyer}', [MarketplaceProfileController::class, 'buyerForSeller'])->whereNumber('buyer')->name('seller.buyers.show');
+    Route::get('admin/buyers/{buyer}', [MarketplaceProfileController::class, 'adminBuyer'])->whereNumber('buyer')->name('admin.buyers.show');
+    Route::get('admin/sellers/{seller}', [MarketplaceProfileController::class, 'adminSeller'])->whereNumber('seller')->name('admin.sellers.show');
+    Route::get('profiles/{type}/{id}/reviews', [MarketplaceProfileController::class, 'profileReviews'])
+        ->whereIn('type', ['buyer', 'seller'])
+        ->whereNumber('id')
+        ->name('profiles.reviews.index');
+    Route::post('reviews', [MarketplaceProfileController::class, 'storeReview'])->name('reviews.store');
+    Route::post('reviews/{review}/report', [MarketplaceProfileController::class, 'reportReview'])->whereNumber('review')->name('reviews.report');
+});
+
 Route::prefix('admin')->name('admin.')->group(function (): void {
     Route::middleware('guest')->group(function (): void {
         Route::get('login', [AdminAuthController::class, 'create'])->name('login');
         Route::post('login', [AdminAuthController::class, 'store'])
             ->middleware('throttle:admin-login')
             ->name('login.store');
+        Route::get('forgot-password', [AdminAuthController::class, 'forgot'])->name('password.request');
+        Route::post('forgot-password', [AdminAuthController::class, 'sendRecoveryCode'])
+            ->middleware('throttle:admin-login')
+            ->name('password.email');
+        Route::get('password/otp', [AdminAuthController::class, 'otp'])->name('password.otp');
+        Route::post('password/otp', [AdminAuthController::class, 'verifyOtp'])
+            ->middleware('throttle:admin-login')
+            ->name('password.otp.verify');
+        Route::post('password/otp/resend', [AdminAuthController::class, 'resendOtp'])
+            ->middleware('throttle:admin-login')
+            ->name('password.otp.resend');
+        Route::get('password/reset', [AdminAuthController::class, 'reset'])->name('password.reset');
+        Route::post('password/reset', [AdminAuthController::class, 'updatePassword'])
+            ->middleware('throttle:admin-login')
+            ->name('password.update');
     });
 
     Route::post('logout', [AdminAuthController::class, 'destroy'])->middleware('auth')->name('logout');
@@ -361,6 +401,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('orders/{order}', OrderShowController::class)
             ->name('orders.show')
             ->middleware('admin.permission:'.AdminPermission::ORDERS_VIEW);
+        Route::delete('orders/{order}', [OrdersController::class, 'destroy'])
+            ->name('orders.destroy')
+            ->middleware('admin.permission:'.AdminPermission::ORDERS_MANAGE);
 
         Route::get('escrows', EscrowsController::class)
             ->name('escrows.index')
@@ -370,6 +413,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             ->middleware('admin.permission:'.AdminPermission::ESCROWS_VIEW);
         Route::post('escrows/{escrow}/action', [EscrowActionController::class, 'store'])
             ->name('escrows.action')
+            ->middleware('admin.permission:'.AdminPermission::ESCROWS_MANAGE);
+        Route::delete('escrows/{escrow}', [EscrowsController::class, 'destroy'])
+            ->name('escrows.destroy')
             ->middleware('admin.permission:'.AdminPermission::ESCROWS_MANAGE);
 
         Route::get('disputes', DisputesController::class)
@@ -392,6 +438,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
         Route::post('disputes/{dispute}/unclaim', [DisputeAssignmentController::class, 'unclaim'])
             ->name('disputes.unclaim')
+            ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
+        Route::delete('disputes/{dispute}', [DisputesController::class, 'destroy'])
+            ->name('disputes.destroy')
             ->middleware('admin.permission:'.AdminPermission::DISPUTES_RESOLVE);
 
         Route::get('withdrawals', WithdrawalsController::class)
@@ -421,6 +470,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::get('wallets/{wallet}/ledger-export', WalletLedgerExportController::class)
             ->name('wallets.ledger-export')
             ->middleware('admin.permission:'.AdminPermission::WALLETS_VIEW);
+        Route::delete('wallets/{wallet}', [WalletsController::class, 'destroy'])
+            ->name('wallets.destroy')
+            ->middleware('admin.permission:'.AdminPermission::WALLETS_MANAGE);
         Route::get('wallet-top-ups', WalletTopUpsController::class)
             ->name('wallet-top-ups.index')
             ->middleware('admin.permission:'.AdminPermission::WALLETS_VIEW);

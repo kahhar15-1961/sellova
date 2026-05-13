@@ -26,9 +26,22 @@ final class UserNotificationCreated implements ShouldBroadcastNow
         public readonly int $unreadCount,
     ) {}
 
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('App.Models.User.'.$this->userId);
+        $channels = [
+            new PrivateChannel('App.Models.User.'.$this->userId),
+            new PrivateChannel('user.'.$this->userId),
+        ];
+
+        $accountId = (int) ($this->notification['recipient_account_id'] ?? 0);
+        if ($this->role === 'buyer') {
+            $channels[] = new PrivateChannel('buyer.'.($accountId > 0 ? $accountId : $this->userId));
+        }
+        if ($this->role === 'seller' && $accountId > 0) {
+            $channels[] = new PrivateChannel('seller.'.$accountId);
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string

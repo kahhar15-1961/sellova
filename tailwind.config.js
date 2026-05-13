@@ -14,6 +14,7 @@ export default {
         extend: {
             fontFamily: {
                 sans: ['Plus Jakarta Sans', 'Inter', ...defaultTheme.fontFamily.sans],
+                display: ['Plus Jakarta Sans', 'Inter', ...defaultTheme.fontFamily.sans],
             },
             colors: {
                 border: 'hsl(var(--border))',
@@ -45,6 +46,14 @@ export default {
                     DEFAULT: 'hsl(var(--card))',
                     foreground: 'hsl(var(--card-foreground))',
                 },
+                sidebar: {
+                    DEFAULT: 'hsl(var(--sidebar))',
+                    foreground: 'hsl(var(--sidebar-foreground))',
+                    accent: 'hsl(var(--sidebar-accent))',
+                    'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+                    border: 'hsl(var(--sidebar-border))',
+                    ring: 'hsl(var(--sidebar-ring))',
+                },
             },
             borderRadius: {
                 lg: 'var(--radius)',
@@ -52,7 +61,7 @@ export default {
                 sm: 'calc(var(--radius) - 4px)',
             },
             boxShadow: {
-                card: '0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 24px -4px rgb(15 23 42 / 0.08)',
+                card: '0 1px 2px rgb(15 23 42 / 0.03), 0 24px 54px -28px hsl(var(--shadow-color) / 0.28)',
             },
         },
     },

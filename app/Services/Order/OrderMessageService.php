@@ -10,6 +10,7 @@ use App\Models\ChatThread;
 use App\Models\ChatThreadRead;
 use App\Models\Order;
 use App\Models\OrderMessageAttachment;
+use App\Services\Notification\NotificationService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
@@ -18,7 +19,7 @@ class OrderMessageService
 {
     public function getOrCreateEscrowThread(Order $order): ChatThread
     {
-        $sellerUserId = (int) ($order->seller_user_id ?? 0);
+        $sellerUserId = $this->resolveSellerUserId($order);
         if ($sellerUserId <= 0) {
             throw new OrderValidationFailedException($order->id, 'order_seller_not_found');
         }
@@ -42,7 +43,7 @@ class OrderMessageService
             return 'buyer';
         }
 
-        if ((int) ($order->seller_user_id ?? 0) === $userId) {
+        if ($this->resolveSellerUserId($order) === $userId) {
             return 'seller';
         }
 
@@ -138,6 +139,7 @@ class OrderMessageService
         $message->load('escrowAttachments');
         $payload = $this->messagePayload($message, true, 'sent');
         ChatMessageCreated::dispatch((int) $thread->id, $payload);
+        $this->notifyCounterparty($order, $thread, $senderRole, $body, $message);
 
         return $payload;
     }
@@ -146,7 +148,7 @@ class OrderMessageService
     {
         return $this->sendMessage(
             order: $order,
-            senderUserId: (int) ($order->seller_user_id ?? $order->buyer_user_id),
+            senderUserId: $this->resolveSellerUserId($order) ?: (int) $order->buyer_user_id,
             body: $body,
             attachments: [],
             artifactType: $artifactType,
@@ -177,6 +179,25 @@ class OrderMessageService
         return in_array((string) $order->status->value, ['completed', 'cancelled', 'refunded'], true);
     }
 
+    private function resolveSellerUserId(Order $order): int
+    {
+        $sellerUserId = (int) ($order->seller_user_id ?? 0);
+        if ($sellerUserId > 0) {
+            return $sellerUserId;
+        }
+
+        $sellerUserIds = $order->orderItems()
+            ->whereHas('seller_profile')
+            ->with('seller_profile:id,user_id')
+            ->get()
+            ->map(static fn ($item): int => (int) ($item->seller_profile?->user_id ?? 0))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $sellerUserIds->count() === 1 ? (int) $sellerUserIds->first() : 0;
+    }
+
     private function counterpartyUserId(ChatThread $thread, int $viewerUserId): ?int
     {
         if ((int) $thread->buyer_user_id === $viewerUserId) {
@@ -188,6 +209,47 @@ class OrderMessageService
         }
 
         return (int) $thread->buyer_user_id ?: ($thread->seller_user_id !== null ? (int) $thread->seller_user_id : null);
+    }
+
+    private function notifyCounterparty(Order $order, ChatThread $thread, string $senderRole, string $body, ChatMessage $message): void
+    {
+        if ($senderRole === 'admin') {
+            return;
+        }
+
+        $receiverUserId = $message->receiver_user_id !== null ? (int) $message->receiver_user_id : 0;
+        if ($receiverUserId <= 0) {
+            return;
+        }
+
+        $receiverRole = (int) $thread->seller_user_id === $receiverUserId ? 'seller' : 'buyer';
+        $href = $receiverRole === 'seller'
+            ? '/seller/orders/'.(int) $order->id
+            : '/buyer/orders/'.(int) $order->id;
+        $senderLabel = ucfirst($senderRole);
+        $preview = Str::limit($body !== '' ? $body : 'Sent an attachment.', 120);
+
+        app(NotificationService::class)->notify(
+            $receiverUserId,
+            'escrow.chat.message',
+            'New escrow chat message',
+            $senderLabel.': '.$preview,
+            [
+                'role' => $receiverRole,
+                'recipient_context' => $receiverRole,
+                'recipient_role' => $receiverRole,
+                'order_id' => (int) $order->id,
+                'context_entity_type' => 'order',
+                'context_entity_id' => (int) $order->id,
+                'context_route_name' => $receiverRole.'.orders.show',
+                'thread_id' => (int) $thread->id,
+                'message_id' => (int) $message->id,
+                'href' => $href,
+                'action_url' => $href,
+                'icon' => 'message-square-text',
+                'color' => 'indigo',
+            ],
+        );
     }
 
     private function storeAttachment(Order $order, ChatMessage $message, int $senderUserId, UploadedFile $attachment): void

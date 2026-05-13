@@ -9,6 +9,18 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
+Broadcast::channel('user.{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+
+Broadcast::channel('buyer.{id}', function (User $user, int $id) {
+    return (int) $user->id === (int) $id;
+});
+
+Broadcast::channel('seller.{id}', function (User $user, int $id) {
+    return (int) ($user->sellerProfile?->id ?? 0) === (int) $id;
+});
+
 Broadcast::channel('chat.thread.{threadId}', static function (User $user, int $threadId): array|bool {
     $thread = ChatThread::query()->find($threadId);
     if (! $thread) {

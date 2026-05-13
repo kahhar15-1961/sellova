@@ -99,12 +99,14 @@ final class EscrowShowController extends AdminPageController
                 ] : null,
                 'buyer' => $order?->buyer ? [
                     'id' => $order->buyer->id,
+                    'name' => $order->buyer->display_name,
                     'email' => $order->buyer->email,
                     'href' => route('admin.buyers.show', $order->buyer),
                 ] : null,
                 'seller' => $sellerProfile ? [
                     'id' => $sellerProfile->id,
                     'display_name' => $sellerProfile->display_name,
+                    'account_email' => $sellerProfile->user?->email,
                     'href' => route('admin.seller-profiles.show', $sellerProfile),
                     'storefront' => $sellerProfile->storefront ? [
                         'title' => $sellerProfile->storefront->title,

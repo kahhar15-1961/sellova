@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { formatMoney } from '@/lib/utils';
 
 const STAT_DEFS = [
     { key: 'total_users', label: 'Total users' },
@@ -41,10 +42,7 @@ function fmtDate(iso) {
 }
 
 function fmtMoney(amount, currency) {
-    if (amount == null || currency == null) return '—';
-    const n = Number(amount);
-    if (Number.isNaN(n)) return `${amount} ${currency}`;
-    return `${currency} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return formatMoney(amount, currency, { currencyDisplay: 'code' });
 }
 
 function alertVariant(sev) {
@@ -58,9 +56,9 @@ function TrendBars({ title, series }) {
     const max = Math.max(1, ...(series || []).map((s) => Number(s.value || 0)));
 
     return (
-        <Card className="border-border/80 bg-card shadow-sm">
+        <Card className="panel-card">
             <CardHeader className="pb-2">
-                <CardTitle className="text-base">{title}</CardTitle>
+                <CardTitle className="text-base dark:text-slate-100">{title}</CardTitle>
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-7 gap-1 sm:grid-cols-10">
@@ -105,11 +103,11 @@ export default function Dashboard({
     };
 
     return (
-        <AdminLayout className="bg-gradient-to-b from-slate-50 to-slate-100/80">
+        <AdminLayout className="bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.18),transparent_32%),linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(51,65,85,0.48),transparent_28%),linear-gradient(180deg,#111827_0%,#0f172a_100%)]">
             <Head title={header.title} />
             <PageHeader title={header.title} description={header.description} breadcrumbs={header.breadcrumbs} />
 
-            <div className="mb-6 flex flex-col gap-1 rounded-xl border border-border/60 bg-card/80 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-6 flex flex-col gap-1 rounded-[1.15rem] border border-border/60 bg-card/85 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-700/80 dark:bg-slate-800/80 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Signed in</p>
                     <p className="text-sm font-semibold text-foreground">{authEmail || 'Admin'}</p>
@@ -125,7 +123,7 @@ export default function Dashboard({
                 {STAT_DEFS.map(({ key, label }) => {
                     const cell = summary?.[key] ?? { value: null, hint: null };
                     const locked = cell.value === null || cell.value === undefined;
-                    return <StatCard key={key} label={label} value={cell.value} hint={cell.hint ?? undefined} locked={locked} className="border-border/70 bg-card/90 shadow-sm" />;
+                    return <StatCard key={key} label={label} value={cell.value} hint={cell.hint ?? undefined} locked={locked} variant="dashboard" />;
                 })}
             </div>
 
@@ -145,14 +143,14 @@ export default function Dashboard({
                     <section>
                         <div className="mb-4 flex items-end justify-between gap-4">
                             <div>
-                                <h2 className="text-lg font-semibold tracking-tight">Operational queues</h2>
-                                <p className="text-sm text-muted-foreground">Prioritized slices with bounded rows and eager relations.</p>
+                                <h2 className="text-lg font-semibold tracking-tight text-foreground dark:text-slate-100">Operational queues</h2>
+                                <p className="text-sm text-muted-foreground dark:text-slate-400">Prioritized slices with bounded rows and eager relations.</p>
                             </div>
                         </div>
                         <div className="grid gap-6 lg:grid-cols-2">
                             <DashboardQueuePanel title="Recent orders" description="Latest placed orders with buyer context." href={links.orders} locked={!sectionAccess.recent_orders}>
                                 {!recentOrders?.length ? <p className="rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">No recent orders in range.</p> : (
-                                    <Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Buyer</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead>Placed</TableHead></TableRow></TableHeader><TableBody>{recentOrders.map((row) => <TableRow key={row.id}><TableCell className="font-medium tabular-nums">{row.order_number}</TableCell><TableCell className="max-w-[140px] truncate text-muted-foreground">{row.buyer_email ?? '—'}</TableCell><TableCell className="tabular-nums">{fmtMoney(row.gross_amount, row.currency)}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell className="text-muted-foreground">{fmtDate(row.placed_at)}</TableCell></TableRow>)}</TableBody></Table>
+                                    <Table><TableHeader><TableRow><TableHead>Order</TableHead><TableHead>Buyer</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead>Placed</TableHead></TableRow></TableHeader><TableBody>{recentOrders.map((row) => <TableRow key={row.id}><TableCell className="font-medium tabular-nums">{row.order_number}</TableCell><TableCell className="max-w-[180px]"><p className="truncate font-medium text-foreground">{row.buyer_name ?? `Buyer #${row.buyer_user_id ?? row.id}`}</p><p className="truncate text-xs text-muted-foreground">{row.buyer_email ?? 'No email'}</p></TableCell><TableCell className="tabular-nums">{fmtMoney(row.gross_amount, row.currency)}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell className="text-muted-foreground">{fmtDate(row.placed_at)}</TableCell></TableRow>)}</TableBody></Table>
                                 )}
                             </DashboardQueuePanel>
 
@@ -189,16 +187,16 @@ export default function Dashboard({
                     </section>
 
                     <section>
-                        <h2 className="mb-4 text-lg font-semibold tracking-tight">System alerts</h2>
+                        <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground dark:text-slate-100">System alerts</h2>
                         <div className="grid gap-4 md:grid-cols-2">
                             {(systemAlerts ?? []).map((a, i) => (
-                                <Card key={i} className="border-border/80 bg-card shadow-sm">
-                                    <CardHeader className="pb-2">
+                                <Card key={i} className="panel-card">
+                                    <CardHeader className="border-b border-border/70 pb-2 dark:border-slate-700/80">
                                         <div className="flex items-center gap-2">
                                             <Badge variant={alertVariant(a.severity)}>{a.severity}</Badge>
-                                            <CardTitle className="text-base">{a.title}</CardTitle>
+                                            <CardTitle className="text-base dark:text-slate-100">{a.title}</CardTitle>
                                         </div>
-                                        <CardDescription className="text-sm leading-relaxed">{a.detail}</CardDescription>
+                                        <CardDescription className="text-sm leading-relaxed dark:text-slate-400">{a.detail}</CardDescription>
                                     </CardHeader>
                                     {a.href ? <CardContent className="pt-0"><a href={a.href} className="text-sm font-medium text-primary hover:underline">Open</a></CardContent> : null}
                                 </Card>
@@ -209,17 +207,17 @@ export default function Dashboard({
                     <section>
                         <div className="mb-4 flex items-end justify-between gap-4">
                             <div>
-                                <h2 className="text-lg font-semibold tracking-tight">Finance inbox</h2>
-                                <p className="text-sm text-muted-foreground">Funding requests and ledger-related actions in one place.</p>
+                                <h2 className="text-lg font-semibold tracking-tight text-foreground dark:text-slate-100">Finance inbox</h2>
+                                <p className="text-sm text-muted-foreground dark:text-slate-400">Funding requests and ledger-related actions in one place.</p>
                             </div>
                             <Button variant="outline" asChild>
                                 <Link href={links.wallet_top_ups}>Open wallet top-ups</Link>
                             </Button>
                         </div>
-                        <Card className="border-border/80 bg-card shadow-sm">
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-base">Wallet funding queue</CardTitle>
-                                <CardDescription>Manual wallet top-ups are reviewed here before any balance credit is posted.</CardDescription>
+                        <Card className="panel-card">
+                            <CardHeader className="border-b border-border/70 pb-2 dark:border-slate-700/80">
+                                <CardTitle className="text-base dark:text-slate-100">Wallet funding queue</CardTitle>
+                                <CardDescription className="dark:text-slate-400">Manual wallet top-ups are reviewed here before any balance credit is posted.</CardDescription>
                             </CardHeader>
                             <CardContent>
                                 {!pendingWalletTopUps?.length ? (
@@ -256,10 +254,10 @@ export default function Dashboard({
                 </TabsContent>
 
                 <TabsContent value="layout" className="mt-6">
-                    <Card>
+                    <Card className="panel-card">
                         <CardHeader>
-                            <CardTitle className="text-base">Layout notes</CardTitle>
-                            <CardDescription>Stats use one aggregate query; queue tables use bounded selects with constrained eager loads. Financial totals sum raw decimals across currencies.</CardDescription>
+                            <CardTitle className="text-base dark:text-slate-100">Layout notes</CardTitle>
+                            <CardDescription className="dark:text-slate-400">Stats use one aggregate query; queue tables use bounded selects with constrained eager loads. Financial totals sum raw decimals across currencies.</CardDescription>
                         </CardHeader>
                     </Card>
                 </TabsContent>

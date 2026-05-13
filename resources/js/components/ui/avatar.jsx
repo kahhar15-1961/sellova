@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 const Avatar = React.forwardRef(({ className, ...props }, ref) => (
     <AvatarPrimitive.Root
         ref={ref}
-        className={cn('relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border', className)}
+        className={cn('relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-white/70 bg-background shadow-sm', className)}
         {...props}
     />
 ));
@@ -19,7 +19,7 @@ AvatarImage.displayName = AvatarPrimitive.Image.displayName;
 const AvatarFallback = React.forwardRef(({ className, ...props }, ref) => (
     <AvatarPrimitive.Fallback
         ref={ref}
-        className={cn('flex h-full w-full items-center justify-center rounded-full bg-muted text-xs font-medium', className)}
+        className={cn('flex h-full w-full items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground', className)}
         {...props}
     />
 ));

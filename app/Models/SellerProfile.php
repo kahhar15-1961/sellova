@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $country_code
  * @property string|null $default_currency
  * @property string $verification_status
+ * @property string|null $kyc_status
  * @property string $store_status
  * @property string|null $store_logo_url
  * @property string|null $banner_image_url
@@ -64,6 +65,7 @@ class SellerProfile extends Model
         'country_code',
         'default_currency',
         'verification_status',
+        'kyc_status',
         'store_status',
         'store_logo_url',
         'banner_image_url',
@@ -80,15 +82,20 @@ class SellerProfile extends Model
         'outside_dhaka_fee',
         'cash_on_delivery_enabled',
         'processing_time_label',
+        'store_policies_json',
+        'last_active_at',
     ];
 
     protected $casts = [
         'user_id' => 'integer',
         'verification_status' => 'string',
+        'kyc_status' => 'string',
         'store_status' => 'string',
         'inside_dhaka_fee' => 'float',
         'outside_dhaka_fee' => 'float',
         'cash_on_delivery_enabled' => 'boolean',
+        'store_policies_json' => 'array',
+        'last_active_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',

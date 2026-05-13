@@ -1,5 +1,6 @@
 import { Form, Head, router } from '@inertiajs/react';
-import { CalendarClock, Megaphone, PackageSearch, PauseCircle, PlayCircle, Target, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CalendarClock, ChevronDown, Ellipsis, Filter, Megaphone, PackageSearch, PauseCircle, PlayCircle, Search, Target, Trash2 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { DateTimeField, EnterpriseMultiSelect, EnterpriseSelect, Field, SectionHeader } from '@/components/admin/EnterpriseForm';
 import { PageHeader } from '@/components/admin/PageHeader';
@@ -10,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { formatMoney } from '@/lib/utils';
 
 function fmtDate(iso) {
     if (!iso) return '—';
@@ -53,7 +55,29 @@ function statusFor(row) {
 function discountLabel(row) {
     if (row.discount_type === 'percentage') return percent(row.discount_value);
     if (row.discount_type === 'shipping') return 'Free shipping';
-    return `${row.currency || ''} ${money(row.discount_value)}`.trim();
+    return formatMoney(row.discount_value, row.currency, { currencyDisplay: 'code' });
+}
+
+function avatarTone(seed) {
+    const tones = [
+        'bg-amber-100 text-amber-700 dark:bg-amber-500/16 dark:text-amber-300',
+        'bg-violet-100 text-violet-700 dark:bg-violet-500/16 dark:text-violet-300',
+        'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/16 dark:text-emerald-300',
+        'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/16 dark:text-indigo-300',
+        'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/16 dark:text-cyan-300',
+        'bg-rose-100 text-rose-700 dark:bg-rose-500/16 dark:text-rose-300',
+    ];
+    const index = Math.abs(
+        String(seed || '')
+            .split('')
+            .reduce((sum, char) => sum + char.charCodeAt(0), 0),
+    ) % tones.length;
+    return tones[index];
+}
+
+function initialForCampaign(value) {
+    const normalized = String(value || '').replace(/[^a-zA-Z0-9]/g, '').trim();
+    return normalized ? normalized.charAt(0).toUpperCase() : 'P';
 }
 
 function CampaignScheduleModal({ row, updateUrl }) {
@@ -109,9 +133,43 @@ export default function PromotionsIndex({
     product_options = [],
     type_options = [],
 }) {
+    const [query, setQuery] = useState('');
+    const [stateFilter, setStateFilter] = useState('all');
+    const [selected, setSelected] = useState(() => new Set());
     const activeCampaigns = rows.filter((row) => statusFor(row) === 'active').length;
     const scheduledCampaigns = rows.filter((row) => statusFor(row) === 'scheduled').length;
     const catalogCampaigns = rows.filter((row) => row.campaign_type === 'catalog').length;
+    const filteredRows = useMemo(() => {
+        const needle = query.trim().toLowerCase();
+        return rows.filter((row) => {
+            const state = statusFor(row);
+            const matchesState = stateFilter === 'all' || state === stateFilter;
+            const haystack = [
+                row.title,
+                row.code,
+                row.badge,
+                row.marketing_channel,
+                row.description,
+                row.campaign_type,
+                row.scope_type,
+            ].join(' ').toLowerCase();
+            return matchesState && (!needle || haystack.includes(needle));
+        });
+    }, [query, rows, stateFilter]);
+    const allChecked = filteredRows.length > 0 && selected.size === filteredRows.length;
+
+    const toggleAll = (checked) => {
+        setSelected(checked ? new Set(filteredRows.map((row) => String(row.id))) : new Set());
+    };
+
+    const toggleOne = (id, checked) => {
+        setSelected((current) => {
+            const next = new Set(current);
+            if (checked) next.add(id);
+            else next.delete(id);
+            return next;
+        });
+    };
 
     return (
         <AdminLayout>
@@ -159,13 +217,13 @@ export default function PromotionsIndex({
                 </div>
 
                 <Dialog>
-                    <div className="flex flex-col gap-3 rounded-md border bg-card p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <h2 className="text-lg font-bold text-foreground">Campaign operations</h2>
-                            <p className="text-sm text-muted-foreground">Launch catalog campaigns or promo codes from a controlled modal workflow with targeting and schedule rules.</p>
+                            <h2 className="text-[15px] font-bold text-slate-950 dark:text-slate-100">Campaign operations</h2>
+                            <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">Launch catalog campaigns or promo codes from a controlled modal workflow.</p>
                         </div>
                         <DialogTrigger asChild>
-                            <Button className="gap-2">
+                            <Button className="h-[42px] gap-2 rounded-md bg-slate-950 px-4 text-[13px] font-semibold text-white shadow-none hover:bg-slate-900 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white">
                                 <Megaphone className="h-4 w-4" />
                                 New campaign
                             </Button>
@@ -316,116 +374,180 @@ export default function PromotionsIndex({
                     </DialogContent>
                 </Dialog>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Campaign command center</CardTitle>
-                        <CardDescription>Live, scheduled, expired, and paused campaigns with scope, priority, budget guardrails, and quick operations.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        {rows.length === 0 ? (
-                            <div className="rounded-md border border-dashed p-8 text-sm text-muted-foreground">
-                                No campaigns yet. Create a catalog campaign or promo code to start merchandising.
+                <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800">
+                    <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-700 lg:flex-row lg:items-center lg:justify-between">
+                        <form
+                            onSubmit={(event) => event.preventDefault()}
+                            className="w-full max-w-[448px]"
+                        >
+                            <div className="relative">
+                                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                                <input
+                                    value={query}
+                                    onChange={(event) => setQuery(event.target.value)}
+                                    placeholder="Search campaigns by code, title, or channel..."
+                                    className="h-[42px] w-full rounded-md border border-slate-200 bg-slate-50/70 pl-10 pr-3 text-[13px] font-medium text-slate-700 shadow-none outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-slate-200/60 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-600 dark:focus:bg-slate-900"
+                                />
                             </div>
-                        ) : (
-                            <div className="overflow-x-auto rounded-md border">
-                                <table className="w-full min-w-[1100px] text-left text-sm">
-                                    <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                                        <tr>
-                                            <th className="px-4 py-3">Campaign</th>
-                                            <th className="px-4 py-3">Type</th>
-                                            <th className="px-4 py-3">Discount</th>
-                                            <th className="px-4 py-3">Audience</th>
-                                            <th className="px-4 py-3">Schedule</th>
-                                            <th className="px-4 py-3">Usage</th>
-                                            <th className="px-4 py-3">Status</th>
-                                            <th className="px-4 py-3">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {rows.map((row) => {
-                                            const active = Boolean(row.is_active);
-                                            const state = statusFor(row);
-                                            return (
-                                                <tr key={row.id} className="border-t align-top">
-                                                    <td className="px-4 py-4">
-                                                        <div className="font-semibold text-foreground">{row.title}</div>
-                                                        <div className="mt-1 flex flex-wrap gap-2">
-                                                            <Badge variant="outline">{row.code}</Badge>
-                                                            {row.badge ? <Badge>{row.badge}</Badge> : null}
-                                                            {row.marketing_channel ? <Badge variant="secondary">{row.marketing_channel}</Badge> : null}
+                        </form>
+
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                            <Button type="button" variant="outline" size="sm" className="h-[42px] rounded-md border-slate-200 bg-white px-4 text-[13px] font-semibold shadow-none dark:border-slate-700 dark:bg-slate-800">
+                                Apply
+                            </Button>
+                            <span className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+                            <select
+                                value={stateFilter}
+                                onChange={(event) => setStateFilter(event.target.value)}
+                                className="h-[42px] w-[160px] min-w-[160px] shrink-0 rounded-md border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 shadow-none outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200/60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                                <option value="all">All statuses</option>
+                                <option value="active">Active</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="expired">Expired</option>
+                                <option value="paused">Paused</option>
+                            </select>
+                            <Button type="button" variant="outline" size="sm" className="h-[42px] shrink-0 gap-2 rounded-md border-slate-200 bg-white px-4 text-[13px] font-semibold shadow-none dark:border-slate-700 dark:bg-slate-800">
+                                <Filter className="h-4 w-4" />
+                                Filters
+                            </Button>
+                            <Button type="button" size="sm" className="h-[42px] shrink-0 rounded-md bg-slate-950 px-4 text-[13px] font-semibold text-white shadow-none hover:bg-slate-900 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white">
+                                Bulk actions
+                                <ChevronDown className="ml-2 h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="admin-scrollbar overflow-x-auto">
+                        <table className="min-w-full border-collapse">
+                            <thead>
+                                <tr className="h-[45px] border-b border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/30">
+                                    <th className="w-[40px] px-4 text-left">
+                                        <input type="checkbox" className="users-table-checkbox" checked={allChecked} onChange={(event) => toggleAll(event.target.checked)} />
+                                    </th>
+                                    <th className="min-w-[310px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Campaign</th>
+                                    <th className="min-w-[130px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Type</th>
+                                    <th className="min-w-[170px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Discount</th>
+                                    <th className="min-w-[220px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Audience</th>
+                                    <th className="min-w-[230px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Schedule</th>
+                                    <th className="min-w-[120px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Usage</th>
+                                    <th className="min-w-[120px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Status</th>
+                                    <th className="min-w-[300px] px-3 text-left text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">Actions</th>
+                                    <th className="w-12 px-4" />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredRows.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={10} className="px-4 py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+                                            No campaigns found for the current filters.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredRows.map((row) => {
+                                        const active = Boolean(row.is_active);
+                                        const state = statusFor(row);
+                                        const id = String(row.id);
+                                        return (
+                                            <tr
+                                                key={row.id}
+                                                className="min-h-[65px] border-b border-slate-100 transition-colors hover:bg-slate-50/70 dark:border-slate-700/70 dark:hover:bg-slate-900/22"
+                                            >
+                                                <td className="px-4 py-4 align-middle">
+                                                    <input type="checkbox" className="users-table-checkbox" checked={selected.has(id)} onChange={(event) => toggleOne(id, event.target.checked)} />
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <div className="flex items-start gap-3">
+                                                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${avatarTone(row.code || row.title)}`}>
+                                                            {initialForCampaign(row.code || row.title)}
                                                         </div>
-                                                        <p className="mt-2 max-w-md text-xs text-muted-foreground">{row.description || 'No brief added.'}</p>
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <div className="capitalize">{row.campaign_type || 'coupon'}</div>
-                                                        <div className="mt-1 text-xs text-muted-foreground">Priority {row.priority ?? 100}</div>
-                                                    </td>
-                                                    <td className="px-4 py-4 font-semibold">
-                                                        {discountLabel(row)}
-                                                        {row.max_discount_amount ? <div className="mt-1 text-xs font-normal text-muted-foreground">Cap {row.currency} {money(row.max_discount_amount)}</div> : null}
-                                                        <div className="mt-1 text-xs font-normal text-muted-foreground">Min {row.currency} {money(row.min_spend)}</div>
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <div className="flex items-center gap-2 capitalize">
-                                                            <Target className="h-4 w-4 text-muted-foreground" />
-                                                            {String(row.scope_type || 'all').replace('_', ' ')}
-                                                        </div>
-                                                        <div className="mt-1 text-xs text-muted-foreground">
-                                                            Products {(row.target_product_ids || []).length} · Sellers {(row.target_seller_profile_ids || []).length} · Categories {(row.target_category_ids || []).length}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-4 text-muted-foreground">
-                                                        <div>{fmtDate(row.starts_at)}</div>
-                                                        <div className="mt-1">{fmtDate(row.ends_at)}</div>
-                                                        {row.daily_start_time || row.daily_end_time ? (
-                                                            <div className="mt-1 text-xs font-semibold text-foreground">
-                                                                Daily {row.daily_start_time || '00:00'} - {row.daily_end_time || '23:59'}
+                                                        <div className="min-w-0">
+                                                            <div className="truncate text-[13px] font-semibold text-slate-950 dark:text-slate-100">{row.title}</div>
+                                                            <div className="mt-1 flex flex-wrap gap-1.5">
+                                                                <Badge variant="outline" className="rounded px-2 py-0.5 text-[10px] font-semibold">{row.code}</Badge>
+                                                                {row.badge ? <Badge className="rounded px-2 py-0.5 text-[10px] font-semibold">{row.badge}</Badge> : null}
+                                                                {row.marketing_channel ? <Badge variant="secondary" className="rounded px-2 py-0.5 text-[10px] font-semibold">{row.marketing_channel}</Badge> : null}
                                                             </div>
-                                                        ) : null}
-                                                    </td>
-                                                    <td className="px-4 py-4 text-muted-foreground">
-                                                        {row.used_count ?? 0}
-                                                        {row.usage_limit ? ` / ${row.usage_limit}` : ' / Unlimited'}
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <StatusBadge status={state} />
-                                                    </td>
-                                                    <td className="px-4 py-4">
-                                                        <div className="flex flex-wrap gap-2">
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="outline"
-                                                                onClick={() => router.post(toggle_url_template.replace('__ID__', row.id), { is_active: !active }, { preserveScroll: true })}
-                                                            >
-                                                                {active ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
-                                                                {active ? 'Pause' : 'Activate'}
-                                                            </Button>
-                                                            <CampaignScheduleModal row={row} updateUrl={update_url_template.replace('__ID__', row.id)} />
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="destructive"
-                                                                onClick={() => {
-                                                                    if (window.confirm(`Delete campaign ${row.code}?`)) {
-                                                                        router.delete(delete_url_template.replace('__ID__', row.id), { preserveScroll: true });
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                                Delete
-                                                            </Button>
+                                                            <p className="mt-2 line-clamp-2 max-w-md text-[12px] text-slate-500 dark:text-slate-400">{row.description || 'No brief added.'}</p>
                                                         </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <div className="text-[13px] font-semibold capitalize text-slate-700 dark:text-slate-300">{row.campaign_type || 'coupon'}</div>
+                                                    <div className="mt-1 text-[12px] text-slate-400 dark:text-slate-500">Priority {row.priority ?? 100}</div>
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <div className="text-[13px] font-semibold text-slate-700 dark:text-slate-300">{discountLabel(row)}</div>
+                                                    {row.max_discount_amount ? <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">Cap {formatMoney(row.max_discount_amount, row.currency, { currencyDisplay: 'code' })}</div> : null}
+                                                    <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">Min {formatMoney(row.min_spend, row.currency, { currencyDisplay: 'code' })}</div>
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <div className="inline-flex items-center gap-2 text-[13px] font-semibold capitalize text-slate-700 dark:text-slate-300">
+                                                        <Target className="h-4 w-4 text-slate-400" />
+                                                        {String(row.scope_type || 'all').replace('_', ' ')}
+                                                    </div>
+                                                    <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                                                        Products {(row.target_product_ids || []).length} · Sellers {(row.target_seller_profile_ids || []).length} · Categories {(row.target_category_ids || []).length}
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-4 align-middle text-[13px] font-medium text-slate-500 dark:text-slate-400">
+                                                    <div>{fmtDate(row.starts_at)}</div>
+                                                    <div className="mt-1">{fmtDate(row.ends_at)}</div>
+                                                    {row.daily_start_time || row.daily_end_time ? (
+                                                        <div className="mt-1 text-[12px] font-semibold text-slate-700 dark:text-slate-300">
+                                                            Daily {row.daily_start_time || '00:00'} - {row.daily_end_time || '23:59'}
+                                                        </div>
+                                                    ) : null}
+                                                </td>
+                                                <td className="px-3 py-4 align-middle text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                                                    {row.used_count ?? 0}
+                                                    {row.usage_limit ? ` / ${row.usage_limit}` : ' / Unlimited'}
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <StatusBadge status={state} className="px-2.5 py-1 text-[10px]" />
+                                                </td>
+                                                <td className="px-3 py-4 align-middle">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="h-8 rounded-md px-3 text-[12px] font-semibold shadow-none"
+                                                            onClick={() => router.post(toggle_url_template.replace('__ID__', row.id), { is_active: !active }, { preserveScroll: true })}
+                                                        >
+                                                            {active ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
+                                                            {active ? 'Pause' : 'Activate'}
+                                                        </Button>
+                                                        <CampaignScheduleModal row={row} updateUrl={update_url_template.replace('__ID__', row.id)} />
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="destructive"
+                                                            className="h-8 rounded-md px-3 text-[12px] font-semibold shadow-none"
+                                                            onClick={() => {
+                                                                if (window.confirm(`Delete campaign ${row.code}?`)) {
+                                                                    router.delete(delete_url_template.replace('__ID__', row.id), { preserveScroll: true });
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                            Delete
+                                                        </Button>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 text-right align-middle">
+                                                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-md p-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                                                        <Ellipsis className="h-4 w-4" />
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
         </AdminLayout>
     );

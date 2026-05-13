@@ -362,17 +362,19 @@ final class AdminDashboardService
             ->orderByDesc('placed_at')
             ->limit(8)
             ->with(['buyer' => static function ($q): void {
-                $q->select(['id', 'email']);
+                $q->select(['id', 'display_name', 'email']);
             }])
             ->get()
             ->map(static function (Order $o): array {
                 return [
                     'id' => $o->id,
+                    'buyer_user_id' => $o->buyer_user_id,
                     'order_number' => $o->order_number,
                     'status' => $o->status->value,
                     'gross_amount' => (string) $o->gross_amount,
                     'currency' => $o->currency,
                     'placed_at' => $o->placed_at?->toIso8601String(),
+                    'buyer_name' => $o->buyer?->display_name,
                     'buyer_email' => $o->buyer?->email,
                 ];
             })

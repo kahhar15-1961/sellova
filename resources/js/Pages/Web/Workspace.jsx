@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -73,14 +73,14 @@ import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { cn, formatMoney } from '@/lib/utils';
 import { getEcho } from '@/realtime/echo';
 
 const fallbackCategoryNames = ['All'];
 const PAGE_SIZE = 12;
 
 function money(value) {
-    return `৳${Number(value || 0).toLocaleString('en-BD')}`;
+    return formatMoney(value, 'BDT');
 }
 
 function currentTimeLabel() {
@@ -111,11 +111,65 @@ function formatTimeOnly(value) {
 }
 
 function formatCountdown(seconds) {
-    const safe = Math.max(0, Number(seconds || 0));
+    const safe = Math.max(0, Math.floor(Number(seconds || 0)));
     const hours = String(Math.floor(safe / 3600)).padStart(2, '0');
     const minutes = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
     const secs = String(safe % 60).padStart(2, '0');
     return `${hours}:${minutes}:${secs}`;
+}
+
+function playChatNotificationSound() {
+    if (typeof window === 'undefined') return;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    try {
+        const context = new AudioContextClass();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, context.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(660, context.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.0001, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.2);
+        window.setTimeout(() => context.close?.(), 260);
+    } catch {
+        // Browsers may block audio before a user gesture; the visual notification still appears.
+    }
+}
+
+function showBrowserChatNotification(title, body, href) {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+    const notify = () => {
+        try {
+            const notification = new window.Notification(title, {
+                body,
+                tag: href || 'sellova-escrow-chat',
+                silent: true,
+            });
+            notification.onclick = () => {
+                window.focus();
+                if (href) window.location.href = href;
+                notification.close();
+            };
+        } catch {
+            // Notification permission can be unavailable in private or restricted browser contexts.
+        }
+    };
+
+    if (window.Notification.permission === 'granted') {
+        notify();
+    } else if (window.Notification.permission === 'default') {
+        window.Notification.requestPermission().then((permission) => {
+            if (permission === 'granted') notify();
+        }).catch(() => {});
+    }
 }
 
 function csrfToken() {
@@ -228,6 +282,10 @@ function mergeServerState(initialMarketplace) {
         wishlist: Array.isArray(initialMarketplace.wishlist) ? initialMarketplace.wishlist : [],
         orders: Array.isArray(initialMarketplace.orders) ? initialMarketplace.orders : [],
         buyerOps: initialMarketplace.buyerOps ?? {},
+        escrowOrderDetails: {
+            buyer: initialMarketplace.buyerOps?.selectedEscrowOrder ?? null,
+            seller: initialMarketplace.sellerOps?.selectedEscrowOrder ?? null,
+        },
         escrowOrderDetail: initialMarketplace.buyerOps?.selectedEscrowOrder ?? initialMarketplace.sellerOps?.selectedEscrowOrder ?? null,
         chats: Array.isArray(initialMarketplace.chats) ? initialMarketplace.chats : [],
         sellerProducts: Array.isArray(initialMarketplace.sellerProducts) ? initialMarketplace.sellerProducts : [],
@@ -291,6 +349,7 @@ function productSnapshot(product) {
 
 function useMarketplaceState(initialMarketplace) {
     const [pendingAction, setPendingAction] = useState('');
+    const [routeTransition, setRouteTransition] = useState(null);
     const [notice, setNotice] = useState(null);
     const [state, setState] = useState(() => ({
         user: { name: 'Guest buyer', email: '', role: 'buyer', city: '' },
@@ -299,6 +358,10 @@ function useMarketplaceState(initialMarketplace) {
         wishlist: [],
         orders: [],
         buyerOps: {},
+        escrowOrderDetails: {
+            buyer: initialMarketplace?.buyerOps?.selectedEscrowOrder ?? null,
+            seller: initialMarketplace?.sellerOps?.selectedEscrowOrder ?? null,
+        },
         escrowOrderDetail: initialMarketplace?.buyerOps?.selectedEscrowOrder ?? initialMarketplace?.sellerOps?.selectedEscrowOrder ?? null,
         chats: [],
         sellerProducts: [],
@@ -352,6 +415,12 @@ function useMarketplaceState(initialMarketplace) {
                 wishlist: Array.isArray(payload.marketplace.wishlist) ? payload.marketplace.wishlist : current.wishlist,
                 orders: Array.isArray(payload.marketplace.orders) ? payload.marketplace.orders : current.orders,
                 buyerOps: payload.marketplace.buyerOps ?? current.buyerOps,
+                escrowOrderDetails: {
+                    ...(current.escrowOrderDetails ?? {}),
+                    ...(payload.escrow_order_detail?.context ? { [payload.escrow_order_detail.context]: payload.escrow_order_detail } : {}),
+                    ...(payload.marketplace.buyerOps?.selectedEscrowOrder ? { buyer: payload.marketplace.buyerOps.selectedEscrowOrder } : {}),
+                    ...(payload.marketplace.sellerOps?.selectedEscrowOrder ? { seller: payload.marketplace.sellerOps.selectedEscrowOrder } : {}),
+                },
                 escrowOrderDetail: payload.escrow_order_detail
                     ?? payload.marketplace.buyerOps?.selectedEscrowOrder
                     ?? payload.marketplace.sellerOps?.selectedEscrowOrder
@@ -434,21 +503,89 @@ function useMarketplaceState(initialMarketplace) {
         return runAction(`buyer:wallet:${walletId}:topup`, `/web/actions/buyer/wallets/${walletId}/top-up`, payload, 'Wallet top-up request submitted.');
     };
 
-    const checkout = (paymentMethod, address, paymentReference = '') => {
+    const checkout = (paymentMethodOrPayload, address = '', paymentReference = '') => {
         if (!state.cart.length) {
             setNotice({ type: 'error', body: 'Your cart is empty.' });
             return Promise.resolve();
         }
-        if (!String(address || '').trim()) {
+        const payload = typeof paymentMethodOrPayload === 'object' && paymentMethodOrPayload !== null
+            ? paymentMethodOrPayload
+            : {
+                payment_method: paymentMethodOrPayload,
+                shipping_address_line: address,
+                payment_reference: paymentReference,
+                shipping_method: 'standard',
+            };
+        const checkoutContext = state.checkoutContext || {};
+        const requiresShipping = Boolean(checkoutContext.requires_shipping);
+        if (requiresShipping && !String(payload.shipping_address_line || '').trim() && !payload.address_id) {
             setNotice({ type: 'error', body: 'Add a shipping address before placing the order.' });
             return Promise.resolve();
         }
-        return runAction('checkout', '/web/actions/checkout', {
-            payment_method: paymentMethod,
-            payment_reference: paymentReference,
-            shipping_method: 'standard',
-            shipping_address_line: address,
-        }, paymentMethod === 'manual' ? 'Order submitted and manual payment captured.' : 'Order funded from wallet and escrow is active.');
+        const checkoutPayload = {
+            payment_method: payload.payment_method || 'wallet',
+            payment_method_id: payload.payment_method_id || null,
+            payment_reference: payload.payment_reference || '',
+            shipping_method: payload.shipping_method || checkoutContext.default_shipping_method || 'standard',
+            address_id: payload.address_id || null,
+            recipient_name: payload.recipient_name || '',
+            shipping_phone: payload.shipping_phone || '',
+            shipping_address_line: payload.shipping_address_line || '',
+            checkout_session_id: payload.checkout_session_id || '',
+            idempotency_key: payload.idempotency_key || '',
+            device_fingerprint: payload.device_fingerprint || '',
+        };
+        let redirectingToOrder = false;
+        setPendingAction('checkout');
+
+        return postAction('/web/actions/checkout', checkoutPayload).then((response) => {
+            if (response?.redirect_url) {
+                redirectingToOrder = true;
+                setRouteTransition({
+                    type: 'order',
+                    href: response.redirect_url,
+                    orderId: response.order_id || null,
+                    title: 'Opening secure order',
+                    message: response.order_id
+                        ? `Preparing order #${response.order_id} in your buyer workspace.`
+                        : 'Preparing your protected order workspace.',
+                });
+                router.visit(response.redirect_url, {
+                    method: 'get',
+                    replace: true,
+                    preserveScroll: false,
+                    preserveState: false,
+                    onError: () => {
+                        setNotice({ type: 'error', body: 'Order was created, but the order page could not be opened. Please open it from your orders list.' });
+                    },
+                    onCancel: () => {
+                        setRouteTransition(null);
+                        setPendingAction('');
+                    },
+                    onFinish: () => {
+                        setRouteTransition(null);
+                        setPendingAction('');
+                    },
+                });
+                return response;
+            }
+
+            applyServerPayload(response);
+            setNotice({
+                type: 'success',
+                body: (payload.payment_method || 'wallet') === 'manual'
+                    ? 'Order submitted and manual payment captured.'
+                    : 'Order funded from wallet and escrow is active.',
+            });
+            return response;
+        }).catch((error) => {
+            setNotice({ type: 'error', body: error.message || 'Something went wrong. Please try again.' });
+            throw error;
+        }).finally(() => {
+            if (!redirectingToOrder) {
+                setPendingAction('');
+            }
+        });
     };
 
     const sendMessage = (payload) => {
@@ -463,13 +600,21 @@ function useMarketplaceState(initialMarketplace) {
         return runAction('support', '/web/actions/support/messages', { ...payload, body }, 'Message sent.');
     };
 
-    const refreshEscrowOrderDetail = async (orderId, quiet = true) => {
-        const key = `escrow:${orderId}:refresh`;
+    const refreshEscrowOrderDetail = async (orderId, quiet = true, context = 'buyer') => {
+        const role = context === 'seller' ? 'seller' : 'buyer';
+        const key = `escrow:${role}:${orderId}:refresh`;
         if (!quiet) setPendingAction(key);
         try {
-            const response = await getAction(`/web/actions/orders/${orderId}/escrow`);
+            const response = await getAction(`/web/actions/${role}/orders/${orderId}`);
             if (response?.detail) {
-                setState((current) => ({ ...current, escrowOrderDetail: response.detail }));
+                setState((current) => ({
+                    ...current,
+                    escrowOrderDetails: {
+                        ...(current.escrowOrderDetails ?? {}),
+                        [role]: response.detail,
+                    },
+                    escrowOrderDetail: response.detail,
+                }));
             }
             return response?.detail ?? null;
         } catch (error) {
@@ -482,6 +627,18 @@ function useMarketplaceState(initialMarketplace) {
 
     const releaseEscrowFunds = (orderId) => {
         return runAction(`escrow:${orderId}:release`, `/web/actions/orders/${orderId}/escrow/release`, {}, 'Funds released successfully.');
+    };
+
+    const submitOrderReview = (orderId, payload) => {
+        return runAction(`order:${orderId}:review`, `/web/actions/orders/${orderId}/review`, payload, 'Thanks. Your review is live.');
+    };
+
+    const submitBuyerReview = (orderId, payload) => {
+        return runAction(`order:${orderId}:buyer-review`, `/web/actions/orders/${orderId}/buyer-review`, payload, 'Buyer review submitted.');
+    };
+
+    const markReviewHelpful = (reviewId) => {
+        return runAction(`review:${reviewId}:helpful`, `/web/actions/reviews/${reviewId}/helpful`, {}, 'Thanks. Your helpful vote was recorded.');
     };
 
     const openOrderDispute = (orderId, reasonCode = 'delivery_issue') => {
@@ -895,7 +1052,7 @@ function useMarketplaceState(initialMarketplace) {
         });
     };
 
-    return { state, setState, pendingAction, notice, addToCart, updateCart, removeCart, toggleWishlist, saveBuyerPaymentMethod, setDefaultBuyerPaymentMethod, deleteBuyerPaymentMethod, requestBuyerWalletTopUp, checkout, sendMessage, refreshEscrowOrderDetail, releaseEscrowFunds, openOrderDispute, submitSellerDelivery, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, addSellerProduct, uploadSellerMedia, saveSellerProduct, duplicateSellerProduct, bulkSellerProducts, deleteSellerProduct, adjustStock, saveWarehouse, deleteWarehouse, saveShippingSettings, requestTopUp, uploadKycDocument, saveKycDraft, submitKyc, saveCoupon, toggleCoupon, deleteCoupon, requestPayout, savePayoutMethod, deletePayoutMethod, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, saveBusiness, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification, clearNotifications, pushIncomingNotification, applyNotificationEvent };
+    return { state, setState, pendingAction, routeTransition, notice, addToCart, updateCart, removeCart, toggleWishlist, saveBuyerPaymentMethod, setDefaultBuyerPaymentMethod, deleteBuyerPaymentMethod, requestBuyerWalletTopUp, checkout, sendMessage, refreshEscrowOrderDetail, releaseEscrowFunds, submitOrderReview, submitBuyerReview, markReviewHelpful, openOrderDispute, submitSellerDelivery, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, addSellerProduct, uploadSellerMedia, saveSellerProduct, duplicateSellerProduct, bulkSellerProducts, deleteSellerProduct, adjustStock, saveWarehouse, deleteWarehouse, saveShippingSettings, requestTopUp, uploadKycDocument, saveKycDraft, submitKyc, saveCoupon, toggleCoupon, deleteCoupon, requestPayout, savePayoutMethod, deletePayoutMethod, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, saveBusiness, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification, clearNotifications, pushIncomingNotification, applyNotificationEvent };
 }
 
 function Stat({ label, value, hint, icon: Icon }) {
@@ -928,7 +1085,47 @@ function PageIntro({ eyebrow, title, description, actionHref, actionLabel }) {
     );
 }
 
-function AppShell({
+function CheckoutTransitionOverlay({ transition }) {
+    if (!transition || typeof document === 'undefined') {
+        return null;
+    }
+
+    return createPortal(
+        <div className="fixed inset-0 z-[10000] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-md">
+            <div className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-white/20 bg-white shadow-[0_34px_95px_-40px_rgba(15,23,42,0.85)] ring-1 ring-slate-950/5">
+                <div className="relative bg-slate-950 px-6 py-7 text-white">
+                    <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-emerald-300/80 to-transparent" />
+                    <div className="flex items-center gap-4">
+                        <span className="relative flex size-14 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
+                            <span className="absolute inset-0 animate-ping rounded-2xl bg-emerald-400/20" />
+                            <LockKeyhole className="relative size-6 text-emerald-300" />
+                        </span>
+                        <div className="min-w-0">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-emerald-300">Protected checkout</p>
+                            <h2 className="mt-1 text-xl font-black tracking-tight">{transition.title || 'Opening secure order'}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div className="px-6 py-5">
+                    <p className="text-sm font-semibold leading-6 text-slate-600">
+                        {transition.message || 'Preparing your protected order workspace.'}
+                    </p>
+                    <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full w-2/3 animate-[pulse_1.1s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-emerald-500 via-cyan-500 to-indigo-500" />
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                        <span>Order</span>
+                        <span>Escrow</span>
+                        <span>Workspace</span>
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+export function AppShell({
     mode,
     view,
     user,
@@ -998,11 +1195,12 @@ function AppShell({
         ['/seller/support', 'Support', MessageSquareText],
     ];
     const isAuthenticated = Boolean(user?.isAuthenticated);
-    const isSellerAccount = user?.role === 'seller';
-    const accountHref = isAuthenticated ? (isSellerAccount ? '/seller/dashboard' : '/profile') : '/login?panel=buyer';
-    const accountTitle = isSellerAccount ? 'Seller workspace' : 'Account & Vault';
-    const notificationsHref = isSellerAccount ? '/seller/notifications' : '/notifications';
-    const accountMenuLinks = isSellerAccount
+    const hasSellerProfile = Boolean(user?.hasSellerProfile);
+    const isSellerWorkspace = mode === 'seller';
+    const accountHref = isAuthenticated ? (isSellerWorkspace ? '/seller/dashboard' : '/profile') : '/login';
+    const accountTitle = isSellerWorkspace ? 'Seller workspace' : 'Account & Vault';
+    const notificationsHref = isSellerWorkspace ? '/seller/notifications' : '/notifications';
+    const accountMenuLinks = isSellerWorkspace
         ? [
             ['/dashboard', 'Switch to buyer', ShoppingBag],
             ['/seller/dashboard', 'Dashboard', LayoutDashboard],
@@ -1012,11 +1210,12 @@ function AppShell({
             ['/seller/earnings', 'Earnings', BarChart3],
         ]
         : [
+            ...(!hasSellerProfile ? [['/seller/dashboard', 'Become a seller', Store]] : []),
             ['/dashboard', 'Dashboard', LayoutDashboard],
             ['/profile', 'Profile', User],
             ['/orders', 'Orders', Truck],
             ['/wallet', 'Wallet', WalletCards],
-            ...(user?.hasSellerProfile ? [['/seller/dashboard', 'Switch to seller', Store]] : []),
+            ...(hasSellerProfile ? [['/seller/dashboard', 'Switch to seller', Store]] : []),
         ];
     const links = mode === 'seller' ? sellerLinks : buyerLinks;
     const rootNavCategories = categories.filter(isRootCategory);
@@ -1114,9 +1313,9 @@ function AppShell({
                     </form>
 
                     <div className="hidden items-center gap-3 xl:flex">
-                        {!isSellerAccount ? (
-                            <Link href="/seller/dashboard" className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-extrabold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
-                                <Store className="size-4" /> Sell
+                        {!isSellerWorkspace ? (
+                            <Link href={hasSellerProfile ? '/seller/dashboard' : '/seller/dashboard'} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-extrabold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
+                                <Store className="size-4" /> {hasSellerProfile ? 'Seller workspace' : 'Sell'}
                             </Link>
                         ) : null}
                         {isAuthenticated ? (
@@ -1124,9 +1323,9 @@ function AppShell({
                                 notifications={notifications}
                                 unreadCount={unreadNotificationCount}
                                 onRefresh={onRefreshNotifications}
-                                onMarkRead={(notification) => onMarkNotificationRead?.(notification?.id)}
+                                onMarkRead={(notification) => onMarkNotificationRead?.(notification)}
                                 onMarkAllRead={onMarkAllNotificationsRead}
-                                onDelete={(notification) => onDeleteNotification?.(notification?.id)}
+                                onDelete={(notification) => onDeleteNotification?.(notification)}
                                 onClearAll={onClearNotifications}
                                 viewAllHref={notificationsHref}
                             />
@@ -1153,7 +1352,7 @@ function AppShell({
                                     <div id="header-account-menu" className="absolute right-0 top-[calc(100%+10px)] z-50 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-[0_22px_60px_-28px_rgba(15,23,42,0.45)]">
                                         <div className="border-b border-slate-100 px-3 py-2">
                                             <p className="line-clamp-1 text-sm font-extrabold text-slate-950">{user?.name || accountTitle}</p>
-                                            <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500">{user?.email || (isSellerAccount ? 'Seller account' : 'Buyer account')}</p>
+                                            <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500">{user?.email || (isSellerWorkspace ? 'Seller account' : 'Buyer account')}</p>
                                         </div>
                                         <div className="py-1">
                                             {accountMenuLinks.map(([href, label, Icon]) => (
@@ -1204,15 +1403,15 @@ function AppShell({
                                 notifications={notifications}
                                 unreadCount={unreadNotificationCount}
                                 onRefresh={onRefreshNotifications}
-                                onMarkRead={(notification) => onMarkNotificationRead?.(notification?.id)}
+                                onMarkRead={(notification) => onMarkNotificationRead?.(notification)}
                                 onMarkAllRead={onMarkAllNotificationsRead}
-                                onDelete={(notification) => onDeleteNotification?.(notification?.id)}
+                                onDelete={(notification) => onDeleteNotification?.(notification)}
                                 onClearAll={onClearNotifications}
                                 viewAllHref={notificationsHref}
                             />
                         ) : null}
                         <Button asChild variant={mode === 'seller' ? 'outline' : 'default'} size="sm">
-                            <Link href={mode === 'seller' ? '/marketplace' : (isSellerAccount ? '/seller/dashboard' : '/login?panel=seller')}>{mode === 'seller' ? 'Buyer site' : 'Seller panel'}</Link>
+                            <Link href={mode === 'seller' ? '/marketplace' : '/seller/dashboard'}>{mode === 'seller' ? 'Buyer site' : (hasSellerProfile ? 'Seller workspace' : 'Seller panel')}</Link>
                         </Button>
                         <Button variant="outline" size="icon" onClick={() => setOpen(true)} aria-label="Open menu">
                             <Menu className="size-4" />
@@ -1441,7 +1640,7 @@ function AppShell({
                     </div>
                 </div>
             ) : null}
-            <main className="mx-auto max-w-[1480px] px-4 pb-28 pt-5 sm:px-6 sm:pt-8 lg:px-8 lg:pb-8">
+            <main className="mx-auto max-w-[1480px] px-4 pb-28 pt-5 sm:px-6 sm:pt-8 lg:px-8 lg:pb-0">
                 {notice ? (
                     <div className={cn('fixed right-4 top-24 z-50 flex max-w-sm items-start gap-3 rounded-lg border p-4 text-sm font-semibold shadow-xl', notice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
                         {notice.type === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" /> : <Check className="mt-0.5 size-4 shrink-0" />}
@@ -1717,7 +1916,11 @@ function ProductCard({ product, addToCart, toggleWishlist, wished, hideDiscountL
                 ) : null}
             </div>
             <div className="flex flex-1 flex-col p-4">
-                <p className={cn('line-clamp-1 text-sm font-extrabold text-indigo-600', isOutOfStock && 'text-slate-300')}>{product.seller}</p>
+                {product.sellerProfileHref ? (
+                    <Link href={product.sellerProfileHref} className={cn('line-clamp-1 text-sm font-extrabold text-indigo-600 hover:text-indigo-800', isOutOfStock && 'text-slate-300')}>{product.seller}</Link>
+                ) : (
+                    <p className={cn('line-clamp-1 text-sm font-extrabold text-indigo-600', isOutOfStock && 'text-slate-300')}>{product.seller}</p>
+                )}
                 <Link href={`/products/${product.id}`} className={cn('mt-0.5 line-clamp-2 block min-h-9 text-lg font-extrabold leading-[1.35] tracking-tight text-slate-900 hover:text-indigo-600', isOutOfStock && 'text-slate-400 hover:text-slate-500')}>{product.title}</Link>
                 {!hideDiscountLabel && discount && product.discountLabel ? <p className="mt-2 line-clamp-1 text-xs font-extrabold uppercase tracking-wide text-rose-600">{product.discountLabel}</p> : null}
                 <div className="mt-auto pt-1">
@@ -2034,6 +2237,7 @@ function FlashDeals({ state, addToCart, toggleWishlist }) {
 
 function FeaturedVendor({ vendor }) {
     if (!vendor) return null;
+    const vendorHref = vendor.href || null;
 
     return (
         <section className="relative mt-12 overflow-hidden rounded-xl bg-indigo-950 p-8 text-white shadow-[0_24px_70px_-42px_rgba(15,23,42,0.9)] sm:p-11">
@@ -2042,9 +2246,25 @@ function FeaturedVendor({ vendor }) {
             <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
                 <div>
                     <Badge className="border border-white/20 bg-white/10 text-white"><Star className="mr-1 size-4 fill-white" /> Featured Vendor</Badge>
-                    <h2 className="mt-5 text-3xl font-extrabold tracking-tight">{vendor.name}</h2>
+                    <h2 className="mt-5 text-3xl font-extrabold tracking-tight">
+                        {vendorHref ? (
+                            <Link href={vendorHref} className="inline-flex items-center gap-3 text-white underline decoration-white/30 underline-offset-8 transition hover:text-indigo-100 hover:decoration-white">
+                                {vendor.name}
+                                <BadgeCheck className="size-7 shrink-0" />
+                            </Link>
+                        ) : vendor.name}
+                    </h2>
                     <p className="mt-5 max-w-2xl text-lg leading-8 text-indigo-100">{vendor.description}</p>
-                    <Button asChild className="mt-7 rounded-full bg-white px-7 text-indigo-950 hover:bg-indigo-50"><Link href="/marketplace">Explore Portfolio <ArrowRight className="size-4" /></Link></Button>
+                    <div className="mt-7 flex flex-wrap gap-3">
+                        <Button asChild className="rounded-full bg-white px-7 text-indigo-950 hover:bg-indigo-50">
+                            <Link href={vendorHref || '/marketplace'}>{vendorHref ? vendor.name : 'Explore Portfolio'} <ArrowRight className="size-4" /></Link>
+                        </Button>
+                        {vendorHref ? (
+                            <Button asChild variant="outline" className="rounded-full border-white/30 bg-white/10 px-7 text-white hover:bg-white/20 hover:text-white">
+                                <Link href="/marketplace">Explore Portfolio</Link>
+                            </Button>
+                        ) : null}
+                    </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     {[
@@ -2096,7 +2316,7 @@ function FulfillmentOverview({ products }) {
 }
 
 function BestSellers({ state, addToCart, toggleWishlist }) {
-    const pageSize = 4;
+    const pageSize = 6;
     const rankedProducts = [...state.products].sort((a, b) => asNumber(b.salesCount ?? b.stockSold) - asNumber(a.salesCount ?? a.stockSold));
     const [page, setPage] = useState(0);
     const pageCount = Math.max(1, Math.ceil(rankedProducts.length / pageSize));
@@ -2277,15 +2497,19 @@ function Recommended({ state, addToCart, toggleWishlist }) {
     );
 }
 
-function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
+function ProductDetail({ productId, state, addToCart, toggleWishlist, markReviewHelpful, pendingAction }) {
     const product = state.products.find((item) => item.id === Number(productId)) || state.products[0];
     const [activeImage, setActiveImage] = useState(() => product?.images?.[0] || product?.image || '');
     const [selectedVariantId, setSelectedVariantId] = useState(null);
     const [quantity, setQuantity] = useState(1);
+    const [activeDetailTab, setActiveDetailTab] = useState('description');
+    const [openFaqIndex, setOpenFaqIndex] = useState(0);
     useEffect(() => {
         setActiveImage(product?.images?.[0] || product?.image || '');
         setSelectedVariantId(product?.variants?.find((variant) => variant.active)?.id || null);
         setQuantity(1);
+        setActiveDetailTab('description');
+        setOpenFaqIndex(0);
     }, [product?.id, product?.image]);
     if (!product) {
         return <Empty title="This listing is not available" action="/marketplace" label="Back to marketplace" />;
@@ -2313,6 +2537,27 @@ function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
         ['Available', `${availableStock} in stock`],
         ['SKU', selectedVariant?.sku || product.uuid || `SKU-${product.id}`],
     ];
+    const sellerDetails = product.sellerDetails || {};
+    const productReviews = product.reviews || [];
+    const includedItems = product.includedItems?.length ? product.includedItems : ['Escrow checkout protection', 'Verified seller signals', 'Order chat support', 'Delivery tracking workflow'];
+    const coverItems = product.coverItems?.length ? product.coverItems : ['Protected return and dispute workflow', 'Seller support after purchase'];
+    const faqItems = product.faqs?.length ? product.faqs : [
+        { question: 'How does protected checkout work?', answer: product.fulfillmentHint || 'Checkout, delivery, chat, return, and dispute support are available from the buyer dashboard.' },
+        { question: 'Can I contact the seller before buying?', answer: 'Yes. Use Chat Seller to ask about product details, stock, delivery, or custom requirements.' },
+    ];
+    const sellerInitials = String(sellerDetails.name || product.seller || 'Verified seller')
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0])
+        .join('')
+        .toUpperCase();
+    const detailTabs = [
+        ['description', 'Description & Details'],
+        ['seller', 'About Seller'],
+        ['reviews', `Reviews (${product.reviewCount || productReviews.length || 0})`],
+        ['faq', 'FAQ'],
+    ];
 
     return (
         <section className="space-y-6">
@@ -2337,37 +2582,46 @@ function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
                     ) : null}
                 </div>
 
-                <aside className="h-fit rounded-xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.55)] ring-1 ring-white">
+                <aside className="h-fit rounded-xl border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.55)] ring-1 ring-white">
                     <div className="flex flex-wrap gap-2">
                         <Badge variant={product.type === 'Classified' ? 'warning' : 'secondary'}>{product.type}</Badge>
                         <Badge variant={product.productType === 'physical' ? 'outline' : 'success'}>{product.productTypeLabel || 'Marketplace item'}</Badge>
                         {product.verified ? <Badge variant="success" className="gap-1"><ShieldCheck className="size-3" />Verified seller</Badge> : null}
                     </div>
-                    <h1 className="mt-5 text-3xl font-extrabold leading-tight tracking-tight text-slate-950">{product.title}</h1>
-                    <p className="mt-3 text-sm font-semibold text-slate-500">{product.seller}{product.city ? ` - ${product.city}` : ''}</p>
-                    <div className="mt-5 flex flex-wrap items-end gap-3">
-                        <p className="text-3xl font-extrabold tabular-nums text-rose-600">{money(displayPrice)}</p>
-                        {product.oldPrice > product.price ? <p className="pb-1 text-lg font-bold text-slate-400 line-through">{money(product.oldPrice)}</p> : null}
+                    <h1 className="mt-3 text-2xl font-extrabold leading-snug tracking-tight text-slate-950">{product.title}</h1>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                        {product.sellerProfileHref ? (
+                            <Link href={product.sellerProfileHref} className="inline-flex items-center gap-1 font-black text-indigo-600 hover:text-indigo-800">
+                                <Store className="size-3.5" />{product.seller}
+                            </Link>
+                        ) : (
+                            <span>{product.seller}</span>
+                        )}
+                        {product.city ? <span>- {product.city}</span> : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-end gap-2.5">
+                        <p className="text-2xl font-extrabold tabular-nums text-rose-600">{money(displayPrice)}</p>
+                        {product.oldPrice > product.price ? <p className="pb-1 text-base font-bold text-slate-400 line-through">{money(product.oldPrice)}</p> : null}
                         {product.discountPercentage > 0 ? <Badge className="mb-1 bg-rose-500 text-white">{product.discountLabel || `${product.discountPercentage}% off`}</Badge> : null}
                     </div>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
                         {detailTiles.map(([label, value]) => (
-                            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
-                                <p className="mt-1 font-bold text-slate-950">{value}</p>
+                            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
+                                <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
                             </div>
                         ))}
                     </div>
-                    <div className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                    <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-800">
                         <p className="font-bold">Protected transaction</p>
-                        <p className="mt-1 leading-6">{product.fulfillmentHint || 'Escrow checkout, verified seller signals, chat, tracking, return and dispute support.'}</p>
+                        <p className="mt-1 leading-5">{product.fulfillmentHint || 'Escrow checkout, verified seller signals, chat, tracking, return and dispute support.'}</p>
                     </div>
                     {product.variants?.length ? (
-                        <div className="mt-5">
-                            <p className="text-sm font-extrabold uppercase tracking-wide text-slate-500">Variant</p>
-                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="mt-3">
+                            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Variant</p>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 {product.variants.filter((variant) => variant.active).map((variant) => (
-                                    <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={cn('rounded-lg border p-3 text-left text-sm transition', selectedVariantId === variant.id ? 'border-indigo-600 bg-indigo-50 text-indigo-950' : 'border-slate-200 bg-white hover:bg-slate-50')}>
+                                    <button key={variant.id} type="button" onClick={() => setSelectedVariantId(variant.id)} className={cn('rounded-lg border p-3 text-left text-xs transition', selectedVariantId === variant.id ? 'border-indigo-600 bg-indigo-50 text-indigo-950' : 'border-slate-200 bg-white hover:bg-slate-50')}>
                                         <span className="font-bold">{variant.title}</span>
                                         <span className="mt-1 block text-xs text-slate-500">{variant.sku || 'No SKU'} · Stock {variant.stock}</span>
                                     </button>
@@ -2375,85 +2629,212 @@ function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
                             </div>
                         </div>
                     ) : null}
-                    <div className="mt-5 flex items-center gap-3">
+                    <div className="mt-3 flex items-center gap-2.5">
                         <Button size="icon" variant="outline" onClick={() => setQuantity((value) => Math.max(1, value - 1))} aria-label="Decrease quantity"><Minus className="size-4" /></Button>
                         <span className="w-10 text-center font-extrabold">{quantity}</span>
                         <Button size="icon" variant="outline" onClick={() => setQuantity((value) => Math.min(Math.max(availableStock, 1), value + 1))} aria-label="Increase quantity"><Plus className="size-4" /></Button>
                     </div>
-                    <div className="mt-5 grid gap-2">
-                        <Button disabled={availableStock <= 0} onClick={() => addToCart({ ...product, price: displayPrice, selectedVariant }, quantity)}><ShoppingCart className="size-4" />Add to cart</Button>
-                        <Button disabled={availableStock <= 0} onClick={() => addToCart({ ...product, price: displayPrice, selectedVariant }, quantity).then(() => { window.location.href = '/checkout'; })} className="bg-rose-600 hover:bg-rose-700"><Zap className="size-4" />Buy now</Button>
-                        <Button variant="outline" onClick={() => toggleWishlist(product.id)}><Heart className="size-4" />Wishlist</Button>
-                        <Button asChild variant="outline"><Link href="/support"><MessageSquareText className="size-4" />Chat with seller</Link></Button>
+                    <div className="mt-4 grid gap-3">
+                        <div className="grid gap-2.5 sm:grid-cols-2">
+                            <Button
+                                disabled={availableStock <= 0}
+                                onClick={() => addToCart({ ...product, price: displayPrice, selectedVariant }, quantity)}
+                                className="h-12 rounded-[11px] bg-slate-800 text-sm font-extrabold text-white shadow-sm hover:-translate-y-0.5 hover:bg-slate-900 disabled:bg-slate-200 disabled:text-slate-400"
+                            >
+                                <ShoppingCart className="size-5" />
+                                Add to Cart
+                            </Button>
+                            <Button
+                                disabled={availableStock <= 0}
+                                onClick={() => addToCart({ ...product, price: displayPrice, selectedVariant }, quantity).then(() => { router.visit('/checkout'); })}
+                                className="h-12 rounded-[11px] bg-rose-600 text-sm font-extrabold text-white shadow-sm hover:-translate-y-0.5 hover:bg-rose-700 disabled:bg-rose-100 disabled:text-rose-300"
+                            >
+                                <Zap className="size-5 fill-current" />
+                                Buy Now
+                            </Button>
+                        </div>
+                        <div className="grid gap-2.5 sm:grid-cols-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => toggleWishlist(product.id)}
+                                className="h-10 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-none hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                            >
+                                <Heart className="size-4" />
+                                Wishlist
+                            </Button>
+                            <Button
+                                asChild
+                                variant="outline"
+                                className="h-10 rounded-[10px] border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-none hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                            >
+                                <Link href="/support"><MessageSquareText className="size-4" />Chat Seller</Link>
+                            </Button>
+                        </div>
                     </div>
                 </aside>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-                <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
-                    <h2 className="text-xl font-extrabold text-slate-950">Product details</h2>
-                    <p className="mt-4 whitespace-pre-wrap leading-8 text-slate-600">{product.description}</p>
-                    {attributes.length ? (
-                        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                            {attributes.map((item) => (
-                                <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                                    <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{item.label}</p>
-                                    <p className="mt-1 font-semibold text-slate-900">{item.value}</p>
+            <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_16px_40px_-34px_rgba(15,23,42,0.7)]">
+                <div className="grid border-b border-slate-200 sm:grid-cols-4">
+                    {detailTabs.map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => setActiveDetailTab(key)} className={cn('relative h-14 px-4 text-sm font-bold text-slate-500 transition hover:bg-slate-50 hover:text-slate-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-100', activeDetailTab === key ? 'text-blue-900' : '')}>
+                            {label}
+                            <span className={cn('absolute inset-x-6 bottom-0 h-0.5 bg-blue-800 transition-opacity', activeDetailTab === key ? 'opacity-100' : 'opacity-0')} />
+                        </button>
+                    ))}
+                </div>
+
+                {activeDetailTab === 'description' ? (
+                    <div className="grid gap-8 p-6 lg:grid-cols-[minmax(0,1fr)_368px] lg:p-8">
+                        <div>
+                            <h2 className="text-lg font-extrabold text-slate-950">{product.isServiceProduct ? 'Service Overview' : 'Product Overview'}</h2>
+                            <p className="mt-4 whitespace-pre-wrap text-sm font-medium leading-7 text-slate-600">{product.description}</p>
+                            {coverItems.length ? (
+                                <div className="mt-6">
+                                    <h3 className="text-sm font-extrabold text-slate-950">What We Cover:</h3>
+                                    <ul className="mt-3 space-y-2.5 text-sm font-medium leading-6 text-slate-600">
+                                        {coverItems.map((item) => (
+                                            <li key={item} className="flex gap-3"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-slate-500" /><span>{item}</span></li>
+                                        ))}
+                                    </ul>
                                 </div>
-                            ))}
-                        </div>
-                    ) : null}
-                    {product.variants?.length ? (
-                        <div className="mt-7">
-                            <h3 className="text-base font-extrabold text-slate-950">Available variants</h3>
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                                {product.variants.map((variant) => (
-                                    <div key={variant.id} className="rounded-lg border border-slate-200 p-4">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <p className="font-bold">{variant.title}</p>
-                                                <p className="mt-1 text-sm text-slate-500">{variant.sku || 'No SKU'}</p>
-                                            </div>
-                                            <Badge variant={variant.active ? 'success' : 'secondary'}>{variant.active ? 'Active' : 'Inactive'}</Badge>
+                            ) : null}
+                            {attributes.length ? (
+                                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                                    {attributes.slice(0, 8).map(({ label, value }) => (
+                                        <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                            <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
+                                            <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
                                         </div>
-                                        <p className="mt-3 text-sm font-semibold text-slate-600">Stock {variant.stock}</p>
-                                    </div>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                        <aside className="rounded-xl border border-slate-200 bg-slate-50/70 p-6">
+                            <h3 className="text-base font-extrabold text-slate-950">What's Included</h3>
+                            <div className="mt-4 space-y-3 text-[13px] font-semibold text-slate-600">
+                                {includedItems.map((item) => (
+                                    <p key={item} className="flex items-center gap-3"><Check className="size-4 shrink-0 text-emerald-500" /><span>{item}</span></p>
                                 ))}
                             </div>
+                        </aside>
+                    </div>
+                ) : null}
+
+                {activeDetailTab === 'seller' ? (
+                    <div className="p-5 lg:p-6">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-4">
+                                {sellerDetails.logo ? <img src={sellerDetails.logo} alt={sellerDetails.name || product.seller} className="size-16 rounded-full object-cover ring-1 ring-slate-200" /> : (
+                                    <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-slate-200 text-2xl font-extrabold text-white">{sellerInitials || 'S'}</div>
+                                )}
+                                <div>
+                                    <h2 className="text-xl font-extrabold tracking-tight text-slate-950">
+                                        {sellerDetails.href ? (
+                                            <Link href={sellerDetails.href} className="text-indigo-700 hover:text-indigo-900">{sellerDetails.name || product.seller}</Link>
+                                        ) : (sellerDetails.name || product.seller)}
+                                    </h2>
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
+                                        <span className="inline-flex items-center gap-1 text-amber-500"><Star className="size-3.5 fill-current" />{product.rating || '0.0'}</span>
+                                        <span>({product.reviewCount || 0} Reviews)</span>
+                                        <span>•</span>
+                                        <span>Member since {sellerDetails.memberSince || 'recently'}</span>
+                                        {product.verified ? <><span>•</span><span className="text-emerald-600">Verified seller</span></> : null}
+                                    </div>
+                                </div>
+                            </div>
+                            <Button asChild variant="outline" className="h-9 rounded-lg border-slate-300 px-4 text-xs font-bold shadow-none"><Link href="/support">Contact Seller</Link></Button>
                         </div>
-                    ) : null}
-                </div>
-                <div className="space-y-4">
-                    <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
-                        <h2 className="font-extrabold text-slate-950">Seller confidence</h2>
-                        <div className="mt-4 space-y-3 text-sm">
+                        <p className="mt-4 max-w-5xl text-sm font-medium leading-6 text-slate-600">{sellerDetails.description}</p>
+                        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                             {[
-                                ['Rating', `${product.rating || 0}/5 from ${product.reviewCount || 0} reviews`],
+                                ['Store status', sellerDetails.storeStatus || product.storeStatus || 'Active'],
+                                ['Location', [sellerDetails.city, sellerDetails.region, sellerDetails.country].filter(Boolean).join(', ') || product.city || 'Available online'],
+                                ['Fulfillment', sellerDetails.processingTime || product.productTypeLabel || product.type],
                                 ['Sales', `${product.salesCount || 0} order line items`],
-                                ['Store status', product.storeStatus || 'Active marketplace seller'],
-                                ['Fulfillment', product.productTypeLabel || product.type],
                             ].map(([label, value]) => (
-                                <div key={label} className="flex justify-between gap-4 border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-                                    <span className="text-slate-500">{label}</span>
-                                    <span className="text-right font-bold text-slate-900">{value}</span>
+                                <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
+                                    <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
                                 </div>
                             ))}
                         </div>
                     </div>
-                    <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
-                        <h2 className="font-extrabold text-slate-950">Included protections</h2>
-                        <div className="mt-4 space-y-3 text-sm font-semibold text-slate-700">
-                            {['Escrow checkout', 'Order chat support', 'Delivery tracking', 'Return and dispute workflow'].map((item) => (
-                                <p key={item} className="flex items-center gap-2"><Check className="size-4 text-emerald-600" />{item}</p>
-                            ))}
+                ) : null}
+
+                {activeDetailTab === 'reviews' ? (
+                    <div className="grid gap-6 p-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:p-8">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6">
+                            <p className="text-4xl font-extrabold text-slate-950">{product.rating || '0.0'}</p>
+                            <div className="mt-2"><ReviewStars rating={asNumber(product.rating, 0)} /></div>
+                            <p className="mt-3 text-sm font-semibold text-slate-500">Based on {product.reviewCount || productReviews.length || 0} verified reviews.</p>
+                        </div>
+                        <div className="space-y-4">
+                            {productReviews.length ? productReviews.map((review) => {
+                                const feedbackType = String(review.feedbackType || '').toLowerCase() || (asNumber(review.rating, 0) >= 4 ? 'good' : asNumber(review.rating, 0) <= 2 ? 'bad' : 'neutral');
+                                const feedbackClass = feedbackType === 'bad' ? 'border-rose-200 bg-rose-50 text-rose-700' : feedbackType === 'neutral' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+                                return (
+                                <article key={review.id} className="rounded-xl border border-slate-200 bg-white p-5">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            {review.buyerProfileHref ? (
+                                                <Link href={review.buyerProfileHref} className="font-extrabold text-indigo-700 hover:text-indigo-900">{review.buyer || 'Verified buyer'}</Link>
+                                            ) : (
+                                                <p className="font-extrabold text-slate-950">{review.buyer || 'Verified buyer'}</p>
+                                            )}
+                                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                                                <span>{formatDateTime(review.createdAt)}</span>
+                                                <span className={cn('rounded-full border px-2 py-0.5 font-extrabold capitalize', feedbackClass)}>{feedbackType}</span>
+                                            </div>
+                                        </div>
+                                        <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-sm font-extrabold text-amber-600"><Star className="size-4 fill-current" /> {review.rating}</span>
+                                    </div>
+                                    <p className="mt-4 text-sm font-medium leading-6 text-slate-700">{review.comment || 'No written comment.'}</p>
+                                    {Array.isArray(review.tags) && review.tags.length ? (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {review.tags.map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-extrabold text-slate-600">{tag}</span>)}
+                                        </div>
+                                    ) : null}
+                                    {review.sellerReply ? <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600"><span className="font-extrabold text-slate-800">Seller reply:</span> {review.sellerReply}</div> : null}
+                                    <div className="mt-4">
+                                        <button
+                                            type="button"
+                                            disabled={pendingAction === `review:${review.id}:helpful`}
+                                            onClick={() => markReviewHelpful?.(review.id)}
+                                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-extrabold text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-60"
+                                        >
+                                            <ThumbsUp className="size-3.5" /> Helpful ({asNumber(review.helpfulCount, 0)})
+                                        </button>
+                                    </div>
+                                </article>
+                            );}) : <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">No reviews are visible for this listing yet.</div>}
                         </div>
                     </div>
-                </div>
-            </div>
+                ) : null}
+
+                {activeDetailTab === 'faq' ? (
+                    <div className="p-6 lg:p-8">
+                        <div className="mx-auto max-w-4xl space-y-3">
+                            {faqItems.map((item, index) => {
+                                const isOpen = openFaqIndex === index;
+                                return (
+                                    <div key={`${item.question}-${index}`} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                        <button type="button" onClick={() => setOpenFaqIndex(isOpen ? -1 : index)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left font-extrabold text-slate-950">
+                                            <span>{item.question || `Question ${index + 1}`}</span>
+                                            <Plus className={cn('size-4 shrink-0 transition-transform', isOpen ? 'rotate-45' : '')} />
+                                        </button>
+                                        {isOpen ? <p className="border-t border-slate-100 px-5 py-4 text-sm font-medium leading-7 text-slate-600">{item.answer}</p> : null}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : null}
+            </section>
             {relatedProducts.length ? (
                 <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
                     <SectionTitle icon={Sparkles} title="You May Also Like" accent="text-rose-500" action="View more" />
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                         {relatedProducts.map((item) => (
                             <ProductCard key={`related-${item.id}`} product={item} addToCart={addToCart} toggleWishlist={toggleWishlist} wished={state.wishlist.includes(item.id)} />
                         ))}
@@ -2463,7 +2844,7 @@ function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
             {sellerProducts.length ? (
                 <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
                     <SectionTitle icon={Store} title="More From The Seller" accent="text-indigo-600" action="Visit store" />
-                    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                         {sellerProducts.map((item) => (
                             <ProductCard key={`seller-more-${item.id}`} product={item} addToCart={addToCart} toggleWishlist={toggleWishlist} wished={state.wishlist.includes(item.id)} />
                         ))}
@@ -2485,81 +2866,541 @@ function ProductDetail({ productId, state, addToCart, toggleWishlist }) {
 }
 
 function Cart({ state, updateCart, removeCart }) {
+    const checkoutContext = state.checkoutContext || {};
+    const summary = checkoutContext.summary || {};
+    const shippingOptions = checkoutContext.shipping_options || [];
     const subtotal = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const originalSubtotal = state.cart.reduce((sum, item) => {
+        const originalPrice = asNumber(item.oldPrice ?? item.regularPrice ?? item.price);
+        const currentPrice = asNumber(item.price);
+        return sum + Math.max(originalPrice, currentPrice) * item.quantity;
+    }, 0);
+    const productDiscount = Math.max(0, originalSubtotal - subtotal);
+    const escrowFee = asNumber(summary.escrow_fee, subtotal * 0.025);
+    const deliveryEstimate = asNumber(shippingOptions[0]?.fee ?? summary.shipping_fee, 0);
+    const total = subtotal + escrowFee + deliveryEstimate;
+    const summaryMoney = (value) => `৳${Number(value || 0).toLocaleString('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
     return (
-        <section className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            <div className="rounded-xl border border-slate-200/80 bg-white/95 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.55)] ring-1 ring-white">
-                <div className="border-b border-slate-200 p-4"><h1 className="text-xl font-bold">Cart</h1></div>
-                {!state.cart.length ? <Empty title="Your cart is empty" action="/marketplace" label="Browse marketplace" /> : (
+        <section className="mx-auto grid w-full max-w-[1104px] gap-8 xl:grid-cols-[minmax(0,724px)_348px]">
+            <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_12px_28px_-24px_rgba(15,23,42,0.55)]">
+                <div className="border-b border-slate-100 px-8 py-3">
+                    <h1 className="text-2xl font-black tracking-tight text-slate-950">Cart</h1>
+                </div>
+                {!state.cart.length ? (
+                    <div className="px-8 py-12">
+                        <Empty title="Your cart is empty" action="/marketplace" label="Browse marketplace" />
+                    </div>
+                ) : (
                     <div className="divide-y divide-slate-100">
                         {state.cart.map((item) => (
-                            <div key={item.id} className="grid gap-4 p-4 sm:grid-cols-[96px_1fr_auto] sm:items-center">
-                                <ProductMedia src={item.image} alt={item.title} className="size-24 rounded-md object-cover" />
-                                <div>
-                                    <p className="font-semibold">{item.title}</p>
-                                    <p className="text-sm text-slate-500">{item.seller} · {money(item.price)}</p>
-                                    <div className="mt-3 flex items-center gap-2">
-                                        <Button size="icon" variant="outline" onClick={() => updateCart(item.id, item.quantity - 1)}><Minus className="size-4" /></Button>
-                                        <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
-                                        <Button size="icon" variant="outline" onClick={() => updateCart(item.id, item.quantity + 1)}><Plus className="size-4" /></Button>
+                            (() => {
+                                const originalPrice = Math.max(asNumber(item.oldPrice ?? item.regularPrice ?? item.price), asNumber(item.price));
+                                const hasDiscount = originalPrice > asNumber(item.price);
+
+                                return (
+                                    <div key={item.id} className="grid gap-5 px-8 py-3 sm:grid-cols-[96px_minmax(0,1fr)_96px] sm:items-center">
+                                        <ProductMedia src={item.image} alt={item.title} className="size-24 rounded-[10px] object-cover ring-1 ring-slate-200" />
+                                        <div className="min-w-0">
+                                            <p className="line-clamp-2 text-base font-black tracking-tight text-slate-950">{item.title}</p>
+                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-500">
+                                                <span>{item.seller}</span>
+                                                <span>·</span>
+                                                <span>{money(item.price)}</span>
+                                                {hasDiscount ? <span className="text-slate-400 line-through">{money(originalPrice)}</span> : null}
+                                            </div>
+                                            <div className="mt-3 inline-flex h-9 items-center rounded-[18px] border border-slate-200 bg-white shadow-[0_10px_22px_-20px_rgba(15,23,42,0.75)]">
+                                                <button type="button" onClick={() => updateCart(item.id, item.quantity - 1)} className="flex h-9 w-9 items-center justify-center rounded-l-[18px] text-slate-300 transition hover:bg-slate-50 hover:text-slate-700" aria-label="Decrease quantity">
+                                                    <Minus className="size-3.5" />
+                                                </button>
+                                                <span className="flex h-9 min-w-9 items-center justify-center px-1 text-sm font-black text-slate-950">{item.quantity}</span>
+                                                <button type="button" onClick={() => updateCart(item.id, item.quantity + 1)} className="flex h-9 w-9 items-center justify-center rounded-r-[18px] text-slate-400 transition hover:bg-slate-50 hover:text-slate-700" aria-label="Increase quantity">
+                                                    <Plus className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <button type="button" onClick={() => removeCart(item.id)} className="h-11 rounded-xl border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 shadow-[0_10px_22px_-22px_rgba(15,23,42,0.75)] transition hover:border-slate-300 hover:bg-slate-50">
+                                            Remove
+                                        </button>
                                     </div>
-                                </div>
-                                <Button variant="outline" onClick={() => removeCart(item.id)}>Remove</Button>
-                            </div>
+                                );
+                            })()
                         ))}
                     </div>
                 )}
             </div>
-            <aside className="h-fit rounded-xl border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.55)] ring-1 ring-white">
-                <h2 className="font-semibold">Order summary</h2>
-                <div className="mt-4 space-y-2 text-sm">
-                    <div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-                    <div className="flex justify-between"><span>Escrow fee</span><span>{money(Math.round(subtotal * 0.015))}</span></div>
-                    <div className="flex justify-between"><span>Delivery estimate</span><span>{money(state.cart.length ? 120 : 0)}</span></div>
+            <aside className="h-fit rounded-[22px] border border-slate-200 bg-white px-8 py-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.55)] xl:sticky xl:top-24">
+                <h2 className="text-lg font-black tracking-tight text-slate-950">Order summary</h2>
+                <div className="mt-7 space-y-5 text-sm font-bold text-slate-600">
+                    <div className="flex items-center justify-between gap-4">
+                        <span>Subtotal</span>
+                        <span className="font-black text-slate-950">{summaryMoney(subtotal)}</span>
+                    </div>
+                    {productDiscount > 0 ? (
+                        <div className="flex items-center justify-between gap-4">
+                            <span>Total discount</span>
+                            <span className="font-black text-emerald-600">-{summaryMoney(productDiscount)}</span>
+                        </div>
+                    ) : null}
+                    <div className="flex items-center justify-between gap-4">
+                        <span>Escrow fee</span>
+                        <span className="font-black text-slate-950">{summaryMoney(escrowFee)}</span>
+                    </div>
+                    {deliveryEstimate > 0 ? (
+                        <div className="flex items-center justify-between gap-4">
+                            <span>Delivery estimate</span>
+                            <span className="font-black text-slate-950">{money(deliveryEstimate)}</span>
+                        </div>
+                    ) : null}
                 </div>
-                <div className="mt-4 border-t border-slate-200 pt-4 text-base font-bold">
-                    <div className="flex justify-between"><span>Total</span><span>{money(subtotal + Math.round(subtotal * 0.015) + (state.cart.length ? 120 : 0))}</span></div>
+                <div className="mt-7 border-t border-slate-100 pt-7">
+                    <div className="flex items-center justify-between gap-5">
+                        <span className="text-lg font-black text-slate-950">Total</span>
+                        <span className="text-3xl font-black tracking-tight text-slate-950">{summaryMoney(total)}</span>
+                    </div>
                 </div>
-                <Button asChild className="mt-5 w-full" disabled={!state.cart.length}><Link href="/checkout">Checkout</Link></Button>
+                <Button asChild className="mt-8 h-[52px] w-full rounded-xl bg-slate-950 text-sm font-black text-white shadow-[0_16px_28px_-18px_rgba(15,23,42,0.9)] hover:bg-slate-800" disabled={!state.cart.length}>
+                    <Link href="/checkout">Checkout</Link>
+                </Button>
             </aside>
         </section>
     );
 }
 
-function Checkout({ state, checkout }) {
-    const [address, setAddress] = useState(state.user?.city || state.business?.address || '');
-    const [payment, setPayment] = useState('wallet');
-    const [paymentReference, setPaymentReference] = useState('');
+function CheckoutPanelAction(user, open, setOpen, label) {
+    if (!user?.isAuthenticated) {
+        return null;
+    }
+
     return (
-        <section className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            <div className="space-y-4">
-                <Panel title="Shipping address" icon={Truck}>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-                </Panel>
-                <Panel title="Payment method" icon={CreditCard}>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {['wallet', 'manual'].map((item) => (
-                            <button key={item} onClick={() => setPayment(item)} className={cn('rounded-md border p-4 text-left text-sm capitalize transition', payment === item ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white hover:bg-slate-50')}>
-                                {item === 'wallet' ? 'Wallet escrow' : 'Manual payment'}
-                            </button>
-                        ))}
+        <Button type="button" variant="outline" className="rounded-2xl" onClick={() => setOpen(!open)}>
+            {open ? 'Close' : label}
+        </Button>
+    );
+}
+
+function EnterpriseCheckout({ state, checkout, saveBuyerAddress, pendingAction = '' }) {
+    const buyerOps = state.buyerOps || {};
+    const checkoutContext = state.checkoutContext || {};
+    const isAuthenticated = Boolean(state.user?.isAuthenticated);
+    const addresses = buyerOps.addresses || [];
+    const paymentMethods = buyerOps.paymentMethods || [];
+    const shippingOptions = checkoutContext.shipping_options || [];
+    const summary = checkoutContext.summary || {};
+    const requiresShipping = Boolean(checkoutContext.requires_shipping);
+    const hasServiceOrder = Boolean(checkoutContext.has_service || state.cart.some((item) => String(item.productType || '').toLowerCase() === 'service'));
+    const hasDigitalOrder = Boolean(checkoutContext.has_digital || state.cart.some((item) => String(item.productType || '').toLowerCase() === 'digital'));
+    const isDigitalOrder = Boolean(hasDigitalOrder || hasServiceOrder);
+    const walletAvailable = asNumber(checkoutContext.wallet_available ?? buyerOps.walletSummary?.available);
+    const defaultAddressId = checkoutContext.default_address_id ?? addresses.find((address) => address.isDefault)?.id ?? addresses[0]?.id ?? null;
+    const defaultPaymentMethodId = checkoutContext.default_payment_method_id ?? paymentMethods.find((method) => method.isDefault)?.id ?? paymentMethods[0]?.id ?? null;
+    const defaultShippingMethod = checkoutContext.default_shipping_method || shippingOptions[0]?.code || 'standard';
+    const [selectedAddressId, setSelectedAddressId] = useState(defaultAddressId);
+    const [shippingMethod, setShippingMethod] = useState(defaultShippingMethod);
+    const [paymentMode, setPaymentMode] = useState('wallet');
+    const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState(defaultPaymentMethodId);
+    const [paymentReference, setPaymentReference] = useState('');
+    const [contact, setContact] = useState({ name: state.user?.name || '', phone: state.user?.phone || '', delivery: state.user?.city || '' });
+    const [showAddressBook, setShowAddressBook] = useState(false);
+    const [addressMode, setAddressMode] = useState(addresses.length ? 'list' : 'new');
+    const [addressForm, setAddressForm] = useState({
+        label: 'Home',
+        address_type: 'shipping',
+        recipient_name: state.user?.name || '',
+        phone: state.user?.phone || '',
+        address_line: '',
+        city: '',
+        region: '',
+        postal_code: '',
+        country: 'Bangladesh',
+        is_default: addresses.length === 0,
+    });
+
+    useEffect(() => setSelectedAddressId(defaultAddressId), [defaultAddressId]);
+    useEffect(() => setSelectedPaymentMethodId(defaultPaymentMethodId), [defaultPaymentMethodId]);
+    useEffect(() => setShippingMethod(defaultShippingMethod), [defaultShippingMethod]);
+    useEffect(() => {
+        if (addresses.length && addressMode === 'new' && !showAddressBook) {
+            setAddressMode('list');
+        }
+    }, [addresses.length, addressMode, showAddressBook]);
+
+    const selectedAddress = addresses.find((address) => Number(address.id) === Number(selectedAddressId)) || null;
+    const selectedPaymentMethod = paymentMethods.find((method) => Number(method.id) === Number(selectedPaymentMethodId)) || null;
+    const selectedShippingOption = shippingOptions.find((option) => option.code === shippingMethod) || shippingOptions[0] || null;
+    const subtotal = asNumber(summary.subtotal ?? state.cart.reduce((sum, item) => sum + asNumber(item.price) * asNumber(item.quantity, 1), 0));
+    const shippingFee = requiresShipping ? asNumber(selectedShippingOption?.fee ?? summary.shipping_fee) : 0;
+    const escrowFee = asNumber(summary.escrow_fee);
+    const tax = asNumber(summary.tax);
+    const discount = asNumber(summary.discount);
+    const total = subtotal + shippingFee + escrowFee + tax - discount;
+    const walletCoversOrder = walletAvailable >= total;
+    const placingOrder = pendingAction === 'checkout';
+    const cartIsEmpty = state.cart.length === 0;
+    const primaryItem = state.cart[0] || {};
+    const uniqueSellers = [...new Set(state.cart.map((item) => item.seller).filter(Boolean))];
+    const deliveryLabel = selectedShippingOption?.label || (requiresShipping ? 'Standard delivery' : 'Digital delivery');
+    const deliveryMeta = selectedShippingOption?.processing_time || (requiresShipping ? '3-5 business days' : 'Protected digital delivery');
+    const fulfillmentTitle = requiresShipping ? 'Delivery Details' : (hasServiceOrder ? 'Service Coordination' : 'Digital Delivery');
+    const fulfillmentSubtitle = requiresShipping
+        ? 'Confirm your shipping address and method.'
+        : (hasServiceOrder ? 'Seller will coordinate delivery through secure order chat.' : 'Access will be delivered to your verified account.');
+    const FulfillmentIcon = requiresShipping ? Truck : (hasServiceOrder ? BriefcaseBusiness : Download);
+    const selectedAddressLines = selectedAddress ? [
+        selectedAddress.recipientName || state.user?.name,
+        selectedAddress.phone || state.user?.email,
+        [selectedAddress.addressLine, selectedAddress.city, selectedAddress.region].filter(Boolean).join(', '),
+    ].filter(Boolean) : [];
+    const canPlaceOrder = state.cart.length > 0
+        && (!requiresShipping || Boolean(selectedAddress || contact.delivery.trim()))
+        && (paymentMode !== 'wallet' || walletCoversOrder)
+        && !placingOrder;
+
+    const paymentOptions = [
+        { key: 'wallet', label: 'Wallet', icon: WalletCards, hint: `Balance ${money(walletAvailable)}` },
+        { key: 'manual', label: 'Manual payment', icon: Landmark, hint: selectedPaymentMethod?.label || 'Bank or transfer reference' },
+    ];
+    const savingAddress = pendingAction === 'buyer:address:new';
+
+    const updateAddressForm = (key, value) => {
+        setAddressForm((current) => ({ ...current, [key]: value }));
+    };
+
+    const saveCheckoutAddress = async () => {
+        if (!saveBuyerAddress || savingAddress) return;
+        if (!addressForm.recipient_name.trim() || !addressForm.address_line.trim()) return;
+
+        const response = await saveBuyerAddress(addressForm);
+        const savedAddresses = response?.marketplace?.buyerOps?.addresses || [];
+        const savedAddress = savedAddresses.find((address) => (
+            String(address.addressLine || '') === String(addressForm.address_line || '')
+            && String(address.recipientName || '') === String(addressForm.recipient_name || '')
+        )) || savedAddresses[0];
+
+        if (savedAddress?.id) {
+            setSelectedAddressId(savedAddress.id);
+        }
+
+        setShowAddressBook(false);
+        setAddressMode('list');
+    };
+
+    const placeOrder = async () => {
+        if (!canPlaceOrder) return;
+        await checkout({
+            payment_method: paymentMode,
+            payment_method_id: paymentMode === 'manual' ? selectedPaymentMethodId : null,
+            payment_reference: paymentReference,
+            shipping_method: requiresShipping ? shippingMethod : 'standard',
+            address_id: requiresShipping ? selectedAddressId : null,
+            recipient_name: requiresShipping ? (selectedAddress?.recipientName || contact.name) : '',
+            shipping_phone: requiresShipping ? (selectedAddress?.phone || contact.phone) : '',
+            shipping_address_line: requiresShipping ? (selectedAddress?.addressLine || contact.delivery) : '',
+        });
+    };
+
+    if (cartIsEmpty) {
+        return (
+            <section className="space-y-6">
+                <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+                    <div className="mx-auto flex size-14 items-center justify-center rounded-xl bg-slate-950 text-white"><ShoppingCart className="size-6" /></div>
+                    <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">Your checkout is empty</h1>
+                    <p className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-slate-500">Add a product or service to continue checkout.</p>
+                    <Button asChild className="mt-6 rounded-lg bg-slate-950 px-5"><Link href="/marketplace">Browse marketplace</Link></Button>
+                </div>
+            </section>
+        );
+    }
+
+    return (
+        <section className="pb-28 xl:pb-0">
+            {placingOrder ? (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-xl border border-white/20 bg-white p-6 text-center shadow-2xl">
+                        <div className="mx-auto flex size-12 animate-pulse items-center justify-center rounded-xl bg-slate-100 text-slate-950"><LockKeyhole className="size-6" /></div>
+                        <h2 className="mt-4 text-xl font-bold text-slate-950">Processing order</h2>
+                        <p className="mt-2 text-sm font-medium leading-6 text-slate-500">Please wait while we confirm your checkout.</p>
                     </div>
-                    {payment === 'manual' && <Input value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Payment reference" className="mt-3" />}
-                </Panel>
-                <Panel title="Compliance" icon={ShieldCheck}>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        {['Escrow hold', 'Seller verification', 'Return/dispute eligible'].map((item) => <Badge key={item} variant="success" className="justify-center py-2">{item}</Badge>)}
+                </div>
+            ) : null}
+
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="space-y-5">
+                    <section className="rounded-[20px] border border-slate-200 bg-white px-6 py-5 shadow-[0_18px_55px_-44px_rgba(15,23,42,0.45)] max-sm:px-5">
+                        <div className="flex items-start gap-3">
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                                <FulfillmentIcon className="size-4.5" />
+                            </span>
+                            <div>
+                                <h2 className="text-lg font-black tracking-tight text-slate-950">{fulfillmentTitle}</h2>
+                                <p className="mt-1 text-sm font-semibold text-slate-500">{fulfillmentSubtitle}</p>
+                            </div>
+                        </div>
+
+                        {requiresShipping ? <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                            {isAuthenticated && addresses.length ? (
+                                <>
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="flex min-w-0 items-start gap-4">
+                                            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400">
+                                                <MapPin className="size-5" />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <p className="font-black text-slate-950">{selectedAddress?.label || selectedAddress?.recipientName || 'Saved address'}</p>
+                                                    {selectedAddress?.isDefault ? <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-indigo-700">Default</span> : null}
+                                                </div>
+                                                {selectedAddressLines.map((line) => (
+                                                    <p key={line} className="mt-1 truncate text-sm font-semibold text-slate-500">{line}</p>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <button type="button" disabled={placingOrder} onClick={() => setShowAddressBook((open) => !open)} className="shrink-0 text-sm font-black text-indigo-600 transition hover:text-indigo-700 disabled:opacity-50">
+                                            {showAddressBook ? 'Done' : 'Change'}
+                                        </button>
+                                    </div>
+                                    {showAddressBook ? (
+                                        <div className="mt-5 space-y-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                <button type="button" onClick={() => setAddressMode('list')} className={cn('rounded-full px-4 py-2 text-xs font-black transition', addressMode === 'list' ? 'bg-slate-950 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-indigo-200')}>Saved addresses</button>
+                                                <button type="button" onClick={() => setAddressMode('new')} className={cn('inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black transition', addressMode === 'new' ? 'bg-indigo-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-indigo-200')}>
+                                                    <Plus className="size-3.5" /> Add new address
+                                                </button>
+                                            </div>
+                                            {addressMode === 'list' ? (
+                                                <div className="grid gap-3 md:grid-cols-2">
+                                                    {addresses.map((address) => {
+                                                        const active = Number(address.id) === Number(selectedAddressId);
+                                                        return (
+                                                            <button key={address.id} type="button" disabled={placingOrder} onClick={() => setSelectedAddressId(address.id)} className={cn('rounded-xl border px-4 py-3 text-left transition', active ? 'border-indigo-500 bg-white shadow-sm' : 'border-slate-200 bg-white/70 hover:border-indigo-200')}>
+                                                                <div className="flex items-center justify-between gap-3">
+                                                                    <p className="font-black text-slate-950">{address.label || address.recipientName}</p>
+                                                                    {active ? <Check className="size-4 text-indigo-600" /> : null}
+                                                                </div>
+                                                                <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">{address.recipientName} · {address.phone || state.user?.email || 'No contact'} · {address.addressLine}</p>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                                    <div className="grid gap-3 md:grid-cols-2">
+                                                        <Input value={addressForm.label} onChange={(event) => updateAddressForm('label', event.target.value)} placeholder="Label e.g. Home" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.recipient_name} onChange={(event) => updateAddressForm('recipient_name', event.target.value)} placeholder="Recipient name" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.phone} onChange={(event) => updateAddressForm('phone', event.target.value)} placeholder="Phone number" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.city} onChange={(event) => updateAddressForm('city', event.target.value)} placeholder="City" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.region} onChange={(event) => updateAddressForm('region', event.target.value)} placeholder="Region / State" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.postal_code} onChange={(event) => updateAddressForm('postal_code', event.target.value)} placeholder="Postal code" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                                        <Input value={addressForm.address_line} onChange={(event) => updateAddressForm('address_line', event.target.value)} placeholder="Street address" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold md:col-span-2" />
+                                                    </div>
+                                                    <label className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-600">
+                                                        <input type="checkbox" checked={Boolean(addressForm.is_default)} onChange={(event) => updateAddressForm('is_default', event.target.checked)} className="size-4 rounded border-slate-300 text-indigo-600" />
+                                                        Use as default address
+                                                    </label>
+                                                    <div className="mt-4 flex flex-wrap justify-end gap-3">
+                                                        <Button type="button" variant="outline" className="h-10 rounded-xl px-4 font-black" onClick={() => setAddressMode('list')}>Cancel</Button>
+                                                        <Button type="button" className="h-10 rounded-xl bg-indigo-600 px-5 font-black text-white hover:bg-indigo-700" disabled={savingAddress || !addressForm.recipient_name.trim() || !addressForm.address_line.trim()} onClick={saveCheckoutAddress}>
+                                                            {savingAddress ? 'Saving...' : 'Save address'}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : null}
+                                </>
+                            ) : (
+                                isAuthenticated ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                                        <div className="mb-4 flex items-center justify-between gap-3">
+                                            <div>
+                                                <p className="font-black text-slate-950">Add delivery address</p>
+                                                <p className="mt-1 text-sm font-semibold text-slate-500">Saved to your address book for future checkout.</p>
+                                            </div>
+                                            <span className="flex size-9 items-center justify-center rounded-full bg-indigo-50 text-indigo-600"><Plus className="size-4" /></span>
+                                        </div>
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            <Input value={addressForm.label} onChange={(event) => updateAddressForm('label', event.target.value)} placeholder="Label e.g. Home" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.recipient_name} onChange={(event) => updateAddressForm('recipient_name', event.target.value)} placeholder="Recipient name" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.phone} onChange={(event) => updateAddressForm('phone', event.target.value)} placeholder="Phone number" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.city} onChange={(event) => updateAddressForm('city', event.target.value)} placeholder="City" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.region} onChange={(event) => updateAddressForm('region', event.target.value)} placeholder="Region / State" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.postal_code} onChange={(event) => updateAddressForm('postal_code', event.target.value)} placeholder="Postal code" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                                            <Input value={addressForm.address_line} onChange={(event) => updateAddressForm('address_line', event.target.value)} placeholder="Street address" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold md:col-span-2" />
+                                        </div>
+                                        <Button type="button" className="mt-4 h-10 rounded-xl bg-indigo-600 px-5 font-black text-white hover:bg-indigo-700" disabled={savingAddress || !addressForm.recipient_name.trim() || !addressForm.address_line.trim()} onClick={saveCheckoutAddress}>
+                                            {savingAddress ? 'Saving...' : 'Save and use address'}
+                                        </Button>
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        <Input value={contact.name} onChange={(event) => setContact((current) => ({ ...current, name: event.target.value }))} placeholder="Buyer name" className="h-11 rounded-xl border-slate-200 bg-white font-semibold" />
+                                        <Input value={contact.phone} onChange={(event) => setContact((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone or WhatsApp" className="h-11 rounded-xl border-slate-200 bg-white font-semibold" />
+                                        <Input value={contact.delivery} onChange={(event) => setContact((current) => ({ ...current, delivery: event.target.value }))} placeholder={requiresShipping ? 'Delivery address' : 'Delivery note'} className="h-11 rounded-xl border-slate-200 bg-white font-semibold" />
+                                    </div>
+                                )
+                            )}
+                        </div> : (
+                            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                    <div className="flex min-w-0 items-start gap-4">
+                                        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-indigo-600">
+                                            <FulfillmentIcon className="size-5" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <p className="font-black text-slate-950">{hasServiceOrder ? 'Secure service handoff' : 'Verified account delivery'}</p>
+                                            <p className="mt-1 text-sm font-semibold text-slate-500">{state.user?.email || 'Buyer account'}</p>
+                                            <p className="mt-1 text-sm font-semibold text-slate-500">{hasServiceOrder ? 'Project files, notes, and approvals stay inside the protected order workspace.' : 'Download links or account access are released after secure order confirmation.'}</p>
+                                        </div>
+                                    </div>
+                                    <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">
+                                        <ShieldCheck className="size-3.5" /> No shipping required
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {requiresShipping ? <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            {shippingOptions.map((option) => {
+                                const active = shippingMethod === option.code;
+                                return (
+                                    <button key={option.code} type="button" disabled={placingOrder} onClick={() => setShippingMethod(option.code)} className={cn('relative min-h-[92px] rounded-2xl border px-4 py-4 text-left transition', active ? 'border-indigo-600 bg-indigo-50/45 shadow-[0_18px_38px_-34px_rgba(79,70,229,0.9)] ring-1 ring-indigo-600' : 'border-slate-200 bg-white hover:border-indigo-200')}>
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <p className={cn('text-base font-black', active ? 'text-indigo-950' : 'text-slate-950')}>{option.label}</p>
+                                                <p className="mt-1 text-sm font-semibold text-slate-500">{option.processing_time || deliveryMeta}</p>
+                                                <p className={cn('mt-2 text-sm font-black', active ? 'text-indigo-600' : 'text-slate-900')}>{money(option.fee)}</p>
+                                            </div>
+                                            <span className={cn('mt-0.5 flex size-5 items-center justify-center rounded-full border', active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-transparent')}>
+                                                <Check className="size-3.5" />
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div> : null}
+                    </section>
+
+                    <section className="rounded-[20px] border border-slate-200 bg-white px-6 py-5 shadow-[0_18px_55px_-44px_rgba(15,23,42,0.45)] max-sm:px-5">
+                        <div className="flex items-start gap-3">
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                                <CreditCard className="size-4.5" />
+                            </span>
+                            <div>
+                                <h2 className="text-lg font-black tracking-tight text-slate-950">Payment Method</h2>
+                                <p className="mt-1 text-sm font-semibold text-slate-500">All payments are secured in escrow.</p>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 md:grid-cols-2">
+                            {paymentOptions.map((option) => {
+                                const Icon = option.icon;
+                                const active = paymentMode === option.key;
+                                return (
+                                    <button key={option.key} type="button" disabled={placingOrder} onClick={() => setPaymentMode(option.key)} className={cn('rounded-2xl border px-4 py-4 text-left transition', active ? 'border-indigo-600 bg-indigo-50/45 shadow-[0_18px_38px_-34px_rgba(79,70,229,0.9)] ring-1 ring-indigo-600' : 'border-slate-200 bg-white hover:border-indigo-200')}>
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <Icon className={cn('size-4', active ? 'text-indigo-600' : 'text-slate-400')} />
+                                                    <p className="font-black text-slate-950">{option.key === 'wallet' ? 'TrustCrow Wallet' : 'Manual Transfer'}</p>
+                                                </div>
+                                                <p className={cn('mt-2 text-sm font-black', active ? 'text-indigo-600' : 'text-slate-500')}>{option.key === 'wallet' ? `Available: ${money(walletAvailable)}` : 'Bank / Mobile Banking'}</p>
+                                            </div>
+                                            <span className={cn('mt-1 flex size-5 items-center justify-center rounded-full border', active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-transparent')}>
+                                                <Check className="size-3.5" />
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {paymentMode === 'manual' ? (
+                            <div className="mt-4 space-y-3">
+                                {paymentMethods.length ? paymentMethods.map((method) => {
+                                    const active = Number(method.id) === Number(selectedPaymentMethodId);
+                                    return (
+                                        <button key={method.id} type="button" onClick={() => setSelectedPaymentMethodId(method.id)} className={cn('w-full rounded-xl border px-4 py-3 text-left transition', active ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 bg-slate-50/70 hover:border-indigo-200')}>
+                                            <p className="font-black text-slate-950">{method.label}</p>
+                                            <p className="mt-1 text-sm font-semibold text-slate-500">{method.subtitle || method.kind}</p>
+                                        </button>
+                                    );
+                                }) : null}
+                                <Input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Payment reference" className="h-11 rounded-xl border-slate-200 bg-slate-50 font-semibold" />
+                            </div>
+                        ) : null}
+
+                        <div className={cn('mt-4 rounded-xl border px-4 py-3 text-sm font-bold leading-6', paymentMode === 'wallet' && !walletCoversOrder ? 'border-rose-100 bg-rose-50 text-rose-700' : 'border-emerald-100 bg-emerald-50 text-emerald-800')}>
+                            <div className="flex items-start gap-3">
+                                <ShieldCheck className="mt-0.5 size-5 shrink-0" />
+                                <p>{paymentMode === 'wallet' && !walletCoversOrder ? 'Wallet balance is below the protected total.' : 'Your funds will be captured instantly but held securely in escrow until delivery is confirmed.'}</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <aside className="xl:sticky xl:top-24 xl:h-fit">
+                    <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_22px_60px_-46px_rgba(15,23,42,0.5)]">
+                        <div className="border-b border-slate-100 px-6 py-5 max-sm:px-5">
+                            <h2 className="text-lg font-black tracking-tight text-slate-950">Order Summary</h2>
+                        </div>
+
+                        <div className="space-y-4 border-b border-slate-100 px-6 py-5 max-sm:px-5">
+                            {state.cart.map((item) => (
+                                <div key={item.id} className="flex items-start gap-4">
+                                    <ProductMedia src={item.image} alt={item.title} className="size-14 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+                                    <div className="min-w-0 flex-1">
+                                        <p className="line-clamp-2 text-sm font-black leading-5 text-slate-950">{item.title}</p>
+                                        <p className="mt-1 truncate text-xs font-bold text-slate-500">{item.seller || 'Verified seller'}</p>
+                                        <div className="mt-2 flex items-center gap-3 text-xs font-black text-slate-500">
+                                            <span className="text-slate-950">{money(asNumber(item.price) * asNumber(item.quantity, 1))}</span>
+                                            <span className="size-1 rounded-full bg-slate-300" />
+                                            <span>Qty {item.quantity || 1}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="space-y-4 border-b border-slate-100 px-6 py-5 text-sm font-bold text-slate-600 max-sm:px-5">
+                            <div className="flex justify-between gap-4"><span>Subtotal</span><span className="font-black text-slate-950">{money(subtotal)}</span></div>
+                            {requiresShipping ? <div className="flex justify-between gap-4"><span>Delivery ({deliveryLabel.toLowerCase().replace(' delivery', '')})</span><span className="font-black text-slate-950">{money(shippingFee)}</span></div> : null}
+                            {escrowFee > 0 ? <div className="flex justify-between gap-4"><span className="inline-flex items-center gap-1">Escrow Fee <Info className="size-3.5 text-slate-400" /></span><span className="font-black text-slate-950">{money(escrowFee)}</span></div> : <div className="flex justify-between gap-4"><span className="inline-flex items-center gap-1">Escrow Fee <Info className="size-3.5 text-slate-400" /></span><span className="font-black text-emerald-600">Free</span></div>}
+                            {tax > 0 ? <div className="flex justify-between gap-4"><span>Tax</span><span className="font-black text-slate-950">{money(tax)}</span></div> : null}
+                            {discount > 0 ? <div className="flex justify-between gap-4"><span>Discount</span><span className="font-black text-emerald-600">-{money(discount)}</span></div> : null}
+                        </div>
+
+                        <div className="bg-slate-50/70 px-6 py-6 max-sm:px-5">
+                            <div className="flex items-end justify-between gap-4">
+                                <span className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Total to pay</span>
+                                <span className="text-2xl font-black tracking-tight text-slate-950">{money(total)}</span>
+                            </div>
+                            <Button type="button" className="mt-5 h-12 w-full rounded-xl bg-indigo-600 text-sm font-black text-white shadow-[0_18px_30px_-18px_rgba(79,70,229,0.95)] hover:bg-indigo-700" disabled={!canPlaceOrder} onClick={placeOrder}>
+                                <LockKeyhole className="size-4" />
+                                {placingOrder ? 'Processing...' : 'Place Secure Order'}
+                            </Button>
+                            <p className="mx-auto mt-4 max-w-[250px] text-center text-xs font-bold leading-5 text-slate-500">
+                                By placing your order, you agree to the TrustCrow <span className="text-indigo-600">Escrow Terms</span>.
+                            </p>
+                        </div>
                     </div>
-                </Panel>
+                </aside>
             </div>
-            <aside className="h-fit rounded-xl border border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.55)] ring-1 ring-white">
-                <h2 className="font-semibold">Checkout</h2>
-                <p className="mt-2 text-sm text-slate-500">{state.cart.length} items ready for secure order creation.</p>
-                <Button className="mt-5 w-full" onClick={() => checkout(payment, address, paymentReference)} asChild={false}>Place order</Button>
-                <Button asChild variant="outline" className="mt-2 w-full"><Link href="/orders">View orders</Link></Button>
-            </aside>
+
+            <div className="fixed inset-x-0 bottom-[64px] z-30 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-18px_45px_-34px_rgba(15,23,42,0.85)] backdrop-blur xl:hidden">
+                <div className="mx-auto flex max-w-xl items-center gap-3">
+                    <button type="button" className="min-w-0 flex-1 text-left">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Total</p>
+                        <p className="truncate text-lg font-bold text-slate-950">{money(total)}</p>
+                    </button>
+                    <Button className="h-11 rounded-lg bg-slate-950 px-4 font-bold" disabled={!canPlaceOrder} onClick={placeOrder}>{placingOrder ? 'Processing' : 'Place order'}</Button>
+                </div>
+            </div>
         </section>
     );
+}
+
+function Checkout({ state, checkout, saveBuyerAddress, saveBuyerPaymentMethod, pendingAction = '' }) {
+    return <EnterpriseCheckout state={state} checkout={checkout} saveBuyerAddress={saveBuyerAddress} saveBuyerPaymentMethod={saveBuyerPaymentMethod} pendingAction={pendingAction} />;
 }
 
 const buyerPanelSections = [
@@ -2665,7 +3506,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
             eyebrow="Buyer workspace"
             title="One command center for shopping, escrow, and account trust"
             description="Shared authentication, role-aware switching, wallet balance, notifications, active escrow, and buyer-side account controls all stay synchronized in one premium buyer panel."
-            aside={<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Role switch</p><div className="mt-4 grid gap-3">{state.user?.hasSellerProfile ? <Button asChild variant="outline" className="justify-start"><Link href="/seller/dashboard"><Store className="size-4" />Seller workspace</Link></Button> : null}<Button asChild className="justify-start bg-slate-950 hover:bg-indigo-600"><Link href="/marketplace"><ShoppingBag className="size-4" />Continue shopping</Link></Button></div></div>}
+            aside={<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Role switch</p><div className="mt-4 grid gap-3">{state.user?.hasSellerProfile ? <Button asChild variant="outline" className="justify-start"><Link href="/seller/dashboard"><Store className="size-4" />Seller workspace</Link></Button> : <Button asChild variant="outline" className="justify-start"><Link href="/seller/dashboard"><Store className="size-4" />Become a seller</Link></Button>}<Button asChild className="justify-start bg-slate-950 hover:bg-indigo-600"><Link href="/marketplace"><ShoppingBag className="size-4" />Continue shopping</Link></Button></div></div>}
         >
             <BuyerMetricsGrid items={[
                 { label: 'Wallet balance', value: money(walletSummary.available), hint: `${walletSummary.topUps || 0} recent top-ups`, icon: WalletCards },
@@ -2810,7 +3651,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                                         <ProductMedia src={item.image} alt={item.product} className="size-[72px] shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
                                         <div className="min-w-0">
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <Link href={`/order-details?order=${item.id}`} className="text-base font-bold tracking-tight text-slate-950 hover:text-indigo-600">
+                                                <Link href={`/buyer/orders/${item.id}`} className="text-base font-bold tracking-tight text-slate-950 hover:text-indigo-600">
                                                     {item.code || item.orderNumber}
                                                 </Link>
                                                 <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-bold', orderStatusPillClasses(item))}>
@@ -2823,7 +3664,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                                             <p className="mt-1 text-xs font-medium text-slate-500 md:text-sm">
                                                 Purchased on {item.placedAt ? new Date(item.placedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'recently'}
                                                 {' • '}
-                                                Seller: {item.seller || 'Seller'}
+                                                Seller: {item.sellerProfileHref ? <Link href={item.sellerProfileHref} className="font-extrabold text-indigo-600 hover:text-indigo-800">{item.seller || 'Seller'}</Link> : (item.seller || 'Seller')}
                                             </p>
                                         </div>
                                     </div>
@@ -2843,7 +3684,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                             <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
-                                        <Link href={`/order-details?order=${item.id}`} className="font-extrabold text-slate-950 hover:text-indigo-600">{item.code || item.orderNumber}</Link>
+                                        <Link href={`/buyer/orders/${item.id}`} className="font-extrabold text-slate-950 hover:text-indigo-600">{item.code || item.orderNumber}</Link>
                                         <p className="mt-1 text-sm font-semibold text-slate-500">{item.product}</p>
                                     </div>
                                     <Badge variant="secondary">{humanizeOrderState(item.status || item.state || 'active')}</Badge>
@@ -2888,22 +3729,32 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
 }
 
 function EscrowDetailTimeline({ timeline = [] }) {
+    const progressIndex = timeline.reduce((latest, step, index) => (['completed', 'active'].includes(step.state) ? index : latest), -1);
+    const progressWidth = timeline.length > 1 ? `${Math.max(0, progressIndex) / (timeline.length - 1) * 100}%` : '0%';
+    const gridColumns = timeline.length > 4 ? 'md:grid-cols-3 xl:grid-cols-6' : 'md:grid-cols-4';
+
     return (
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-            <div className="h-1.5 bg-slate-100">
-                <div className="h-full w-1/2 rounded-r-full bg-indigo-500" />
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="h-1 bg-slate-100">
+                <div className="h-full rounded-r-full bg-gradient-to-r from-cyan-600 via-emerald-500 to-[#4f46e5] transition-all duration-500" style={{ width: progressWidth }} />
             </div>
-            <div className="grid gap-6 px-5 py-7 md:grid-cols-4">
+            <div className={cn('grid gap-4 p-5', gridColumns)}>
                 {timeline.map((step) => {
                     const done = step.state === 'completed';
                     const active = step.state === 'active';
                     return (
                         <div key={step.key} className="relative text-center">
-                            <div className={cn('mx-auto flex size-12 items-center justify-center rounded-full border text-white shadow-[0_16px_36px_-28px_rgba(79,70,229,0.8)]', done || active ? 'border-indigo-500 bg-indigo-500' : 'border-slate-200 bg-slate-100 text-slate-400')}>
-                                <Clock className="size-4.5" />
+                            <div className={cn(
+                                'mx-auto flex size-10 items-center justify-center rounded-full border shadow-sm transition',
+                                done && 'border-emerald-500 bg-emerald-500 text-white',
+                                active && !done && 'border-[#4f46e5] bg-[#4f46e5] text-white shadow-[0_14px_28px_-20px_rgba(79,70,229,0.9)]',
+                                !done && !active && 'border-slate-200 bg-slate-100 text-slate-400',
+                            )}>
+                                {done ? <Check className="size-4" /> : <Clock className="size-4" />}
                             </div>
-                            <p className={cn('mt-4 text-sm font-black uppercase tracking-[0.12em]', done || active ? 'text-slate-950' : 'text-slate-400')}>{step.label}</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-500">{formatTimeOnly(step.at)}</p>
+                            <p className={cn('mt-3 text-xs font-black uppercase tracking-[0.14em]', done ? 'text-emerald-700' : active ? 'text-[#4f46e5]' : 'text-slate-400')}>{step.label}</p>
+                            <p className={cn('mt-1 text-xs font-semibold', done ? 'text-emerald-600' : active ? 'text-indigo-500' : 'text-slate-500')}>{formatTimeOnly(step.at)}</p>
+                            {step.description ? <p className="mx-auto mt-1 max-w-[180px] text-[11px] font-semibold leading-4 text-slate-400">{step.description}</p> : null}
                         </div>
                     );
                 })}
@@ -2914,126 +3765,1029 @@ function EscrowDetailTimeline({ timeline = [] }) {
 
 function EscrowSummaryCard({ detail }) {
     const item = detail?.items?.[0];
+    const flowType = detail?.flow_type || detail?.order?.order_flow_type || 'digital_escrow';
+    const isDigitalFlow = flowType === 'digital_escrow';
     return (
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-            <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-                <ReceiptText className="size-5 text-slate-400" />
-                <h2 className="text-xl font-black tracking-tight text-slate-950">Order Summary</h2>
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                    <ReceiptText className="size-4.5" />
+                </span>
+                <h2 className="text-base font-bold text-slate-950">Order Summary</h2>
             </div>
-            <div className="space-y-5 px-6 py-6">
-                <div className="flex gap-4">
-                    <ProductMedia src={item?.image_url} alt={item?.title} className="size-20 rounded-2xl object-cover ring-1 ring-slate-200" />
+            <div className="space-y-4 p-4">
+                <div className="flex gap-3">
+                    <ProductMedia src={item?.image_url} alt={item?.title} className="size-14 rounded-lg object-cover ring-1 ring-slate-200" />
                     <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 text-2xl font-black tracking-tight text-slate-950">{item?.title || 'Digital order'}</p>
-                        <p className="mt-1 text-sm font-black uppercase tracking-[0.16em] text-indigo-600">{detail?.seller?.name || 'Seller'}</p>
-                        <p className="mt-2 text-sm font-semibold text-slate-500">Qty: {item?.quantity || 1} • {humanizeOrderState(detail?.order?.product_type || 'digital')}</p>
+                        <p className="line-clamp-2 text-sm font-bold leading-5 text-slate-950">{item?.title || 'Digital order'}</p>
+                        <p className="mt-1 text-xs font-black uppercase tracking-[0.16em] text-cyan-700">{detail?.seller?.name || 'Seller'}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">Qty: {item?.quantity || 1} • {humanizeOrderState(detail?.order?.product_type || 'digital')}</p>
                     </div>
                 </div>
                 <div className="space-y-3 text-sm font-semibold text-slate-500">
                     <div className="flex items-center justify-between"><span>Subtotal</span><span className="font-black text-slate-950">{money(detail?.order?.subtotal)}</span></div>
-                    <div className="flex items-center justify-between"><span>Shipping / Delivery</span><span className="font-black text-slate-950">{asNumber(detail?.order?.delivery_fee) > 0 ? money(detail?.order?.delivery_fee) : 'Digital delivery'}</span></div>
+                    <div className="flex items-center justify-between"><span>{isDigitalFlow ? 'Delivery' : 'Shipping'}</span><span className="font-black text-slate-950">{asNumber(detail?.order?.delivery_fee) > 0 ? money(detail?.order?.delivery_fee) : (isDigitalFlow ? 'Secure digital' : 'Included')}</span></div>
                     <div className="flex items-center justify-between"><span>Escrow Fee</span><span className="font-black text-slate-950">{money(detail?.order?.escrow_fee)}</span></div>
                     <div className="flex items-center justify-between"><span>Discount</span><span className="font-black text-slate-950">{money(detail?.order?.discount)}</span></div>
                     <div className="flex items-center justify-between"><span>Tax</span><span className="font-black text-slate-950">{money(detail?.order?.tax)}</span></div>
                     <div className="border-t border-slate-100 pt-3">
-                        <div className="flex items-center justify-between"><span className="text-lg font-black text-slate-950">Total Paid</span><span className="text-3xl font-black tracking-tight text-slate-950">{money(detail?.order?.total_paid)}</span></div>
+                        <div className="flex items-center justify-between"><span className="text-base font-black text-slate-950">Total Paid</span><span className="text-xl font-black tracking-tight text-slate-950">{money(detail?.order?.total_paid)}</span></div>
                     </div>
                 </div>
+            </div>
+        </section>
+    );
+}
+
+function PhysicalShipmentPanel({ detail }) {
+    const shipment = detail?.shipment || {};
+    const address = shipment.shipping_address || {};
+    const hasTracking = Boolean(shipment.tracking_number || shipment.tracking_url || shipment.courier_name);
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="flex items-start gap-3 border-b border-slate-100 px-5 py-4">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-indigo-50 text-[#4f46e5] ring-1 ring-indigo-100">
+                    <Truck className="size-5" />
+                </span>
+                <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-slate-950">Shipment Details</h2>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">Physical fulfillment is tracked separately from digital escrow delivery.</p>
+                </div>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+                <DetailRow label="Shipment status" value={humanizeOrderState(shipment.shipping_status || 'pending')} />
+                <DetailRow label="Courier" value={shipment.courier_name || 'Not added yet'} />
+                <DetailRow label="Tracking number" value={shipment.tracking_number || 'Not added yet'} />
+                <DetailRow label="Shipped at" value={formatDateTime(shipment.shipped_at)} />
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Delivery address</p>
+                    <p className="mt-2 text-sm font-bold leading-6 text-slate-900">{address.recipient_name || 'Recipient not provided'}</p>
+                    <p className="text-sm font-semibold leading-6 text-slate-500">{address.address_line || 'Address not provided'}</p>
+                    {address.phone ? <p className="text-sm font-semibold leading-6 text-slate-500">{address.phone}</p> : null}
+                </div>
+                {shipment.shipping_note ? <div className="rounded-xl border border-slate-200 p-4 md:col-span-2"><p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Shipping note</p><p className="mt-2 text-sm font-bold leading-6 text-slate-900">{shipment.shipping_note}</p></div> : null}
+                {shipment.tracking_url ? <a href={shipment.tracking_url} target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 p-4 text-sm font-bold text-[#4f46e5] transition hover:border-[#4f46e5]/30 hover:bg-indigo-50 md:col-span-2">Open tracking URL</a> : null}
+                {!hasTracking ? <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 md:col-span-2">The seller has not added courier or tracking details yet.</p> : null}
+            </div>
+        </section>
+    );
+}
+
+function PhysicalInspectionPanel({ detail, mode = 'buyer', secondsLeft = null, canRelease = false, canDispute = false, pendingAction = '', onRelease, onDispute }) {
+    const orderId = detail?.order?.id;
+    const completed = Boolean(detail?.order?.completed_at || detail?.escrow?.released_at)
+        || ['completed', 'released'].includes(String(detail?.order?.status || '').toLowerCase())
+        || ['released', 'completed'].includes(String(detail?.escrow?.status || '').toLowerCase());
+    const delivered = Boolean(detail?.delivery?.delivered_at || detail?.shipment?.delivered_at)
+        || ['delivered', 'accepted'].includes(String(detail?.delivery?.status || detail?.order?.delivery_status || '').toLowerCase());
+
+    if (!delivered || completed) {
+        return null;
+    }
+
+    const autoReleaseAt = detail?.escrow?.auto_release_at || detail?.escrow?.timer?.buyer_review_expires_at || detail?.escrow?.timer?.next_event_at || detail?.escrow?.expires_at;
+    const timerLabel = secondsLeft === null ? null : formatCountdown(secondsLeft);
+    const isBuyer = mode === 'buyer';
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-emerald-50 shadow-[0_18px_60px_-42px_rgba(180,83,9,0.42)]">
+            <div className="flex flex-col gap-4 border-b border-amber-100 bg-white/80 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+                        <PackageCheck className="size-5" />
+                    </span>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-black text-slate-950">{isBuyer ? 'Confirm received or report an issue' : 'Inspection period active'}</h2>
+                        <p className="mt-1 text-sm font-semibold leading-5 text-slate-600">
+                            {isBuyer
+                                ? 'The seller marked this physical order delivered. Confirm only after checking the product.'
+                                : 'The buyer can confirm receipt, open a dispute, or let the inspection window expire.'}
+                        </p>
+                    </div>
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-left lg:text-right">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-amber-700">Auto-release</p>
+                    <p className="mt-1 text-sm font-black text-slate-950">{timerLabel || (autoReleaseAt ? formatDateTime(autoReleaseAt) : 'Scheduled by policy')}</p>
+                </div>
+            </div>
+            <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
+                <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                        ['1', 'Inspect product', 'Check condition, quantity, and included items.'],
+                        ['2', 'Confirm or dispute', 'Release funds if correct, or open a dispute if there is a problem.'],
+                        ['3', 'Auto-release', 'If no action is taken before the deadline, escrow releases by marketplace policy.'],
+                    ].map(([step, title, body]) => (
+                        <div key={step} className="rounded-xl border border-slate-200 bg-white p-4">
+                            <span className="flex size-7 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white">{step}</span>
+                            <p className="mt-3 text-sm font-black text-slate-950">{title}</p>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">{body}</p>
+                        </div>
+                    ))}
+                </div>
+                {isBuyer ? (
+                    <div className="grid gap-2">
+                        <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={onRelease} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white shadow-[0_16px_30px_-20px_rgba(5,150,105,0.9)] transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                            <Check className="size-4" /> Confirm Received & Release
+                        </button>
+                        <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={onDispute} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-black text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
+                            <AlertCircle className="size-4" /> Report Delivery Problem
+                        </button>
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-emerald-100 bg-white p-4">
+                        <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">Seller protection</p>
+                        <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">If the buyer does not dispute before the inspection window ends, the system releases escrow automatically.</p>
+                    </div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function EscrowActivityTimeline({ entries = [] }) {
+    const [visibleCount, setVisibleCount] = useState(5);
+    const visibleEntries = entries.slice(0, visibleCount);
+    const canLoadMore = visibleCount < entries.length;
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3.5">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                    <ClipboardCheck className="size-4.5" />
+                </span>
+                <div>
+                    <h2 className="text-base font-bold text-slate-950">Activity Timeline</h2>
+                    <p className="mt-0.5 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">{entries.length} update{entries.length === 1 ? '' : 's'}</p>
+                </div>
+            </div>
+            <div className="space-y-3 p-4">
+                {visibleEntries.length ? visibleEntries.map((entry) => (
+                    <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-950">{entry.title}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-500">{entry.body || 'Order activity recorded.'}</p>
+                        <p className="mt-2 text-xs font-bold text-slate-400">{formatDateTime(entry.created_at)}</p>
+                    </div>
+                )) : (
+                    <p className="rounded-lg bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-500">No activity has been recorded yet.</p>
+                )}
+                {canLoadMore ? (
+                    <button type="button" onClick={() => setVisibleCount((current) => Math.min(current + 5, entries.length))} className="h-10 w-full rounded-lg border border-slate-200 bg-white text-sm font-black text-slate-700 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-800">
+                        Load more
+                    </button>
+                ) : null}
+            </div>
+        </section>
+    );
+}
+
+function EscrowDeliverySummary({ detail, isSeller }) {
+    const delivery = detail?.delivery || {};
+    const status = String(delivery.status || detail?.order?.delivery_status || 'pending').toLowerCase();
+    const isSubmitted = ['delivered', 'delivery_submitted', 'buyer_review', 'accepted'].includes(status)
+        || ['buyer_review', 'delivery_submitted'].includes(String(detail?.order?.status || '').toLowerCase());
+
+    if (!isSubmitted) return null;
+
+    const filesCount = Number(delivery.files_count ?? detail?.order?.delivery_files_count ?? (delivery.files || []).length ?? 0);
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="flex items-start gap-3 border-b border-emerald-100 bg-emerald-50/70 px-5 py-4">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-emerald-100">
+                    <Check className="size-5" />
+                </span>
+                <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-slate-950">{isSeller ? 'Delivery Submitted' : 'Delivery Ready For Review'}</h2>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-emerald-700">
+                        {isSeller ? 'The buyer can now review this delivery and release escrow funds.' : 'Review the seller delivery before releasing escrow funds.'}
+                    </p>
+                </div>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+                <DetailRow label="Status" value={humanizeOrderState(status)} />
+                <DetailRow label="Submitted" value={formatDateTime(delivery.delivered_at || detail?.order?.delivered_at)} />
+                <DetailRow label="Reference" value={delivery.version || detail?.order?.delivery_version || 'Not provided'} />
+                <DetailRow label="Proof files" value={`${filesCount} attached`} />
+                {delivery.message ? <div className="rounded-2xl border border-slate-200 p-4 md:col-span-2"><p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Delivery note</p><p className="mt-2 text-sm font-bold leading-6 text-slate-900">{delivery.message}</p></div> : null}
+                {delivery.external_url ? <a href={delivery.external_url} target="_blank" rel="noreferrer" className="rounded-2xl border border-slate-200 p-4 text-sm font-bold text-[#4f46e5] transition hover:border-[#4f46e5]/30 hover:bg-indigo-50 md:col-span-2">Open tracking / delivery URL</a> : null}
+            </div>
+        </section>
+    );
+}
+
+function EscrowConfirmDialog({ open, title, body, confirmLabel = 'Confirm', tone = 'primary', loading = false, onConfirm, onCancel }) {
+    if (!open) return null;
+
+    const confirmClasses = tone === 'danger'
+        ? 'bg-rose-600 text-white hover:bg-rose-700'
+        : 'bg-[#4f46e5] text-white hover:bg-[#4338ca]';
+
+    return createPortal(
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#111827] text-white shadow-[0_30px_90px_-36px_rgba(2,6,23,0.95)]">
+                <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-200 ring-1 ring-white/10">
+                        <ShieldCheck className="size-5" />
+                    </span>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-black tracking-tight">{title}</h2>
+                        <p className="mt-1.5 text-sm font-semibold leading-6 text-slate-300">{body}</p>
+                    </div>
+                </div>
+                <div className="flex items-center justify-end gap-3 bg-white/[0.03] px-5 py-4">
+                    <button type="button" onClick={onCancel} disabled={loading} className="h-10 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-black text-slate-100 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60">
+                        Cancel
+                    </button>
+                    <button type="button" onClick={onConfirm} disabled={loading} className={cn('inline-flex h-10 items-center justify-center gap-2 rounded-lg px-5 text-sm font-black shadow-[0_16px_30px_-20px_rgba(79,70,229,0.9)] transition disabled:cursor-not-allowed disabled:opacity-60', confirmClasses)}>
+                        {loading ? <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : null}
+                        {loading ? 'Working...' : confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+function StarRatingInput({ value, onChange, disabled = false, size = 'md' }) {
+    const iconClass = size === 'lg' ? 'size-8' : 'size-6';
+
+    return (
+        <div className="flex items-center justify-center gap-1.5" role="radiogroup" aria-label="Product rating">
+            {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                    key={rating}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange(rating)}
+                    className={cn('rounded-lg p-1 text-amber-300 transition hover:scale-110 hover:text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-300/40 disabled:cursor-not-allowed disabled:opacity-70', rating <= value ? 'text-amber-400' : 'text-slate-300')}
+                    role="radio"
+                    aria-checked={rating === value}
+                    aria-label={`${rating} star${rating === 1 ? '' : 's'}`}
+                >
+                    <Star className={cn(iconClass, rating <= value && 'fill-current')} />
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function OrderReviewForm({ detail, onSubmit, loading = false, compact = false, title = 'Rate your experience', description = null, placeholder = 'Write a short review for the product and delivery experience...', submitLabel = 'Submit Rating & Review' }) {
+    const [rating, setRating] = useState(5);
+    const [feedbackType, setFeedbackType] = useState('good');
+    const [comment, setComment] = useState('');
+    const isBuyerReview = detail?.context === 'seller' || detail?.permissions?.is_seller;
+    const categories = isBuyerReview
+        ? ['payment_reliability', 'communication', 'cooperation', 'dispute_behavior', 'order_completion_behavior']
+        : ['product_quality', 'delivery_speed', 'communication', 'accuracy', 'support_behavior'];
+    const [categoryRatings, setCategoryRatings] = useState(() => Object.fromEntries(categories.map((item) => [item, 5])));
+    const productTitle = detail?.items?.[0]?.title || detail?.order?.order_number || 'this order';
+    const helpText = description || `Your verified review helps future buyers understand ${productTitle}.`;
+
+    useEffect(() => {
+        setRating(5);
+        setFeedbackType('good');
+        setComment('');
+        setCategoryRatings(Object.fromEntries(categories.map((item) => [item, 5])));
+    }, [detail?.order?.id, isBuyerReview]);
+
+    const submit = () => {
+        if (!detail?.order?.id || !rating || loading) return;
+        onSubmit?.({
+            rating,
+            feedback_type: feedbackType,
+            comment: comment.trim(),
+            category_ratings: categoryRatings,
+        });
+    };
+
+    return (
+        <div className={cn('space-y-5', compact && 'space-y-4')}>
+            <div className="text-center">
+                <p className={cn('font-black tracking-tight text-slate-950', compact ? 'text-base' : 'text-xl')}>{title}</p>
+                <p className="mx-auto mt-1 max-w-xl text-sm font-semibold leading-6 text-slate-500">{helpText}</p>
+            </div>
+            <StarRatingInput value={rating} onChange={setRating} disabled={loading} size={compact ? 'md' : 'lg'} />
+            <div className="grid gap-2 sm:grid-cols-3">
+                {['good', 'neutral', 'bad'].map((type) => (
+                    <button
+                        key={type}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => setFeedbackType(type)}
+                        className={cn('h-10 rounded-lg border px-3 text-sm font-black capitalize transition', feedbackType === type ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')}
+                    >
+                        {type}
+                    </button>
+                ))}
+            </div>
+            <div className="grid gap-2">
+                {categories.map((category) => (
+                    <div key={category} className="grid gap-2 rounded-xl bg-slate-50 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_170px] sm:items-center">
+                        <span className="min-w-0 text-xs font-black uppercase tracking-[0.12em] text-slate-500">{humanizeOrderState(category)}</span>
+                        <StarRatingInput value={categoryRatings[category] || 5} onChange={(value) => setCategoryRatings((current) => ({ ...current, [category]: value }))} disabled={loading} size="md" />
+                    </div>
+                ))}
+            </div>
+            <textarea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder={placeholder}
+                maxLength={2000}
+                className="min-h-28 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+            />
+            <button type="button" disabled={loading || !rating} onClick={submit} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-black text-white shadow-[0_18px_40px_-26px_rgba(15,23,42,0.9)] transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60">
+                {loading ? <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Star className="size-4 fill-current" />}
+                {loading ? 'Submitting review...' : submitLabel}
+            </button>
+        </div>
+    );
+}
+
+function OrderCompletedReviewModal({ open, detail, loading = false, onSubmit, onSkip }) {
+    if (!open) return null;
+
+    const stars = Array.from({ length: 24 }, (_, index) => ({
+        id: index,
+        left: `${8 + ((index * 37) % 84)}%`,
+        delay: `${(index % 8) * 0.12}s`,
+        duration: `${1.7 + (index % 5) * 0.18}s`,
+        size: 12 + (index % 4) * 4,
+    }));
+
+    return createPortal(
+        <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-hidden bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5">
+            <style>{`
+                @keyframes sellova-star-rise {
+                    0% { transform: translate3d(0, 42px, 0) scale(.55) rotate(0deg); opacity: 0; }
+                    18% { opacity: 1; }
+                    100% { transform: translate3d(0, -220px, 0) scale(1.1) rotate(22deg); opacity: 0; }
+                }
+                @keyframes sellova-complete-pop {
+                    0% { transform: translateY(18px) scale(.96); opacity: 0; }
+                    100% { transform: translateY(0) scale(1); opacity: 1; }
+                }
+            `}</style>
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {stars.map((star) => (
+                    <Star
+                        key={star.id}
+                        className="absolute bottom-14 fill-amber-300 text-amber-300 drop-shadow-sm"
+                        style={{
+                            left: star.left,
+                            width: star.size,
+                            height: star.size,
+                            animation: `sellova-star-rise ${star.duration} ease-in-out ${star.delay} infinite`,
+                        }}
+                    />
+                ))}
+            </div>
+            <div className="relative flex max-h-[calc(100vh-24px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-[0_34px_100px_-36px_rgba(15,23,42,0.75)] sm:max-h-[calc(100vh-40px)]" style={{ animation: 'sellova-complete-pop .26s ease-out both' }}>
+                <div className="relative shrink-0 overflow-hidden border-b border-slate-100 bg-gradient-to-br from-emerald-50 via-white to-amber-50 px-5 py-6 text-center sm:px-8 sm:py-7">
+                    <button type="button" onClick={onSkip} className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/80 hover:text-slate-700" aria-label="Close completed order review modal">
+                        <X className="size-4" />
+                    </button>
+                    <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-[0_18px_42px_-22px_rgba(16,185,129,0.9)] ring-8 ring-emerald-100">
+                        <Check className="size-8" />
+                    </div>
+                    <p className="mt-5 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-700">Order Completed</p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Funds released successfully</h2>
+                    <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-slate-500">Your protected order is complete. Share a verified rating for the product while the experience is fresh.</p>
+                </div>
+                <div className="min-h-0 overflow-y-auto p-5 sm:p-6">
+                    <OrderReviewForm detail={detail} loading={loading} onSubmit={onSubmit} />
+                    <button type="button" onClick={onSkip} disabled={loading} className="mt-3 h-10 w-full rounded-xl text-sm font-black text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        Maybe later
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+function SellerOrderCompletedModal({ open, detail, loading = false, onSubmit, onSkip }) {
+    if (!open) return null;
+
+    const stars = Array.from({ length: 26 }, (_, index) => ({
+        id: index,
+        left: `${7 + ((index * 41) % 86)}%`,
+        delay: `${(index % 9) * 0.11}s`,
+        duration: `${1.65 + (index % 5) * 0.2}s`,
+        size: 11 + (index % 5) * 4,
+    }));
+
+    return createPortal(
+        <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-hidden bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5">
+            <style>{`
+                @keyframes sellova-seller-star-rise {
+                    0% { transform: translate3d(0, 46px, 0) scale(.55) rotate(-8deg); opacity: 0; }
+                    18% { opacity: 1; }
+                    100% { transform: translate3d(0, -230px, 0) scale(1.12) rotate(28deg); opacity: 0; }
+                }
+                @keyframes sellova-seller-complete-pop {
+                    0% { transform: translateY(18px) scale(.96); opacity: 0; }
+                    100% { transform: translateY(0) scale(1); opacity: 1; }
+                }
+            `}</style>
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {stars.map((star) => (
+                    <Star
+                        key={star.id}
+                        className="absolute bottom-14 fill-amber-300 text-amber-300 drop-shadow-sm"
+                        style={{
+                            left: star.left,
+                            width: star.size,
+                            height: star.size,
+                            animation: `sellova-seller-star-rise ${star.duration} ease-in-out ${star.delay} infinite`,
+                        }}
+                    />
+                ))}
+            </div>
+            <div className="relative flex max-h-[calc(100vh-24px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-[0_34px_100px_-36px_rgba(15,23,42,0.75)] sm:max-h-[calc(100vh-40px)]" style={{ animation: 'sellova-seller-complete-pop .26s ease-out both' }}>
+                <div className="relative shrink-0 overflow-hidden border-b border-slate-100 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 px-5 py-6 text-center sm:px-8 sm:py-7">
+                    <button type="button" onClick={onSkip} className="absolute right-4 top-4 flex size-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/80 hover:text-slate-700" aria-label="Close seller completed order modal">
+                        <X className="size-4" />
+                    </button>
+                    <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-[0_18px_42px_-22px_rgba(79,70,229,0.9)] ring-8 ring-indigo-100">
+                        <Check className="size-8" />
+                    </div>
+                    <p className="mt-5 text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">Order Completed</p>
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">Buyer released the funds</h2>
+                    <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-slate-500">This order is complete and your seller balance has been updated. Leave verified buyer feedback for future seller context.</p>
+                </div>
+                <div className="min-h-0 overflow-y-auto p-5 sm:p-6">
+                    <OrderReviewForm
+                        detail={detail}
+                        loading={loading}
+                        onSubmit={onSubmit}
+                        title="Rate this buyer"
+                        description="Your feedback helps sellers understand buyer communication, confirmation speed, and order conduct."
+                        placeholder="Write a short note about buyer communication, responsiveness, or order conduct..."
+                        submitLabel="Submit Buyer Review"
+                    />
+                    <button type="button" onClick={onSkip} disabled={loading} className="mt-3 h-10 w-full rounded-xl text-sm font-black text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        Maybe later
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+function PendingOrderReviewCard({ detail, onSubmit, loading = false }) {
+    if (!detail?.review?.needs_review) return null;
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 shadow-[0_18px_60px_-42px_rgba(180,83,9,0.42)]">
+            <div className="flex items-start gap-3 border-b border-amber-100 bg-white/70 px-5 py-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+                    <Star className="size-5 fill-current" />
+                </span>
+                <div>
+                    <h2 className="text-base font-black text-slate-950">Review this completed order</h2>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-500">You released the funds. A quick rating keeps marketplace quality transparent.</p>
+                </div>
+            </div>
+            <div className="p-5">
+                <OrderReviewForm detail={detail} loading={loading} onSubmit={onSubmit} compact />
+            </div>
+        </section>
+    );
+}
+
+function BuyerReputationPanel({ detail }) {
+    const summary = detail?.buyer_review?.summary || {};
+    const recent = Array.isArray(summary.recent) ? summary.recent : [];
+    const average = Number(summary.average_rating || 0);
+    const total = Number(summary.total || 0);
+    const buyerName = detail?.buyer?.name || 'Buyer';
+    const buyerProfileUrl = detail?.buyer?.profile_url || null;
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="flex items-start gap-3 border-b border-slate-100 px-5 py-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100">
+                    <BadgeCheck className="size-5" />
+                </span>
+                <div className="min-w-0">
+                    <h2 className="text-base font-black text-slate-950">
+                        {buyerProfileUrl ? (
+                            <Link href={buyerProfileUrl} className="text-indigo-700 hover:text-indigo-900">{buyerName}</Link>
+                        ) : buyerName}
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-500">Verified seller feedback from completed marketplace orders.</p>
+                </div>
+                <div className="ml-auto rounded-lg bg-slate-50 px-3 py-2 text-right">
+                    <p className="text-lg font-black text-slate-950">{total ? average.toFixed(1) : 'New'}</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{total} review{total === 1 ? '' : 's'}</p>
+                </div>
+            </div>
+            <div className="grid gap-3 p-5">
+                {recent.length ? recent.map((review) => (
+                    <article key={review.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-black text-slate-950">{review.seller || 'Verified seller'}</p>
+                                <p className="mt-0.5 text-xs font-semibold text-slate-400">{formatDateTime(review.created_at)}</p>
+                            </div>
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-sm font-black text-amber-600">
+                                <Star className="size-4 fill-current" /> {review.rating}
+                            </span>
+                        </div>
+                        <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">{review.comment || 'No written feedback.'}</p>
+                    </article>
+                )) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">No previous buyer ratings yet.</div>
+                )}
+            </div>
+        </section>
+    );
+}
+
+function PendingBuyerReviewCard({ detail, onSubmit, loading = false }) {
+    if (!detail?.buyer_review?.needs_review) return null;
+
+    return (
+        <section className="overflow-hidden rounded-xl border border-indigo-200/80 bg-indigo-50/60 shadow-[0_18px_60px_-42px_rgba(67,56,202,0.36)]">
+            <div className="flex items-start gap-3 border-b border-indigo-100 bg-white/70 px-5 py-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200">
+                    <Star className="size-5 fill-current" />
+                </span>
+                <div>
+                    <h2 className="text-base font-black text-slate-950">Rate this buyer</h2>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-500">Share verified feedback about communication, confirmation, and order cooperation.</p>
+                </div>
+            </div>
+            <div className="p-5">
+                <OrderReviewForm
+                    detail={detail}
+                    loading={loading}
+                    onSubmit={onSubmit}
+                    compact
+                    title="How was this buyer?"
+                    description="This private marketplace reputation signal is visible to sellers on future orders."
+                    placeholder="Write a short note about buyer communication, responsiveness, or order conduct..."
+                    submitLabel="Submit Buyer Review"
+                />
+            </div>
+        </section>
+    );
+}
+
+function CompletedReviewCard({ title, description, review, emptyTitle = 'Review not submitted yet' }) {
+    const current = review?.current || null;
+    const hasReview = Boolean(review?.has_review && current);
+
+    return (
+        <section className={cn('overflow-hidden rounded-xl border shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]', hasReview ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200/80 bg-white')}>
+            <div className={cn('flex items-start gap-3 border-b px-5 py-4', hasReview ? 'border-emerald-100 bg-white/75' : 'border-slate-100')}>
+                <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg ring-1', hasReview ? 'bg-emerald-100 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-slate-200')}>
+                    <Star className={cn('size-5', hasReview && 'fill-current')} />
+                </span>
+                <div className="min-w-0">
+                    <h2 className="text-base font-black text-slate-950">{hasReview ? title : emptyTitle}</h2>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-500">{description}</p>
+                </div>
+            </div>
+            <div className="p-5">
+                {hasReview ? (
+                    <div className="rounded-xl border border-emerald-100 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-sm font-black text-amber-600 ring-1 ring-amber-100">
+                                <Star className="size-4 fill-current" /> {current.rating}/5
+                            </span>
+                            <span className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">{humanizeOrderState(current.status || 'visible')}</span>
+                        </div>
+                        {current.comment ? (
+                            <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">{current.comment}</p>
+                        ) : (
+                            <p className="mt-3 text-sm font-semibold leading-6 text-slate-400">No written comment was added.</p>
+                        )}
+                        <p className="mt-3 text-xs font-bold text-slate-400">Submitted {formatDateTime(current.created_at || current.createdAt)}</p>
+                    </div>
+                ) : (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500">This completed order is still waiting for verified feedback.</p>
+                )}
             </div>
         </section>
     );
 }
 
 function EscrowChatPanel({ detail, sendEscrowMessage, markEscrowMessagesRead, pendingAction }) {
-    const [body, setBody] = useState('');
-    const [attachments, setAttachments] = useState([]);
     const orderId = detail?.order?.id;
+    const contextKey = detail?.context || 'buyer';
+    const storageKey = orderId ? `sellova:order-chat:${contextKey}:${orderId}:open` : '';
+    const draftKey = orderId ? `sellova:order-chat:${contextKey}:${orderId}:draft` : '';
+    const [body, setBody] = useState(() => {
+        if (typeof window === 'undefined' || !draftKey) return '';
+
+        return window.sessionStorage.getItem(draftKey) || '';
+    });
+    const [attachments, setAttachments] = useState([]);
+    const [error, setError] = useState('');
+    const [visibleCount, setVisibleCount] = useState(12);
+    const messagesEndRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const composerRef = useRef(null);
+    const [open, setOpen] = useState(() => {
+        if (typeof window === 'undefined' || !storageKey) return false;
+
+        return window.sessionStorage.getItem(storageKey) === '1';
+    });
+    const messages = Array.isArray(detail?.messages) ? detail.messages : [];
+    const messagesForChat = useMemo(() => {
+        let escrowNoticeShown = false;
+
+        return messages.filter((message) => {
+            const bodyText = String(message?.body || '').trim().toLowerCase();
+            const isEscrowSystemNotice = bodyText === 'order funds secured in escrow.' && !message?.from_me;
+
+            if (!isEscrowSystemNotice) {
+                return true;
+            }
+
+            if (escrowNoticeShown) {
+                return false;
+            }
+
+            escrowNoticeShown = true;
+            return false;
+        });
+    }, [messages]);
+    const visibleMessages = messagesForChat.slice(Math.max(0, messagesForChat.length - visibleCount));
+    const hasOlderMessages = visibleCount < messagesForChat.length;
     const isSending = pendingAction === `escrow:${orderId}:message`;
+    const canSend = Boolean(orderId) && !isSending && (body.trim().length > 0 || attachments.length > 0);
+    const isSellerContext = detail?.context === 'seller' || detail?.permissions?.is_seller;
+    const counterpartyLabel = isSellerContext ? 'buyer' : 'seller';
+    const counterpartyProfileUrl = isSellerContext ? detail?.buyer?.profile_url : detail?.seller?.profile_url;
+    const latestMessage = messagesForChat[messagesForChat.length - 1] || null;
+    const unreadIncoming = messagesForChat.filter((message) => !message.from_me && !message.read_at && !message.readAt).length;
+    const unreadIncomingRaw = messages.filter((message) => !message.from_me && !message.read_at && !message.readAt).length;
+    const latestUnreadId = messages.reduce((latest, message) => {
+        if (message.from_me || message.read_at || message.readAt) return latest;
+
+        return Math.max(latest, Number(message.id || 0));
+    }, 0);
 
     useEffect(() => {
-        if (orderId) {
-            markEscrowMessagesRead(orderId).catch(() => {});
+        if (typeof window === 'undefined' || !storageKey) return;
+        window.sessionStorage.setItem(storageKey, open ? '1' : '0');
+    }, [open, storageKey]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !storageKey) return;
+        setOpen(window.sessionStorage.getItem(storageKey) === '1');
+    }, [storageKey]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !draftKey) return;
+        setBody(window.sessionStorage.getItem(draftKey) || '');
+    }, [draftKey]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !draftKey) return;
+
+        if (body) {
+            window.sessionStorage.setItem(draftKey, body);
+            return;
         }
-    }, [orderId]);
+
+        window.sessionStorage.removeItem(draftKey);
+    }, [body, draftKey]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !open || !orderId || !unreadIncomingRaw || !latestUnreadId) return;
+
+        const readKey = `sellova:order-chat:${contextKey}:${orderId}:read:${latestUnreadId}`;
+        if (window.sessionStorage.getItem(readKey) === '1') {
+            return;
+        }
+
+        window.sessionStorage.setItem(readKey, '1');
+        postAction(`/web/actions/orders/${orderId}/escrow/messages/read`, {}).catch(() => {});
+    }, [open, orderId, contextKey, unreadIncomingRaw, latestUnreadId]);
+
+    useLayoutEffect(() => {
+        if (!open) return;
+        messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    }, [open, messages.length, orderId, visibleCount]);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        if (typeof window === 'undefined') return undefined;
+        const focusTimer = window.setTimeout(() => composerRef.current?.focus(), 80);
+
+        return () => window.clearTimeout(focusTimer);
+    }, [open, orderId]);
+
+    useEffect(() => {
+        setVisibleCount(12);
+    }, [orderId, contextKey]);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                closeChat();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [open]);
 
     const submit = async () => {
-        if (!orderId || (!body.trim() && attachments.length === 0)) return;
-        await sendEscrowMessage(orderId, { body: body.trim(), attachments });
-        setBody('');
-        setAttachments([]);
+        if (!canSend) return;
+        setError('');
+        try {
+            await sendEscrowMessage(orderId, { body: body.trim(), attachments });
+            setBody('');
+            if (typeof window !== 'undefined' && draftKey) window.sessionStorage.removeItem(draftKey);
+            setAttachments([]);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            markEscrowMessagesRead(orderId).catch(() => {});
+        } catch (caught) {
+            setError(caught?.message || 'Message could not be sent. Please try again.');
+        }
     };
 
-    return (
-        <section className="flex min-h-[680px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-                <div>
-                    <div className="flex items-center gap-3">
-                        <MessageSquareText className="size-5 text-indigo-500" />
-                        <h2 className="text-2xl font-black tracking-tight text-slate-950">Escrow Chat</h2>
-                    </div>
-                    <p className="mt-1 text-sm font-black uppercase tracking-[0.18em] text-slate-400">Live securely monitored</p>
+    const onComposerKeyDown = (event) => {
+        if (event.key !== 'Enter' || event.shiftKey) return;
+        event.preventDefault();
+        submit();
+    };
+
+    const openChat = (event = null) => {
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        if (typeof window !== 'undefined' && storageKey) {
+            window.sessionStorage.setItem(storageKey, '1');
+        }
+        setOpen(true);
+    };
+
+    const closeChat = () => {
+        if (typeof window !== 'undefined' && storageKey) {
+            window.sessionStorage.setItem(storageKey, '0');
+        }
+        setOpen(false);
+    };
+
+    const chatWindow = open ? (
+        <div className="fixed inset-x-3 bottom-3 z-[9999] mx-auto flex h-[min(82vh,640px)] max-w-[430px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_28px_90px_-38px_rgba(15,23,42,0.55)] ring-1 ring-black/5 sm:bottom-6 sm:right-6 sm:left-auto sm:mx-0 sm:h-[640px] sm:w-[430px]">
+            <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3.5">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white ring-4 ring-slate-100">
+                    {counterpartyLabel.slice(0, 2).toUpperCase()}
+                </span>
+                <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black capitalize text-slate-950">Order chat with {counterpartyProfileUrl ? <Link href={counterpartyProfileUrl} className="text-indigo-600 hover:text-indigo-800">{counterpartyLabel}</Link> : counterpartyLabel}</p>
+                    <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">{detail?.order?.order_number || 'Secure escrow order'}</p>
                 </div>
-                <div className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-emerald-600"><span className="size-2.5 rounded-full bg-emerald-500" />Secure</div>
+                <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100 sm:inline-flex">
+                    <span className="size-1.5 rounded-full bg-emerald-500" />Secure
+                </span>
+                <button type="button" onClick={closeChat} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Close order chat">
+                    <X className="size-4" />
+                </button>
             </div>
-            <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] px-6 py-6">
+            <div className="min-h-0 flex-1 overflow-hidden bg-slate-50">
+                <div className="h-full space-y-3 overflow-y-auto p-4 [scrollbar-color:theme(colors.slate.300)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400">
+                {hasOlderMessages ? (
+                    <div className="flex justify-center">
+                        <button type="button" onClick={() => setVisibleCount((current) => Math.min(current + 12, messagesForChat.length))} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700">
+                            Load older messages
+                        </button>
+                    </div>
+                ) : null}
                 <div className="flex justify-center">
-                    <div className="rounded-full border border-slate-200 bg-white px-5 py-2 text-xs font-black uppercase tracking-[0.18em] text-slate-500 shadow-sm">Order funds secured in escrow.</div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3.5 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 shadow-sm">
+                        <ShieldCheck className="size-3.5 text-emerald-600" />
+                        Order funds secured in escrow
+                    </div>
                 </div>
-                {(detail?.messages || []).map((message) => (
-                    <div key={message.id} className={cn('flex', message.from_me ? 'justify-end' : 'justify-start')}>
-                        <div className={cn('max-w-[82%] rounded-[24px] px-5 py-4 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.4)]', message.from_me ? 'bg-[linear-gradient(135deg,#4f46e5_0%,#5c4df5_100%)] text-white' : 'border border-slate-200 bg-white text-slate-900')}>
-                            <p className="text-[11px] font-black uppercase tracking-[0.18em] opacity-70">{message.sender_role}</p>
-                            {message.body ? <p className="mt-2 text-lg font-semibold leading-8">{message.body}</p> : null}
+                {visibleMessages.map((message) => (
+                    <div key={message.id} className={cn('flex flex-col', message.from_me ? 'items-end' : 'items-start')}>
+                        <div className={cn('max-w-[86%] rounded-2xl px-4 py-3 text-sm shadow-sm ring-1', message.from_me ? 'rounded-br-md bg-indigo-600 text-white ring-indigo-500/20' : 'rounded-bl-md bg-white text-slate-900 ring-slate-200')}>
+                            <div className="flex items-center gap-2">
+                                <p className="text-[10px] font-black uppercase tracking-[0.14em] opacity-70">{message.from_me ? 'You' : humanizeOrderState(message.sender_role || 'Counterparty')}</p>
+                                {!message.from_me ? <span className="size-1.5 rounded-full bg-emerald-500" /> : null}
+                            </div>
+                            {message.body ? <p className="mt-1.5 whitespace-pre-wrap font-semibold leading-6">{message.body}</p> : null}
                             {(message.attachments || []).length ? (
                                 <div className="mt-3 grid gap-2">
                                     {message.attachments.map((attachment) => (
-                                        <a key={attachment.id} href={attachment.download_url} className={cn('inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-bold', message.from_me ? 'bg-white/10 text-white' : 'bg-slate-50 text-slate-700')}>
-                                            <Paperclip className="size-4" />{attachment.name}
+                                        <a key={attachment.id} href={attachment.download_url} className={cn('inline-flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold', message.from_me ? 'bg-white/10 text-white' : 'bg-slate-50 text-slate-700')}>
+                                            <Paperclip className="size-3.5 shrink-0" />
+                                            <span className="truncate">{attachment.name}</span>
                                         </a>
                                     ))}
                                 </div>
                             ) : null}
-                            <p className={cn('mt-3 text-xs font-bold', message.from_me ? 'text-white/70' : 'text-slate-400')}>{formatTimeOnly(message.created_at)}</p>
                         </div>
+                        <p className="mt-1 px-1 text-[11px] font-bold text-slate-400">{formatTimeOnly(message.created_at)}{message.from_me ? ' • sent' : ''}</p>
                     </div>
                 ))}
-            </div>
-            <div className="border-t border-slate-100 bg-white p-4">
-                {attachments.length ? <p className="mb-3 text-xs font-bold text-slate-500">{attachments.length} attachment(s) ready</p> : null}
-                <div className="flex gap-3">
-                    <label className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400 transition hover:border-indigo-200 hover:text-indigo-600">
-                        <Paperclip className="size-5" />
-                        <input type="file" multiple className="sr-only" onChange={(event) => setAttachments(Array.from(event.target.files || []))} />
-                    </label>
-                    <Input value={body} onChange={(event) => setBody(event.target.value)} placeholder="Type message securely..." className="h-14 rounded-2xl border-slate-200 bg-slate-50 px-5 text-base font-semibold" />
-                    <button type="button" disabled={isSending || (!body.trim() && attachments.length === 0)} onClick={submit} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-[0_18px_42px_-28px_rgba(15,23,42,0.7)] transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">
-                        <Send className="size-5" />
-                    </button>
+                <div ref={messagesEndRef} />
                 </div>
             </div>
-        </section>
+            <div className="border-t border-slate-200 bg-white p-3.5">
+                {error ? <p className="mb-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{error}</p> : null}
+                {attachments.length ? (
+                    <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="min-w-0 truncate text-xs font-bold text-slate-600">{attachments.length} attachment{attachments.length === 1 ? '' : 's'} ready</p>
+                        <button type="button" onClick={() => { setAttachments([]); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="text-xs font-black text-slate-400 transition hover:text-slate-700">Clear</button>
+                    </div>
+                ) : null}
+                <div className="relative z-[1] grid grid-cols-[38px_minmax(0,1fr)_40px] gap-2 rounded-xl bg-slate-50 p-1.5 shadow-sm ring-1 ring-slate-200" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                    <label className="relative z-10 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-indigo-600" aria-label="Attach files">
+                        <Paperclip className="size-4" />
+                        <input ref={fileInputRef} type="file" multiple className="sr-only" onChange={(event) => setAttachments(Array.from(event.target.files || []))} />
+                    </label>
+                    <textarea
+                        ref={composerRef}
+                        value={body}
+                        onChange={(event) => setBody(event.target.value)}
+                        onInput={(event) => setBody(event.currentTarget.value)}
+                        onKeyDown={onComposerKeyDown}
+                        placeholder="Type a secure message..."
+                        rows={1}
+                        name="escrow_chat_message"
+                        aria-label="Type a secure order chat message"
+                        data-testid="escrow-chat-message-input"
+                        className="relative z-10 max-h-24 min-h-10 w-full resize-none rounded-lg border border-transparent bg-white px-4 py-2.5 text-sm font-semibold leading-5 text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500/15"
+                    />
+                    <button type="button" disabled={!canSend} onClick={submit} data-testid="escrow-chat-send-button" className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                        {isSending ? <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Send className="size-4" />}
+                    </button>
+                </div>
+                <p className="mt-2 px-1 text-[11px] font-semibold text-slate-400">Press Enter to send, Shift+Enter for a new line.</p>
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <>
+            <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+                <div className="flex items-start gap-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                        <MessageSquareText className="size-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-base font-black text-slate-950">Order conversation</h2>
+                            {counterpartyProfileUrl ? <Link href={counterpartyProfileUrl} className="text-xs font-black text-indigo-600 hover:text-indigo-800">View {counterpartyLabel} details</Link> : null}
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700 ring-1 ring-emerald-100">
+                                <span className="size-1.5 rounded-full bg-emerald-500" />Secure
+                            </span>
+                        </div>
+                        <p className="mt-1 text-sm font-semibold leading-5 text-slate-500">
+                            {latestMessage?.body ? latestMessage.body : `Chat with the ${counterpartyLabel} about delivery, files, and escrow evidence.`}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-400">
+                            <span>{messagesForChat.length} message{messagesForChat.length === 1 ? '' : 's'}</span>
+                            {latestMessage?.created_at ? <span>Last update {formatTimeOnly(latestMessage.created_at)}</span> : null}
+                        </div>
+                    </div>
+                </div>
+                <button type="button" onPointerDown={openChat} onClick={openChat} data-testid="escrow-chat-open-card" className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-black text-white transition hover:bg-emerald-700">
+                    <MessageSquareText className="size-4" />Open chat
+                    {unreadIncoming ? <span className="ml-1 rounded-full bg-emerald-400 px-2 py-0.5 text-[10px] font-black text-slate-950">{unreadIncoming}</span> : null}
+                </button>
+            </section>
+
+            <button type="button" onPointerDown={openChat} onClick={openChat} data-testid="escrow-chat-open-bubble" className={cn('fixed bottom-5 right-5 z-[9998] flex h-14 items-center gap-3 rounded-full bg-emerald-500 pl-4 pr-5 text-sm font-black text-slate-950 shadow-[0_18px_55px_-22px_rgba(16,185,129,0.85)] transition hover:bg-emerald-400', open && 'hidden')} aria-label="Open order chat">
+                <span className="relative flex size-9 items-center justify-center rounded-full bg-slate-950 text-emerald-300">
+                    <MessageSquareText className="size-4.5" />
+                    {unreadIncoming ? <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-rose-500 text-[10px] text-white">{Math.min(unreadIncoming, 9)}</span> : null}
+                </span>
+                Chat
+            </button>
+
+            {chatWindow}
+        </>
     );
 }
 
-function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrderDispute, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, refreshEscrowOrderDetail, submitSellerDelivery, pendingAction }) {
-    const detail = state.escrowOrderDetail || state.buyerOps?.selectedEscrowOrder || state.sellerOps?.selectedEscrowOrder || null;
+function orderFulfillmentMeta(productType, isSeller) {
+    const normalized = String(productType || 'digital').toLowerCase();
+
+    if (normalized === 'physical') {
+        return {
+            label: 'Physical delivery',
+            title: isSeller ? 'Prepare shipment' : 'Shipment in progress',
+            description: isSeller ? 'Ship the item and keep tracking updated for buyer verification.' : 'The seller will ship the item. Funds stay protected until delivery is confirmed.',
+            deliveryTitle: 'Shipping details',
+            deliveryAction: 'Submit shipment',
+            fileLabel: 'Delivery proof',
+            icon: Truck,
+        };
+    }
+
+    if (normalized === 'service') {
+        return {
+            label: 'Service order',
+            title: isSeller ? 'Deliver service work' : 'Service in progress',
+            description: isSeller ? 'Share milestones, handoff notes, or proof of completed service.' : 'The seller coordinates service delivery here. Approve only after the work is complete.',
+            deliveryTitle: 'Service delivery',
+            deliveryAction: 'Mark service delivered',
+            fileLabel: 'Service files',
+            icon: BriefcaseBusiness,
+        };
+    }
+
+    return {
+        label: 'Digital delivery',
+        title: isSeller ? 'Submit digital access' : 'Awaiting digital delivery',
+        description: isSeller ? 'Upload files or provide secure access details for the buyer.' : 'The seller will provide files or access. Funds stay protected until buyer confirmation.',
+        deliveryTitle: 'Digital delivery',
+        deliveryAction: 'Mark as delivered',
+        fileLabel: 'Delivered files',
+        icon: Download,
+    };
+}
+
+function OrderDetailsLoadingState({ mode = 'buyer', orderId = null }) {
+    const loadingCard = (
+        <Panel title="Escrow order details" icon={ReceiptText}>
+            <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-cyan-50/45 p-6 shadow-sm">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                    <span className="relative flex size-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-[0_18px_45px_-24px_rgba(15,23,42,0.9)]">
+                        <span className="absolute inset-0 animate-ping rounded-2xl bg-emerald-400/20" />
+                        <ShieldCheck className="relative size-6 text-emerald-300" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-700">Secure order workspace</p>
+                        <h1 className="mt-1 text-xl font-black tracking-tight text-slate-950">Preparing order details</h1>
+                        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
+                            {orderId ? `Loading order #${orderId} with the correct ${mode} permissions and actions.` : `Loading the correct ${mode} order workspace.`}
+                        </p>
+                    </div>
+                </div>
+                <div className="mt-6 space-y-3">
+                    <div className="h-3 w-3/4 animate-pulse rounded-full bg-slate-200" />
+                    <div className="h-3 w-1/2 animate-pulse rounded-full bg-slate-200" />
+                    <div className="grid gap-3 pt-2 sm:grid-cols-3">
+                        {[0, 1, 2].map((item) => (
+                            <div key={item} className="h-20 animate-pulse rounded-xl border border-slate-200 bg-white" />
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </Panel>
+    );
+
+    if (mode === 'seller') {
+        return <div className="space-y-4 pb-20 md:pb-0">{loadingCard}</div>;
+    }
+
+    return (
+        <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
+            {loadingCard}
+        </BuyerPanelShell>
+    );
+}
+
+function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, submitOrderReview, submitBuyerReview, openOrderDispute, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, refreshEscrowOrderDetail, submitSellerDelivery, pendingAction }) {
+    const detail = state.escrowOrderDetails?.[mode]
+        || (state.escrowOrderDetail?.context === mode ? state.escrowOrderDetail : null)
+        || (mode === 'seller' ? state.sellerOps?.selectedEscrowOrder : state.buyerOps?.selectedEscrowOrder)
+        || null;
     const orderId = detail?.order?.id;
+    const routeOrderId = useMemo(() => {
+        if (typeof window === 'undefined') {
+            return 0;
+        }
+
+        const match = window.location.pathname.match(/\/(?:buyer|seller)\/orders\/(\d+)/);
+        return match ? Number(match[1]) : 0;
+    }, []);
+    const expectedOrderId = Number(orderId || routeOrderId || 0);
     const threadId = detail?.chat?.thread_id;
     const isBuyer = detail?.permissions?.is_buyer;
     const isSeller = detail?.permissions?.is_seller;
-    const [secondsLeft, setSecondsLeft] = useState(detail?.escrow?.timer?.seconds_remaining ?? null);
+    const [secondsLeft, setSecondsLeft] = useState(detail?.escrow?.timer?.seconds_remaining == null ? null : Math.floor(Number(detail.escrow.timer.seconds_remaining)));
     const [deliveryForm, setDeliveryForm] = useState({ delivery_message: '', external_delivery_url: '', delivery_version: 'v1', files: [] });
+    const [confirmDialog, setConfirmDialog] = useState(null);
+    const [chatAlert, setChatAlert] = useState(null);
+    const [completionModalOpen, setCompletionModalOpen] = useState(false);
+    const [sellerCompletionModalOpen, setSellerCompletionModalOpen] = useState(false);
+    const previousCompletionRef = useRef({ orderId: null, completed: null });
 
     useEffect(() => {
-        setSecondsLeft(detail?.escrow?.timer?.seconds_remaining ?? null);
-        if (detail?.delivery?.version) {
+        setSecondsLeft(detail?.escrow?.timer?.seconds_remaining == null ? null : Math.floor(Number(detail.escrow.timer.seconds_remaining)));
+        if (String(detail?.order?.product_type || '').toLowerCase() === 'physical') {
+            setDeliveryForm((current) => ({ ...current, delivery_version: '' }));
+        } else if (detail?.delivery?.version) {
             setDeliveryForm((current) => ({ ...current, delivery_version: detail.delivery.version || current.delivery_version }));
         }
-    }, [detail?.escrow?.timer?.server_now, detail?.escrow?.timer?.seconds_remaining, detail?.delivery?.version]);
+    }, [detail?.escrow?.timer?.server_now, detail?.escrow?.timer?.seconds_remaining, detail?.delivery?.version, detail?.order?.product_type]);
 
     useEffect(() => {
         if (secondsLeft === null) return undefined;
-        const baseSeconds = Number(detail?.escrow?.timer?.seconds_remaining ?? 0);
+        const baseSeconds = Math.floor(Number(detail?.escrow?.timer?.seconds_remaining ?? 0));
         const startedAt = Date.now();
         const timer = window.setInterval(() => {
             const elapsed = Math.floor((Date.now() - startedAt) / 1000);
@@ -3045,10 +4799,53 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
     useEffect(() => {
         if (!orderId) return undefined;
         const interval = window.setInterval(() => {
-            refreshEscrowOrderDetail(orderId).catch(() => {});
+            refreshEscrowOrderDetail(orderId, true, mode).catch(() => {});
         }, 15000);
         return () => window.clearInterval(interval);
-    }, [orderId]);
+    }, [orderId, mode, refreshEscrowOrderDetail]);
+
+    useEffect(() => {
+        if (detail || !expectedOrderId || !refreshEscrowOrderDetail) {
+            return undefined;
+        }
+
+        let cancelled = false;
+        const load = () => {
+            refreshEscrowOrderDetail(expectedOrderId, true, mode).catch(() => {
+                if (!cancelled) {
+                    // The visible loading shell stays in place; authorization and not-found states remain backend owned.
+                }
+            });
+        };
+
+        load();
+        const retryTimer = window.setInterval(load, 4000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(retryTimer);
+        };
+    }, [detail, expectedOrderId, mode, refreshEscrowOrderDetail]);
+
+    useEffect(() => {
+        if (!orderId || mode !== 'seller') return;
+
+        const status = String(detail?.order?.status || '').toLowerCase();
+        const escrowStatus = String(detail?.escrow?.status || '').toLowerCase();
+        const completed = Boolean(detail?.order?.completed_at) || status === 'completed' || escrowStatus === 'released';
+        const previous = previousCompletionRef.current;
+
+        if (previous.orderId !== orderId) {
+            previousCompletionRef.current = { orderId, completed };
+            return;
+        }
+
+        if (previous.completed === false && completed && !detail?.buyer_review?.has_review) {
+            setSellerCompletionModalOpen(true);
+        }
+
+        previousCompletionRef.current = { orderId, completed };
+    }, [orderId, mode, detail?.order?.status, detail?.order?.completed_at, detail?.escrow?.status, detail?.buyer_review?.has_review]);
 
     useEffect(() => {
         if (!threadId || !orderId) {
@@ -3070,7 +4867,7 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
             }
 
             refreshTimer = window.setTimeout(() => {
-                refreshEscrowOrderDetail(orderId).catch(() => {});
+                refreshEscrowOrderDetail(orderId, true, mode).catch(() => {});
             }, 350);
         };
 
@@ -3079,7 +4876,23 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
                 return;
             }
 
-            mergeIncomingEscrowMessage?.(threadId, payload?.message || {});
+            const message = payload?.message || {};
+            const isIncoming = Number(message?.sender_user_id || 0) !== Number(state.user?.id || 0);
+
+            mergeIncomingEscrowMessage?.(threadId, message);
+            markEscrowMessagesRead(orderId).catch(() => {});
+            if (isIncoming) {
+                const sender = humanizeOrderState(message?.sender_role || 'Counterparty');
+                const body = String(message?.body || '').trim() || `${sender} sent an attachment.`;
+                setChatAlert({ sender, body });
+                playChatNotificationSound();
+                showBrowserChatNotification(
+                    `New escrow message from ${sender}`,
+                    body,
+                    `${window.location.pathname}${window.location.search}`,
+                );
+                window.setTimeout(() => setChatAlert(null), 5200);
+            }
             scheduleRefresh();
         };
 
@@ -3092,16 +4905,30 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
                 window.clearTimeout(refreshTimer);
             }
         };
-    }, [threadId, orderId, mergeIncomingEscrowMessage, refreshEscrowOrderDetail]);
+    }, [threadId, orderId, state.user?.id, mode]);
+
+    if (!detail && expectedOrderId) {
+        return <OrderDetailsLoadingState mode={mode} orderId={expectedOrderId} />;
+    }
 
     if (!detail) {
-        return (
-            <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
+        const emptyState = (
+            mode === 'seller' ? (
+                <div className="space-y-4 pb-20 md:pb-0">
+                    <Panel title="Escrow order details" icon={ReceiptText}>
+                        <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">No escrow order is available for this view yet.</p>
+                    </Panel>
+                </div>
+            ) : (
+                <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
                 <Panel title="Escrow order details" icon={ReceiptText}>
                     <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">No escrow order is available for this view yet.</p>
                 </Panel>
-            </BuyerPanelShell>
+                </BuyerPanelShell>
+            )
         );
+
+        return emptyState;
     }
 
     const warning = detail?.escrow?.timer?.warning;
@@ -3109,96 +4936,239 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
     const canDispute = detail?.available_actions?.open_dispute;
     const isDeliverySubmitting = pendingAction === `escrow:${orderId}:delivery`;
     const backHref = mode === 'seller' ? '/seller/orders' : '/orders';
+    const flowType = detail?.flow_type || detail?.order?.order_flow_type || 'digital_escrow';
+    const isPhysicalDelivery = flowType === 'physical_delivery' || String(detail?.order?.product_type || '').toLowerCase() === 'physical';
+    const isDigitalEscrow = flowType === 'digital_escrow';
+    const fulfillmentMeta = orderFulfillmentMeta(detail?.order?.product_type, isSeller);
+    const orderStatus = String(detail?.order?.status || '').toLowerCase();
+    const escrowStatus = String(detail?.escrow?.status || '').toLowerCase();
+    const orderCompleted = Boolean(detail?.order?.completed_at || detail?.escrow?.released_at)
+        || ['completed', 'released'].includes(orderStatus)
+        || ['released', 'completed'].includes(escrowStatus);
+    const deliveryStatus = String(detail?.delivery?.status || detail?.order?.delivery_status || 'pending').toLowerCase();
+    const deliverySubmitted = ['delivered', 'delivery_submitted', 'buyer_review', 'accepted'].includes(deliveryStatus)
+        || ['buyer_review', 'delivery_submitted'].includes(orderStatus);
+    const physicalDeliveredForInspection = isPhysicalDelivery && !orderCompleted && (
+        Boolean(detail?.delivery?.delivered_at || detail?.shipment?.delivered_at)
+        || ['delivered', 'accepted'].includes(deliveryStatus)
+    );
+    const physicalInTransit = isPhysicalDelivery && !orderCompleted && !physicalDeliveredForInspection && (
+        Boolean(detail?.shipment?.shipped_at || detail?.shipment?.tracking_number)
+        || ['shipped', 'in_transit', 'out_for_delivery'].includes(deliveryStatus)
+        || String(detail?.order?.status || '').toLowerCase() === 'shipped_or_delivered'
+    );
+    const heroBadgeLabel = isPhysicalDelivery
+        ? (orderCompleted ? 'Order completed' : 'Physical fulfillment')
+        : (orderCompleted ? 'Escrow released' : 'Escrow active');
+    const statusHeadline = isPhysicalDelivery
+        ? (orderCompleted ? 'Order Completed' : (physicalDeliveredForInspection ? (isBuyer ? 'Inspection Period Active' : 'Awaiting Buyer Confirmation') : (deliverySubmitted ? 'Delivered' : 'Shipment in progress')))
+        : (orderCompleted ? 'Order Completed' : (deliverySubmitted ? (isSeller ? 'Delivery Submitted' : 'Review Delivery') : (isSeller ? 'Awaiting Seller Delivery' : 'Awaiting Delivery')));
     const submitDelivery = async () => {
         if (!orderId) return;
         await submitSellerDelivery(orderId, deliveryForm);
-        setDeliveryForm((current) => ({ ...current, delivery_message: '', external_delivery_url: '', files: [] }));
+        await refreshEscrowOrderDetail(orderId, false, mode).catch(() => {});
+        setDeliveryForm((current) => ({ ...current, delivery_message: '', external_delivery_url: '', delivery_version: '', files: [] }));
     };
+    const requestRelease = () => {
+        setConfirmDialog({
+            type: 'release',
+            title: isPhysicalDelivery ? 'Confirm received and release funds?' : 'Release escrow funds?',
+            body: isPhysicalDelivery
+                ? 'Confirm only after you received and inspected the physical product. This closes the inspection window and releases escrow to the seller.'
+                : 'Confirm only after you have verified the delivered files or service. This will release the protected payment to the seller.',
+            confirmLabel: isPhysicalDelivery ? 'Confirm & Release' : 'Release Funds',
+            tone: 'primary',
+        });
+    };
+    const requestDispute = () => {
+        setConfirmDialog({
+            type: 'dispute',
+            title: 'Open a dispute?',
+            body: 'This will pause the release workflow and ask the support team to review the order evidence.',
+            confirmLabel: 'Open Dispute',
+            tone: 'danger',
+        });
+    };
+    const confirmEscrowAction = () => {
+        if (!orderId || !confirmDialog) return;
+        if (confirmDialog.type === 'release') {
+            releaseEscrowFunds(orderId)
+                .then((response) => {
+                    const nextDetail = response?.escrow_order_detail || null;
+                    if (mode === 'buyer' && !nextDetail?.review?.has_review) {
+                        setCompletionModalOpen(true);
+                    }
+                })
+                .finally(() => setConfirmDialog(null));
+            return;
+        }
+        if (confirmDialog.type === 'dispute') {
+            openOrderDispute(orderId).finally(() => setConfirmDialog(null));
+        }
+    };
+    const submitReview = async (payload) => {
+        if (!orderId) return;
+        await submitOrderReview?.(orderId, payload);
+        setCompletionModalOpen(false);
+        await refreshEscrowOrderDetail(orderId, true, mode).catch(() => {});
+    };
+    const submitSellerBuyerReview = async (payload) => {
+        if (!orderId) return;
+        await submitBuyerReview?.(orderId, payload);
+        setSellerCompletionModalOpen(false);
+        await refreshEscrowOrderDetail(orderId, true, mode).catch(() => {});
+    };
+    const isConfirmLoading = Boolean(
+        (confirmDialog?.type === 'release' && pendingAction === `escrow:${orderId}:release`)
+        || (confirmDialog?.type === 'dispute' && pendingAction === `escrow:${orderId}:dispute`),
+    );
+    const isReviewSubmitting = pendingAction === `order:${orderId}:review`;
+    const isBuyerReviewSubmitting = pendingAction === `order:${orderId}:buyer-review`;
 
-    return (
-        <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
-            <div className="space-y-6 pb-24 md:pb-6">
-                <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="flex gap-3">
-                        <Link href={backHref} className="inline-flex size-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:text-slate-900">
-                            <ChevronLeft className="size-5" />
-                        </Link>
-                        <div>
-                            <h1 className="text-[2.4rem] font-black leading-none tracking-tight text-slate-950">{detail.order.order_number}</h1>
-                            <p className="mt-3 text-xl font-semibold text-slate-500">Placed on {formatDateTime(detail.order.placed_at)}</p>
+    const orderDetailsContent = (
+        <div className="space-y-4 pb-20 md:pb-0">
+                {chatAlert ? (
+                    <div className="fixed right-4 top-24 z-[80] w-[min(92vw,360px)] overflow-hidden rounded-xl border border-[#4f46e5]/20 bg-white shadow-[0_24px_60px_-32px_rgba(15,23,42,0.45)]">
+                        <div className="flex items-start gap-3 p-4">
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#4f46e5] text-white">
+                                <MessageSquareText className="size-4" />
+                            </span>
+                            <div className="min-w-0">
+                                <p className="text-sm font-black text-slate-950">New message from {chatAlert.sender}</p>
+                                <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-500">{chatAlert.body}</p>
+                            </div>
+                            <button type="button" onClick={() => setChatAlert(null)} className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-50 hover:text-slate-700" aria-label="Dismiss chat notification">
+                                <X className="size-4" />
+                            </button>
                         </div>
                     </div>
-                    <div className="text-left xl:text-right">
-                        <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">Total Paid</p>
-                        <p className="mt-1 text-[3rem] font-black leading-none tracking-tight text-slate-950">{money(detail.order.total_paid)}</p>
+                ) : null}
+                <section className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)] xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex gap-3">
+                        <Link href={backHref} className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-900">
+                            <ChevronLeft className="size-4" />
+                        </Link>
+                        <div className="min-w-0">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Order Details</p>
+                            <h1 className="mt-1 truncate text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{detail.order.order_number}</h1>
+                            <p className="mt-1 text-xs font-semibold text-slate-500">Placed on {formatDateTime(detail.order.placed_at)}</p>
+                        </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left xl:text-right">
+                        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Total Paid</p>
+                        <p className="mt-1 text-xl font-black leading-none tracking-tight text-slate-950">{money(detail.order.total_paid)}</p>
                     </div>
                 </section>
 
                 <EscrowDetailTimeline timeline={detail.timeline || []} />
 
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
-                    <div className="space-y-5">
-                        <section className="overflow-hidden rounded-[32px] bg-[radial-gradient(circle_at_top_right,#1f2a64_0%,#091225_55%,#07101e_100%)] px-6 py-6 text-white shadow-[0_34px_84px_-56px_rgba(9,18,37,0.88)]">
-                            <div className="inline-flex items-center gap-2 rounded-2xl border border-indigo-400/20 bg-indigo-500/15 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-indigo-100">
-                                <LockKeyhole className="size-4" />Escrow active
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.9fr)]">
+                    <div className="space-y-4">
+                        <section className="overflow-hidden rounded-xl bg-slate-950 p-4 text-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.75)]">
+                            <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-cyan-100">
+                                {orderCompleted ? <Check className="size-4" /> : (isPhysicalDelivery ? <PackageCheck className="size-4" /> : <LockKeyhole className="size-4" />)}{heroBadgeLabel}
                             </div>
-                            <h2 className="mt-6 text-[2.15rem] font-black tracking-tight">{isSeller ? 'Awaiting Buyer Review' : 'Awaiting Delivery'}</h2>
-                            <div className="mt-6 rounded-[28px] border border-white/10 bg-white/6 p-5 backdrop-blur">
-                                <div className="grid gap-4 md:grid-cols-[1fr_minmax(220px,0.8fr)] md:items-center">
-                                    <div>
-                                        <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-300">Time Remaining</p>
-                                        <p className={cn('mt-3 text-[4rem] font-black leading-none tracking-tight', warning ? 'text-amber-300' : 'text-amber-400')}>{secondsLeft === null ? '--:--:--' : formatCountdown(secondsLeft)}</p>
+                            <h2 className="mt-3 text-xl font-black tracking-tight">{statusHeadline}</h2>
+                            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                                {orderCompleted ? (
+                                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                            <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">Funds Released</p>
+                                            <p className="mt-2 text-2xl font-black tracking-tight text-white">Protected order completed</p>
+                                        </div>
+                                        <p className="max-w-md text-sm font-semibold leading-6 text-slate-300">Escrow has been released and this order is now closed. Verified reviews remain attached to this transaction.</p>
                                     </div>
-                                    <p className="text-xl font-semibold leading-8 text-slate-300">Funds are locked. Release them only after verifying the delivered files.</p>
-                                </div>
+                                ) : isPhysicalDelivery ? (
+                                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                            <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-200">{physicalDeliveredForInspection ? 'Inspection Window' : 'Shipment status'}</p>
+                                            <p className="mt-2 text-2xl font-black tracking-tight text-white">{physicalDeliveredForInspection ? (isBuyer ? 'Confirm receipt or report a problem' : 'Waiting for buyer action') : humanizeOrderState(detail?.shipment?.shipping_status || 'pending')}</p>
+                                        </div>
+                                        <p className="max-w-md text-sm font-semibold leading-6 text-slate-300">{physicalDeliveredForInspection ? 'Escrow stays protected during the inspection period and auto-releases if no dispute is opened before the deadline.' : 'Shipping, courier, tracking, and delivery confirmation are managed in the physical fulfillment workflow.'}</p>
+                                    </div>
+                                ) : deliverySubmitted ? (
+                                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                            <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">Delivery Submitted</p>
+                                            <p className="mt-2 text-2xl font-black tracking-tight text-white">Buyer review in progress</p>
+                                        </div>
+                                        <p className="max-w-md text-sm font-semibold leading-6 text-slate-300">Funds remain protected until buyer approval, dispute resolution, or timeout release.</p>
+                                    </div>
+                                ) : isDigitalEscrow ? (
+                                    <div className="grid gap-4 md:grid-cols-[1fr_minmax(220px,0.8fr)] md:items-center">
+                                        <div>
+                                            <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-300">Time Remaining</p>
+                                            <p className={cn('mt-2 text-3xl font-black leading-none tracking-tight sm:text-4xl', warning ? 'text-amber-300' : 'text-amber-400')}>{secondsLeft === null ? '--:--:--' : formatCountdown(secondsLeft)}</p>
+                                        </div>
+                                        <p className="text-sm font-semibold leading-6 text-slate-300">Funds are locked. Release them only after verifying the delivered files.</p>
+                                    </div>
+                                ) : null}
                             </div>
                             {(canRelease || canDispute) ? (
                                 <div className="mt-6 grid gap-3 md:grid-cols-2">
-                                    <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={() => { if (window.confirm('Release funds after verifying the delivery?')) releaseEscrowFunds(orderId); }} className="inline-flex h-16 items-center justify-center gap-3 rounded-[20px] bg-emerald-500 px-5 text-xl font-black text-slate-950 shadow-[0_22px_50px_-34px_rgba(16,185,129,0.8)] transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">
-                                        Release Funds <ArrowRight className="size-5" />
+                                    <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={requestRelease} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#4f46e5] px-4 text-sm font-black text-white shadow-[0_16px_30px_-20px_rgba(79,70,229,0.9)] transition hover:bg-[#4338ca] disabled:cursor-not-allowed disabled:opacity-50">
+                                        {isPhysicalDelivery ? 'Confirm Received & Release' : 'Release Funds'} <ArrowRight className="size-4" />
                                     </button>
-                                    <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={() => { if (window.confirm('Open a dispute for this escrow order?')) openOrderDispute(orderId); }} className="inline-flex h-16 items-center justify-center gap-3 rounded-[20px] border border-white/15 bg-transparent px-5 text-xl font-black text-white transition hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-50">
-                                        <AlertCircle className="size-5" />Open Dispute
+                                    <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={requestDispute} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-white/15 bg-transparent px-4 text-sm font-black text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50">
+                                        <AlertCircle className="size-4" />{isPhysicalDelivery ? 'Report Problem' : 'Open Dispute'}
                                     </button>
                                 </div>
                             ) : null}
                         </section>
 
-                        {isSeller ? (
-                            <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-                                <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-                                    <FileUp className="size-5 text-slate-400" />
-                                    <h2 className="text-xl font-black tracking-tight text-slate-950">Submit Digital Delivery</h2>
+                        {isPhysicalDelivery ? <PhysicalShipmentPanel detail={detail} /> : <EscrowDeliverySummary detail={detail} isSeller={isSeller} />}
+                        {isPhysicalDelivery ? (
+                            <PhysicalInspectionPanel
+                                detail={detail}
+                                mode={mode}
+                                secondsLeft={secondsLeft}
+                                canRelease={canRelease}
+                                canDispute={canDispute}
+                                pendingAction={pendingAction}
+                                onRelease={requestRelease}
+                                onDispute={requestDispute}
+                            />
+                        ) : null}
+
+                        {isSeller && !deliverySubmitted ? (
+                            <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+                                <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                                    <span className="flex size-10 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                                        <FileUp className="size-5" />
+                                    </span>
+                                    <h2 className="text-lg font-bold text-slate-950">{physicalInTransit ? 'Confirm physical delivery' : fulfillmentMeta.deliveryTitle}</h2>
                                 </div>
-                                <div className="grid gap-4 px-6 py-6">
-                                    <textarea value={deliveryForm.delivery_message} onChange={(event) => setDeliveryForm((current) => ({ ...current, delivery_message: event.target.value }))} placeholder="Delivery message" className="min-h-32 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 outline-none ring-0 transition focus:border-indigo-300 focus:bg-white" />
+                                <div className="grid gap-4 p-5">
+                                    <textarea value={deliveryForm.delivery_message} onChange={(event) => setDeliveryForm((current) => ({ ...current, delivery_message: event.target.value }))} placeholder={isPhysicalDelivery ? (physicalInTransit ? 'Delivery confirmation note / courier proof' : 'Shipping note / dispatch details') : 'Delivery message'} className="min-h-28 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-800 outline-none ring-0 transition focus:border-cyan-300 focus:bg-white" />
                                     <div className="grid gap-4 md:grid-cols-2">
-                                        <Input value={deliveryForm.external_delivery_url} onChange={(event) => setDeliveryForm((current) => ({ ...current, external_delivery_url: event.target.value }))} placeholder="External delivery URL" className="h-12 rounded-2xl border-slate-200 bg-slate-50 font-semibold" />
-                                        <Input value={deliveryForm.delivery_version} onChange={(event) => setDeliveryForm((current) => ({ ...current, delivery_version: event.target.value }))} placeholder="Version / revision" className="h-12 rounded-2xl border-slate-200 bg-slate-50 font-semibold" />
+                                        <Input value={deliveryForm.external_delivery_url} onChange={(event) => setDeliveryForm((current) => ({ ...current, external_delivery_url: event.target.value }))} placeholder={isPhysicalDelivery ? 'Tracking URL (optional)' : 'External delivery URL'} className="h-11 rounded-lg border-slate-200 bg-slate-50 text-sm font-semibold" />
+                                        <Input value={deliveryForm.delivery_version} onChange={(event) => setDeliveryForm((current) => ({ ...current, delivery_version: event.target.value }))} placeholder={isPhysicalDelivery ? 'Tracking ID / delivery reference' : 'Version / revision'} className="h-11 rounded-lg border-slate-200 bg-slate-50 text-sm font-semibold" />
                                     </div>
-                                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center transition hover:border-indigo-300 hover:bg-indigo-50/60">
-                                        <Upload className="size-6 text-indigo-500" />
-                                        <p className="mt-3 text-base font-black text-slate-950">Upload delivery files</p>
-                                        <p className="mt-1 text-sm font-semibold text-slate-500">{deliveryForm.files.length ? `${deliveryForm.files.length} file(s) selected` : 'PDF, ZIP, images, and docs up to 25MB each'}</p>
+                                    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-6 text-center transition hover:border-cyan-300 hover:bg-cyan-50/60">
+                                        <Upload className="size-5 text-cyan-700" />
+                                        <p className="mt-3 text-sm font-black text-slate-950">{isPhysicalDelivery ? (physicalInTransit ? 'Attach delivery confirmation proof' : 'Attach shipment proof') : 'Upload delivery files'}</p>
+                                        <p className="mt-1 text-sm font-semibold text-slate-500">{deliveryForm.files.length ? `${deliveryForm.files.length} file(s) selected` : (isPhysicalDelivery ? (physicalInTransit ? 'Courier delivered status, receiver photo, or signed proof' : 'Receipt, shipment photo, invoice, or proof document') : 'PDF, ZIP, images, and docs up to 25MB each')}</p>
                                         <input type="file" multiple className="sr-only" onChange={(event) => setDeliveryForm((current) => ({ ...current, files: Array.from(event.target.files || []) }))} />
                                     </label>
-                                    <button type="button" disabled={isDeliverySubmitting} onClick={submitDelivery} className="inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-slate-950 text-base font-black text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">
-                                        {isDeliverySubmitting ? 'Submitting...' : 'Mark as Delivered'}
+                                    <button type="button" disabled={isDeliverySubmitting} onClick={submitDelivery} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 text-sm font-black text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50">
+                                        {isDeliverySubmitting ? 'Submitting...' : (physicalInTransit ? 'Mark Delivered & Start Inspection' : fulfillmentMeta.deliveryAction)}
                                     </button>
                                 </div>
                             </section>
                         ) : null}
 
                         {(detail.delivery?.files || []).length ? (
-                            <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-                                <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-                                    <Download className="size-5 text-slate-400" />
-                                    <h2 className="text-xl font-black tracking-tight text-slate-950">Delivered Files</h2>
+                            <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_18px_60px_-42px_rgba(15,23,42,0.28)]">
+                                <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                                    <span className="flex size-10 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100">
+                                        <Download className="size-5" />
+                                    </span>
+                                    <h2 className="text-lg font-bold text-slate-950">Delivered Files</h2>
                                 </div>
-                                <div className="grid gap-3 px-6 py-6">
+                                <div className="grid gap-3 p-5">
                                     {detail.delivery.files.map((file) => (
-                                        <a key={file.id} href={file.download_url || '#'} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-indigo-200 hover:bg-white">
-                                            <span className="flex items-center gap-3"><FileDown className="size-4.5 text-indigo-500" />{file.name}</span>
+                                        <a key={file.id} href={file.download_url || '#'} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-cyan-200 hover:bg-white">
+                                            <span className="flex items-center gap-3"><FileDown className="size-4 text-cyan-700" />{file.name}</span>
                                             <span>{file.download_url ? 'Download' : 'Locked'}</span>
                                         </a>
                                     ))}
@@ -3209,35 +5179,71 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, openOrd
                         <EscrowSummaryCard detail={detail} />
                     </div>
 
-                    <div className="space-y-5">
+                    <div className="space-y-4">
+                        {mode === 'seller' ? <BuyerReputationPanel detail={detail} /> : null}
                         <EscrowChatPanel detail={detail} sendEscrowMessage={sendEscrowMessage} markEscrowMessagesRead={markEscrowMessagesRead} pendingAction={pendingAction} />
-                        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-44px_rgba(15,23,42,0.28)]">
-                            <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-                                <ClipboardCheck className="size-5 text-slate-400" />
-                                <h2 className="text-xl font-black tracking-tight text-slate-950">Activity Timeline</h2>
-                            </div>
-                            <div className="space-y-3 px-6 py-6">
-                                {(detail.activity_timeline || []).map((entry) => (
-                                    <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                                        <p className="text-sm font-black uppercase tracking-[0.14em] text-slate-950">{entry.title}</p>
-                                        <p className="mt-1 text-sm font-semibold text-slate-500">{entry.body || 'Order activity recorded.'}</p>
-                                        <p className="mt-2 text-xs font-bold text-slate-400">{formatDateTime(entry.created_at)}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
+                        <EscrowActivityTimeline entries={detail.activity_timeline || []} />
+                        {mode === 'buyer' && detail?.review?.has_review ? (
+                            <CompletedReviewCard
+                                title="Your verified review"
+                                description="This product review is attached to the completed order and visible in marketplace reputation."
+                                review={detail.review}
+                            />
+                        ) : null}
+                        {mode === 'seller' && detail?.buyer_review?.has_review ? (
+                            <CompletedReviewCard
+                                title="Your buyer feedback"
+                                description="This buyer review is attached to the completed order and contributes to buyer reputation."
+                                review={detail.buyer_review}
+                            />
+                        ) : null}
+                        {mode === 'buyer' ? <PendingOrderReviewCard detail={detail} onSubmit={submitReview} loading={isReviewSubmitting} /> : null}
+                        {mode === 'seller' ? <PendingBuyerReviewCard detail={detail} onSubmit={submitSellerBuyerReview} loading={isBuyerReviewSubmitting} /> : null}
                     </div>
                 </section>
 
                 {(canRelease || canDispute) ? (
                     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur md:hidden">
                         <div className="grid grid-cols-2 gap-3">
-                            <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={() => { if (window.confirm('Release funds after verifying the delivery?')) releaseEscrowFunds(orderId); }} className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-slate-950 disabled:opacity-50">Release</button>
-                            <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={() => { if (window.confirm('Open a dispute for this escrow order?')) openOrderDispute(orderId); }} className="h-12 rounded-2xl border border-slate-300 bg-white text-sm font-black text-slate-950 disabled:opacity-50">Dispute</button>
+                            <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={requestRelease} className="h-11 rounded-lg bg-[#4f46e5] text-sm font-black text-white disabled:opacity-50">{isPhysicalDelivery ? 'Confirm' : 'Release'}</button>
+                            <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={requestDispute} className="h-11 rounded-lg border border-slate-300 bg-white text-sm font-black text-slate-950 disabled:opacity-50">{isPhysicalDelivery ? 'Problem' : 'Dispute'}</button>
                         </div>
                     </div>
                 ) : null}
+                <EscrowConfirmDialog
+                    open={Boolean(confirmDialog)}
+                    title={confirmDialog?.title}
+                    body={confirmDialog?.body}
+                    confirmLabel={confirmDialog?.confirmLabel}
+                    tone={confirmDialog?.tone}
+                    loading={isConfirmLoading}
+                    onConfirm={confirmEscrowAction}
+                    onCancel={() => setConfirmDialog(null)}
+                />
+                <OrderCompletedReviewModal
+                    open={completionModalOpen}
+                    detail={detail}
+                    loading={isReviewSubmitting}
+                    onSubmit={submitReview}
+                    onSkip={() => setCompletionModalOpen(false)}
+                />
+                <SellerOrderCompletedModal
+                    open={sellerCompletionModalOpen}
+                    detail={detail}
+                    loading={isBuyerReviewSubmitting}
+                    onSubmit={submitSellerBuyerReview}
+                    onSkip={() => setSellerCompletionModalOpen(false)}
+                />
             </div>
+    );
+
+    if (mode === 'seller') {
+        return orderDetailsContent;
+    }
+
+    return (
+        <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
+            {orderDetailsContent}
         </BuyerPanelShell>
     );
 }
@@ -3688,11 +5694,6 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
             description="This shared wallet architecture keeps buyer funding, protected escrow debits, transaction history, and reusable payment methods synchronized with mobile flows."
         >
             <section className="space-y-4">
-                <div>
-                    <h1 className="text-xl font-black tracking-tight text-slate-950">Wallet &amp; Funds</h1>
-                    <p className="mt-1 text-sm font-medium text-slate-500">Manage your balances, payment methods, and transaction history.</p>
-                </div>
-
                 <section className="grid gap-3 xl:grid-cols-3">
                     <article className="relative overflow-hidden rounded-2xl border border-indigo-200/70 bg-[linear-gradient(135deg,#4f46e5_0%,#5b4ff0_52%,#4f46e5_100%)] px-4 py-4 text-white shadow-[0_14px_28px_-22px_rgba(79,70,229,0.45)]">
                         <div className="absolute inset-y-0 right-0 w-24 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.16),transparent_72%)]" />
@@ -4881,7 +6882,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                                 </Button>
                                 {relatedOrder ? (
                                     <Button asChild type="button" variant="ghost" size="icon" className="rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700" aria-label="Open order details">
-                                        <Link href={`/order-details?order=${relatedOrder.id}`}>
+                                        <Link href={`/buyer/orders/${relatedOrder.id}`}>
                                             <ReceiptText className="size-4" />
                                         </Link>
                                     </Button>
@@ -5349,6 +7350,7 @@ function SellerChartBar({ label, value, max, icon: Icon }) {
 function productFormFromProduct(product, state) {
     const attrs = product?.attributes || {};
     const categoryId = product?.category_id || state.categories?.find(isRootCategory)?.id || '';
+    const formProductType = product?.productType === 'service' ? 'digital' : (product?.productType || 'physical');
     return {
         title: product?.title || '',
         slug: product?.slug || '',
@@ -5356,7 +7358,7 @@ function productFormFromProduct(product, state) {
         brand: product?.brand || '',
         category_id: categoryId,
         subcategory_id: product?.subcategory_id || '',
-        product_type: product?.productType || 'physical',
+        product_type: formProductType,
         short_description: product?.shortDescription || attrs.short_description || '',
         description: product?.description || '',
         image_url: product?.image || '',
@@ -5394,8 +7396,9 @@ function productFormFromProduct(product, state) {
         access_type: attrs.access_type || '',
         platform: attrs.platform || '',
         license_type: attrs.license_type || '',
-        delivery_fulfillment_hours: String(attrs.delivery_fulfillment_hours || '24'),
+        delivery_fulfillment_hours: String(product?.deliveryFulfillmentHours || attrs.delivery_fulfillment_hours || '24'),
         is_instant_delivery: Boolean(product?.isInstantDelivery || attrs.is_instant_delivery || product?.productType === 'instant_delivery'),
+        is_service_product: Boolean(product?.isServiceProduct || attrs.is_service_product || product?.productType === 'service'),
         instant_delivery_expiration_hours: String(attrs.instant_delivery_expiration_hours || '72'),
         digital_access_validity_hours: String(attrs.digital_access_validity_hours || ''),
     };
@@ -5412,8 +7415,7 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
     const isPreviewMode = Boolean(previewId);
     const productTypeOptions = [
         { value: 'physical', label: 'Physical product', hint: 'Inventory, shipping, and delivery tracking', icon: Truck },
-        { value: 'digital', label: 'Digital product', hint: 'Files, licenses, accounts, or access handoff', icon: Download },
-        { value: 'service', label: 'Service', hint: 'Work delivery, proof, and buyer confirmation', icon: BriefcaseBusiness },
+        { value: 'digital', label: 'Digital product', hint: 'Instant access, files, licenses, or service delivery rules', icon: Download },
     ];
     const [query, setQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
@@ -5429,7 +7431,7 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
     const selectedType = productTypeOptions.find((item) => item.value === form.product_type) || productTypeOptions[0];
     const isDigitalLike = form.product_type === 'digital';
     const isInstant = form.product_type === 'digital' && Boolean(form.is_instant_delivery);
-    const isService = form.product_type === 'service';
+    const isService = form.product_type === 'digital' && Boolean(form.is_service_product);
     const filteredProducts = state.sellerProducts.filter((product) => {
         const haystack = `${product.title} ${product.sku} ${product.category} ${product.brand}`.toLowerCase();
         const status = product.status || (asNumber(product.stock) > 0 ? 'published' : 'out_of_stock');
@@ -5441,6 +7443,8 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
         if (!Number.isFinite(Number(form.price)) || Number(form.price) < 0) next.price = 'Regular price must be a valid number.';
         if (Number(form.sale_price || 0) > Number(form.price || 0)) next.sale_price = 'Sale price cannot be higher than regular price.';
         if (!Number.isFinite(Number(form.stock)) || Number(form.stock) < 0) next.stock = 'Stock must be zero or more.';
+        if (form.product_type === 'digital' && (form.is_instant_delivery || form.is_service_product) && (!Number.isFinite(Number(form.delivery_fulfillment_hours)) || Number(form.delivery_fulfillment_hours) < 1)) next.delivery_fulfillment_hours = 'Delivery time must be at least 1 hour.';
+        if (form.is_instant_delivery && form.is_service_product) next.is_service_product = 'Choose either instant delivery or service workflow, not both.';
         setErrors(next);
         return Object.keys(next).length === 0;
     };
@@ -5452,6 +7456,7 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
             status,
             category_id: categoryId > 0 ? categoryId : null,
             is_instant_delivery: Boolean(form.is_instant_delivery),
+            is_service_product: Boolean(form.is_service_product),
             gallery_images: form.gallery_images.filter(Boolean),
             variants: form.variants.filter((variant) => variant.title || variant.sku),
         };
@@ -5621,18 +7626,43 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
                             ))}
                         </div>
                         {form.product_type === 'digital' ? (
-                            <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                                <span>
-                                    <span className="block text-sm font-extrabold text-slate-950">Instant delivery?</span>
-                                    <span className="mt-1 block text-xs font-medium text-slate-500">Enable automatic digital fulfillment after payment.</span>
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    checked={Boolean(form.is_instant_delivery)}
-                                    onChange={(e) => setForm({ ...form, is_instant_delivery: e.target.checked })}
-                                    className="size-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
-                                />
-                            </label>
+                            <div className="grid gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 md:grid-cols-2">
+                                <label className="flex items-center justify-between gap-4 rounded-xl border border-white bg-white px-4 py-4 shadow-sm">
+                                    <span>
+                                        <span className="block text-sm font-extrabold text-slate-950">Instant Delivery</span>
+                                        <span className="mt-1 block text-xs font-medium leading-5 text-slate-500">Yes means the order uses instant digital handoff and the countdown starts from this delivery time.</span>
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(form.is_instant_delivery)}
+                                        onChange={(e) => setForm({ ...form, is_instant_delivery: e.target.checked, is_service_product: e.target.checked ? false : form.is_service_product })}
+                                        className="size-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                                    />
+                                </label>
+                                <label className="flex items-center justify-between gap-4 rounded-xl border border-white bg-white px-4 py-4 shadow-sm">
+                                    <span>
+                                        <span className="block text-sm font-extrabold text-slate-950">Service Product</span>
+                                        <span className="mt-1 block text-xs font-medium leading-5 text-slate-500">Yes means seller service workflow, delivery proof, buyer review, and escrow release.</span>
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(form.is_service_product)}
+                                        onChange={(e) => setForm({ ...form, is_service_product: e.target.checked, is_instant_delivery: e.target.checked ? false : form.is_instant_delivery })}
+                                        className="size-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                                    />
+                                </label>
+                                <div className="md:col-span-2">
+                                    <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                                        {isService ? 'Service delivery time (hours)' : isInstant ? 'Instant delivery time (hours)' : 'Delivery time (hours)'}
+                                    </label>
+                                    <Input className={inputClass.replace('bg-slate-50', 'bg-white')} placeholder="Example: 24" value={form.delivery_fulfillment_hours} onChange={(e) => setForm({ ...form, delivery_fulfillment_hours: e.target.value })} />
+                                    <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                                        This value is saved on the product and becomes the order countdown deadline after payment. If both options are No, checkout treats the listing as a physical shipping workflow.
+                                    </p>
+                                    {errors.delivery_fulfillment_hours ? <p className="mt-2 text-sm font-semibold text-rose-600">{errors.delivery_fulfillment_hours}</p> : null}
+                                    {errors.is_service_product ? <p className="mt-2 text-sm font-semibold text-rose-600">{errors.is_service_product}</p> : null}
+                                </div>
+                            </div>
                         ) : null}
                         <div className="grid gap-5 lg:grid-cols-2">
                             <div className="lg:col-span-2">
@@ -5706,10 +7736,6 @@ function SellerProducts({ state, saveSellerProduct, duplicateSellerProduct, bulk
                                 <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{isInstant ? 'Instant access expiry hours' : 'Access validity hours'}</label>
                                 <Input className={inputClass.replace('bg-slate-50', 'bg-white')} placeholder={isInstant ? 'Instant access expiry hours' : 'Access validity hours'} value={isInstant ? form.instant_delivery_expiration_hours : form.digital_access_validity_hours} onChange={(e) => setForm(isInstant ? { ...form, instant_delivery_expiration_hours: e.target.value } : { ...form, digital_access_validity_hours: e.target.value })} />
                             </div>
-                        </div> : null}
-                        {isService ? <div>
-                            <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Service fulfillment hours</label>
-                            <Input className={inputClass} placeholder="Service fulfillment hours" value={form.delivery_fulfillment_hours} onChange={(e) => setForm({ ...form, delivery_fulfillment_hours: e.target.value })} />
                         </div> : null}
                     </> : null}
 
@@ -6125,11 +8151,11 @@ function SellerOrders({ state }) {
                             <ProductMedia src={order.image} alt={order.product} className="size-20 rounded-2xl object-cover ring-1 ring-slate-200" />
                             <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <Link href={`/seller/order-details?order=${order.id}`} className="text-lg font-black tracking-tight text-slate-950 hover:text-indigo-600">{order.code}</Link>
+                                    <Link href={`/seller/orders/${order.id}`} className="text-lg font-black tracking-tight text-slate-950 hover:text-indigo-600">{order.code}</Link>
                                     <Badge variant="secondary">{humanizeOrderState(order.status)}</Badge>
                                 </div>
                                 <p className="mt-2 line-clamp-2 text-base font-semibold text-slate-800">{order.product}</p>
-                                <p className="mt-2 text-sm font-semibold text-slate-500">Buyer: {order.buyer}</p>
+                                <p className="mt-2 text-sm font-semibold text-slate-500">Buyer: {order.buyerProfileHref ? <Link href={order.buyerProfileHref} className="font-extrabold text-indigo-600 hover:text-indigo-800">{order.buyer}</Link> : order.buyer}</p>
                                 <div className="mt-4 flex flex-wrap gap-4 text-sm font-bold text-slate-500">
                                     <span>Escrow: {humanizeOrderState(order.escrowState || 'held')}</span>
                                     <span>Delivery: {humanizeOrderState(order.deliveryStatus || 'pending')}</span>
@@ -7645,14 +9671,19 @@ function SellerShippingSettings({ state, saveShippingSettings, pendingAction }) 
     );
 }
 
-function SellerReviews({ state }) {
+function SellerReviews({ state, markReviewHelpful, pendingAction }) {
     const reviews = state.sellerOps?.reviews || [];
     const [query, setQuery] = useState('');
     const [ratingFilter, setRatingFilter] = useState('all');
+    const [feedbackFilter, setFeedbackFilter] = useState('all');
     const [visibleCount, setVisibleCount] = useState(5);
     const total = reviews.length;
     const averageNumber = total ? reviews.reduce((sum, item) => sum + asNumber(item.rating), 0) / total : 0;
     const average = averageNumber.toFixed(1);
+    const feedbackCounts = ['good', 'neutral', 'bad'].reduce((carry, type) => ({
+        ...carry,
+        [type]: reviews.filter((item) => String(item.feedbackType || '').toLowerCase() === type).length,
+    }), {});
     const buckets = [5, 4, 3, 2, 1].map((rating) => ({
         rating,
         count: reviews.filter((item) => Math.round(asNumber(item.rating)) === rating).length,
@@ -7661,7 +9692,9 @@ function SellerReviews({ state }) {
     const filteredReviews = reviews.filter((review) => {
         const matchesQuery = !normalizedQuery || [review.product, review.buyer, review.comment].some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
         const matchesRating = ratingFilter === 'all' || Math.round(asNumber(review.rating)) === Number(ratingFilter);
-        return matchesQuery && matchesRating;
+        const reviewFeedback = String(review.feedbackType || '').toLowerCase() || (asNumber(review.rating, 0) >= 4 ? 'good' : asNumber(review.rating, 0) <= 2 ? 'bad' : 'neutral');
+        const matchesFeedback = feedbackFilter === 'all' || reviewFeedback === feedbackFilter;
+        return matchesQuery && matchesRating && matchesFeedback;
     });
     const visibleReviews = filteredReviews.slice(0, visibleCount);
     const filterLabel = ratingFilter === 'all' ? 'Filter' : `${ratingFilter} Star`;
@@ -7691,6 +9724,17 @@ function SellerReviews({ state }) {
                     </div>
 
                     <div className="mt-7 grid gap-3">
+                        <div className="mb-2 grid grid-cols-3 gap-2">
+                            {['good', 'neutral', 'bad'].map((type) => {
+                                const tone = type === 'bad' ? 'bg-rose-50 text-rose-700' : type === 'neutral' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700';
+                                return (
+                                    <button key={type} type="button" onClick={() => { setFeedbackFilter(type); setVisibleCount(5); }} className={cn('rounded-lg px-2 py-2 text-center text-xs font-black capitalize transition hover:ring-2 hover:ring-slate-100', tone, feedbackFilter === type && 'ring-2 ring-slate-300')}>
+                                        <span className="block text-base">{feedbackCounts[type] || 0}</span>
+                                        {type}
+                                    </button>
+                                );
+                            })}
+                        </div>
                         {buckets.map(({ rating, count }) => {
                             const width = total ? `${Math.round((count / total) * 100)}%` : '0%';
                             return (
@@ -7724,23 +9768,38 @@ function SellerReviews({ state }) {
                                 <option value="all">{filterLabel}</option>
                                 {[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} Star</option>)}
                             </select>
+                            <select value={feedbackFilter} onChange={(event) => { setFeedbackFilter(event.target.value); setVisibleCount(5); }} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100">
+                                <option value="all">All feedback</option>
+                                <option value="good">Good feedback</option>
+                                <option value="neutral">Neutral feedback</option>
+                                <option value="bad">Bad feedback</option>
+                            </select>
                         </div>
                     </div>
 
                     <div className="grid gap-0">
-                        {visibleReviews.length ? visibleReviews.map((review, index) => (
+                        {visibleReviews.length ? visibleReviews.map((review, index) => {
+                            const feedbackType = String(review.feedbackType || '').toLowerCase() || (asNumber(review.rating, 0) >= 4 ? 'good' : asNumber(review.rating, 0) <= 2 ? 'bad' : 'neutral');
+                            const feedbackClass = feedbackType === 'bad' ? 'bg-rose-50 text-rose-700' : feedbackType === 'neutral' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700';
+                            const isOwnSellerReview = Number(review.sellerProfileId || 0) > 0 && Number(review.sellerProfileId || 0) === Number(state.user?.sellerAccountId || 0);
+                            return (
                             <article key={review.id} className={cn('relative mx-2 rounded-2xl px-6 py-5 transition', index === 3 ? 'bg-slate-50' : 'bg-white', index > 0 && 'border-t border-slate-100')}>
                                 <div className="flex items-start justify-between gap-4">
                                     <div className="min-w-0">
                                         <h3 className={cn('truncate text-base font-extrabold', index === 3 ? 'text-indigo-600' : 'text-slate-950')}>{review.product || 'Marketplace listing'}</h3>
                                         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-600">
-                                            <span>{review.buyer || 'Buyer'}</span>
+                                            {review.buyerProfileHref ? (
+                                                <Link href={review.buyerProfileHref} className="font-extrabold text-indigo-700 hover:text-indigo-900">{review.buyer || 'Buyer'}</Link>
+                                            ) : (
+                                                <span>{review.buyer || 'Buyer'}</span>
+                                            )}
                                             <span className="text-slate-300">•</span>
                                             <span>{review.createdAt || 'Recent'}</span>
                                             <span className="text-slate-300">•</span>
                                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-extrabold text-emerald-600">
                                                 <Check className="size-3" /> Verified
                                             </span>
+                                            <span className={cn('rounded-full px-2 py-0.5 text-xs font-extrabold capitalize', feedbackClass)}>{feedbackType}</span>
                                         </div>
                                     </div>
                                     <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-sm font-extrabold text-amber-600">
@@ -7748,18 +9807,29 @@ function SellerReviews({ state }) {
                                     </span>
                                 </div>
                                 <p className="mt-4 text-sm font-medium leading-6 text-slate-700">{review.comment || 'No written comment.'}</p>
+                                {Array.isArray(review.tags) && review.tags.length ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {review.tags.map((tag) => <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-extrabold text-slate-600">{tag}</span>)}
+                                    </div>
+                                ) : null}
                                 {review.sellerReply ? (
                                     <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
                                         <span className="font-extrabold text-slate-800">Seller reply:</span> {review.sellerReply}
                                     </div>
                                 ) : null}
                                 <div className="mt-4 flex items-center justify-between">
-                                    <button type="button" className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-extrabold', index === 3 ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500')}>
+                                    <button
+                                        type="button"
+                                        disabled={isOwnSellerReview || pendingAction === `review:${review.id}:helpful`}
+                                        title={isOwnSellerReview ? 'Helpful votes come from buyers viewing your reviews.' : 'Mark this review as helpful'}
+                                        onClick={() => markReviewHelpful?.(review.id)}
+                                        className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-extrabold transition', index === 3 ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500', !isOwnSellerReview && 'hover:bg-indigo-50 hover:text-indigo-700', (isOwnSellerReview || pendingAction === `review:${review.id}:helpful`) && 'cursor-not-allowed opacity-70')}
+                                    >
                                         <ThumbsUp className="size-3.5" /> Helpful ({asNumber(review.helpfulCount, 0)})
                                     </button>
                                 </div>
                             </article>
-                        )) : (
+                        );}) : (
                             <div className="m-5 rounded-xl bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">No reviews match the current filters.</div>
                         )}
                     </div>
@@ -8614,7 +10684,7 @@ function Empty({ title, action, label }) {
     );
 }
 
-function EnterpriseFooter({ trustItems = [] }) {
+export function EnterpriseFooter({ trustItems = [] }) {
     const items = trustItems.length ? trustItems : [
         { title: 'Escrow Protection', body: 'Funds held securely until delivery.' },
         { title: 'Fulfillment Aware', body: 'Physical, digital, instant, and service listings are clearly labeled.' },
@@ -8622,56 +10692,118 @@ function EnterpriseFooter({ trustItems = [] }) {
         { title: 'Support Desk', body: 'Dedicated dispute resolution team.' },
     ];
     const icons = [LockKeyhole, Zap, ShieldCheck, Headphones];
+    const marketplaceLinks = [
+        ['Digital Assets', '/marketplace'],
+        ['Software & Code', '/marketplace'],
+        ['Luxury Goods', '/marketplace'],
+        ['Premium Domains', '/marketplace'],
+        ['Services & Contracts', '/marketplace'],
+    ];
+    const serviceLinks = [
+        ['Help Center', '/support'],
+        ['How Escrow Works', '/orders'],
+        ['Dispute Resolution', '/support'],
+        ['Return Policy', '/support'],
+        ['Report an Issue', '/support'],
+    ];
+    const legalLinks = [
+        ['Buyer Dashboard', '/dashboard'],
+        ['Seller Workspace', '/seller/dashboard'],
+        ['Wallet & Escrow', '/wallet'],
+        ['Support Tickets', '/support-tickets'],
+    ];
 
     return (
         <>
-            <section className="-mx-4 mt-16 border-y border-slate-200 bg-white sm:-mx-6 lg:-mx-8">
-                <div className="mx-auto grid max-w-[1480px] gap-6 px-4 py-10 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
+            <section className="-mx-4 mt-16 rounded-t-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] sm:-mx-6 lg:-mx-8">
+                <div className="mx-auto grid max-w-[1480px] gap-4 px-4 py-7 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
                     {items.map(({ title, body }, index) => {
                         const Icon = icons[index] || ShieldCheck;
                         return (
-                        <div key={title} className="flex items-center gap-5">
-                            <Icon className="size-12 text-indigo-600" />
-                            <div>
-                                <h3 className="text-base font-bold">{title}</h3>
-                                <p className="mt-1 text-sm text-slate-500">{body}</p>
+                            <div
+                                key={title}
+                                className="group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.28)] transition duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_24px_54px_-34px_rgba(79,70,229,0.28)]"
+                            >
+                                <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(99,102,241,0),rgba(99,102,241,0.55),rgba(99,102,241,0))]" />
+                                <div className="flex items-start gap-4">
+                                    <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#eef2ff,#f8fbff)] text-indigo-600 ring-1 ring-indigo-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                                        <Icon className="size-5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h3 className="text-[15px] font-black tracking-tight text-slate-950">{title}</h3>
+                                        <p className="mt-1.5 text-sm font-medium leading-6 text-slate-500">{body}</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    );})}
+                        );
+                    })}
                 </div>
             </section>
             <footer className="-mx-4 bg-[#020617] text-white sm:-mx-6 lg:-mx-8">
-                <div className="mx-auto grid max-w-[1480px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.35fr_1fr_1fr_1fr] lg:px-8">
+                <div className="mx-auto grid max-w-[1480px] gap-10 px-4 pb-8 pt-12 sm:px-6 lg:grid-cols-[1.25fr_0.9fr_0.9fr_1.05fr] lg:px-8 lg:pb-10 lg:pt-14">
                     <div>
                         <div className="flex items-center gap-3">
-                            <span className="flex size-11 items-center justify-center rounded-lg bg-indigo-600"><ShoppingBag className="size-7" /></span>
-                            <p className="text-2xl font-extrabold">Sellova</p>
+                            <span className="flex size-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#6366f1,#4f46e5)] shadow-[0_18px_35px_-22px_rgba(99,102,241,0.9)]">
+                                <ShoppingBag className="size-6" />
+                            </span>
+                            <div>
+                                <p className="text-xl font-black tracking-tight">Sellova</p>
+                                <p className="mt-1 text-[11px] font-black uppercase tracking-[0.22em] text-indigo-300">Trusted commerce OS</p>
+                            </div>
                         </div>
-                        <p className="mt-8 max-w-md text-sm leading-8 text-slate-400">The secure classified and ecommerce marketplace for high-value digital and physical assets, powered by escrow, seller verification, and protected delivery flows.</p>
-                        <div className="mt-8 flex gap-3">
-                            {['FB', 'TW', 'IG', 'IN'].map((item) => <span key={item} className="flex size-10 items-center justify-center rounded-full bg-slate-900 text-sm font-extrabold text-slate-300">{item}</span>)}
+                        <p className="mt-6 max-w-md text-sm leading-7 text-slate-400">
+                            Secure marketplace operations for buyers, sellers, escrow orders, protected payouts, and verified delivery workflows across one connected ecosystem.
+                        </p>
+                        <div className="mt-6 flex flex-wrap gap-2.5">
+                            {['Facebook', 'X', 'Instagram', 'LinkedIn'].map((item) => (
+                                <span key={item} className="rounded-full border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs font-bold text-slate-300">
+                                    {item}
+                                </span>
+                            ))}
                         </div>
                     </div>
                     <div>
-                        <h3 className="font-extrabold uppercase tracking-wide">Marketplace</h3>
-                        <div className="mt-7 grid gap-4 text-slate-400">
-                            {['Digital Assets', 'Software & Code', 'Luxury Goods', 'Premium Domains', 'Services & Contracts'].map((item) => <Link key={item} href="/marketplace" className="font-semibold hover:text-white">{item}</Link>)}
+                        <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-200">Marketplace</h3>
+                        <div className="mt-5 grid gap-3 text-slate-400">
+                            {marketplaceLinks.map(([label, href]) => (
+                                <Link key={label} href={href} className="text-sm font-semibold transition hover:text-white">
+                                    {label}
+                                </Link>
+                            ))}
                         </div>
                     </div>
                     <div>
-                        <h3 className="font-extrabold uppercase tracking-wide">Customer Service</h3>
-                        <div className="mt-7 grid gap-4 text-slate-400">
-                            {['Help Center', 'How Escrow Works', 'Dispute Resolution', 'Return Policy', 'Report an Issue'].map((item) => <Link key={item} href="/support" className="font-semibold hover:text-white">{item}</Link>)}
+                        <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-200">Customer Service</h3>
+                        <div className="mt-5 grid gap-3 text-slate-400">
+                            {serviceLinks.map(([label, href]) => (
+                                <Link key={label} href={href} className="text-sm font-semibold transition hover:text-white">
+                                    {label}
+                                </Link>
+                            ))}
                         </div>
                     </div>
                     <div>
-                        <h3 className="font-extrabold uppercase tracking-wide">Stay Updated</h3>
-                        <p className="mt-7 text-slate-400">Subscribe for premium drops and market insights.</p>
-                        <div className="mt-5 flex h-14 items-center gap-3 rounded-md bg-slate-900 px-4 text-slate-400">
-                            <Mail className="size-5" />
-                            <span>Enter your email</span>
+                        <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-200">Platform Access</h3>
+                        <p className="mt-5 text-sm leading-7 text-slate-400">Jump into the key workspace areas buyers and sellers use most often.</p>
+                        <div className="mt-5 grid gap-3">
+                            {legalLinks.map(([label, href]) => (
+                                <Link key={label} href={href} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-indigo-500/40 hover:text-white">
+                                    <span>{label}</span>
+                                    <ArrowRight className="size-4 text-slate-500" />
+                                </Link>
+                            ))}
                         </div>
-                        <Button className="mt-4 h-14 w-full bg-indigo-600 text-sm hover:bg-indigo-500">Subscribe</Button>
+                    </div>
+                </div>
+                <div className="border-t border-slate-900/90">
+                    <div className="mx-auto flex max-w-[1480px] flex-col gap-3 px-4 py-4 text-xs font-semibold text-slate-500 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+                        <p>© 2026 Sellova. Protected marketplace infrastructure for escrow-first commerce.</p>
+                        <div className="flex flex-wrap items-center gap-4">
+                            <Link href="/marketplace" className="transition hover:text-white">Marketplace</Link>
+                            <Link href="/support" className="transition hover:text-white">Support</Link>
+                            <Link href="/dashboard" className="transition hover:text-white">Buyer Panel</Link>
+                            <Link href="/seller/dashboard" className="transition hover:text-white">Seller Panel</Link>
+                        </div>
                     </div>
                 </div>
             </footer>
@@ -8699,11 +10831,18 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
     const normalizedMode = mode === 'seller' ? 'seller' : 'buyer';
     const activeView = view || (normalizedMode === 'seller' ? 'seller-dashboard' : 'home');
     const cartCount = api.state.cart.reduce((sum, item) => sum + item.quantity, 0);
-    const activeNotifications = normalizedMode === 'seller' ? (api.state.sellerOps?.notifications || []) : (api.state.buyerOps?.notifications || []);
-    const activeUnreadCount = normalizedMode === 'seller'
-        ? (api.state.sellerOps?.unreadNotificationCount ?? activeNotifications.filter((item) => !(item.is_read ?? item.read)).length)
-        : (api.state.buyerOps?.unreadNotificationCount ?? activeNotifications.filter((item) => !(item.is_read ?? item.read)).length);
-    const activeEscrowOrderId = Number(api.state.escrowOrderDetail?.order?.id || 0);
+    const buyerNotifications = (api.state.buyerOps?.notifications || []).map((item) => ({ ...item, recipient_context: item.recipient_context || item.context || item.role || 'buyer' }));
+    const sellerNotifications = api.state.user?.hasSellerProfile
+        ? (api.state.sellerOps?.notifications || []).map((item) => ({ ...item, recipient_context: item.recipient_context || item.context || item.role || 'seller' }))
+        : [];
+    const activeNotifications = [...buyerNotifications, ...sellerNotifications]
+        .sort((left, right) => new Date(right.created_at || right.createdAt || 0).getTime() - new Date(left.created_at || left.createdAt || 0).getTime());
+    const buyerUnreadCount = api.state.buyerOps?.unreadNotificationCount ?? buyerNotifications.filter((item) => !(item.is_read ?? item.read)).length;
+    const sellerUnreadCount = api.state.user?.hasSellerProfile
+        ? (api.state.sellerOps?.unreadNotificationCount ?? sellerNotifications.filter((item) => !(item.is_read ?? item.read)).length)
+        : 0;
+    const activeUnreadCount = buyerUnreadCount + sellerUnreadCount;
+    const activeEscrowOrderId = Number(api.state.escrowOrderDetails?.[normalizedMode]?.order?.id || api.state.escrowOrderDetail?.order?.id || 0);
 
     useEffect(() => {
         const userId = Number(api.state.user?.id || 0);
@@ -8712,7 +10851,8 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
         }
 
         let pollTimer = null;
-        const refresh = () => api.fetchNotifications(normalizedMode, { perPage: 12 }).catch(() => {});
+        const notificationContexts = api.state.user?.hasSellerProfile ? ['buyer', 'seller'] : ['buyer'];
+        const refresh = () => Promise.all(notificationContexts.map((role) => api.fetchNotifications(role, { perPage: 12 }).catch(() => {})));
         const startPolling = () => {
             if (pollTimer !== null) {
                 return;
@@ -8734,12 +10874,23 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
             };
         }
 
-        const channelName = `App.Models.User.${userId}`;
-        const channel = echo.private(channelName);
+        const channelNames = [
+            `App.Models.User.${userId}`,
+            `user.${userId}`,
+            `buyer.${api.state.user?.buyerAccountId || userId}`,
+            ...(api.state.user?.sellerAccountId ? [`seller.${api.state.user.sellerAccountId}`] : []),
+        ];
+        const channels = channelNames.map((channelName) => echo.private(channelName));
+        const seenCreated = new Set();
         const handleCreated = (payload) => {
             const role = payload?.role === 'seller' ? 'seller' : 'buyer';
-            if (payload?.role !== 'all' && role !== normalizedMode) {
+            const notificationId = Number(payload?.notification?.id || 0);
+            const seenKey = notificationId ? `${role}:${notificationId}` : '';
+            if (seenKey && seenCreated.has(seenKey)) {
                 return;
+            }
+            if (seenKey) {
+                seenCreated.add(seenKey);
             }
 
             api.pushIncomingNotification(role, payload?.notification, payload?.unread_count);
@@ -8750,31 +10901,32 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
                 || 0,
             );
             if (activeEscrowOrderId > 0 && notificationOrderId === activeEscrowOrderId) {
-                api.refreshEscrowOrderDetail(activeEscrowOrderId).catch(() => {});
+                api.refreshEscrowOrderDetail(activeEscrowOrderId, true, role).catch(() => {});
             }
         };
         const handleStateChanged = (payload) => {
             const role = payload?.role === 'seller' ? 'seller' : 'buyer';
-            if (payload?.role !== 'all' && role !== normalizedMode) {
-                return;
-            }
 
             api.applyNotificationEvent(payload);
         };
 
-        channel.listen('.notification.created', handleCreated);
-        channel.listen('.notification.state.changed', handleStateChanged);
-        channel.error(() => startPolling());
+        channels.forEach((channel) => {
+            channel.listen('.notification.created', handleCreated);
+            channel.listen('.notification.state.changed', handleStateChanged);
+            channel.error(() => startPolling());
+        });
 
         return () => {
-            channel.stopListening('.notification.created', handleCreated);
-            channel.stopListening('.notification.state.changed', handleStateChanged);
-            echo.leave(channelName);
+            channels.forEach((channel) => {
+                channel.stopListening('.notification.created', handleCreated);
+                channel.stopListening('.notification.state.changed', handleStateChanged);
+            });
+            channelNames.forEach((channelName) => echo.leave(channelName));
             if (pollTimer !== null) {
                 window.clearInterval(pollTimer);
             }
         };
-    }, [api.state.user?.id, normalizedMode, activeEscrowOrderId]);
+    }, [api.state.user?.id, api.state.user?.hasSellerProfile, api.state.user?.buyerAccountId, api.state.user?.sellerAccountId, activeEscrowOrderId]);
 
     let content;
     if (normalizedMode === 'seller') {
@@ -8785,7 +10937,7 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
         else if (activeView === 'seller-inventory') content = <SellerInventory state={api.state} adjustStock={api.adjustStock} />;
         else if (activeView === 'seller-warehouses' || activeView === 'seller-warehouse-form' || activeView === 'seller-stock-history') content = <SellerWarehouse state={api.state} adjustStock={api.adjustStock} saveWarehouse={api.saveWarehouse} deleteWarehouse={api.deleteWarehouse} />;
         else if (activeView === 'seller-orders' || activeView === 'seller-delivery') content = <SellerOrders state={api.state} />;
-        else if (activeView === 'seller-order-details') content = <SellerOrderDetails state={api.state} releaseEscrowFunds={api.releaseEscrowFunds} openOrderDispute={api.openOrderDispute} sendEscrowMessage={api.sendEscrowMessage} markEscrowMessagesRead={api.markEscrowMessagesRead} mergeIncomingEscrowMessage={api.mergeIncomingEscrowMessage} refreshEscrowOrderDetail={api.refreshEscrowOrderDetail} submitSellerDelivery={api.submitSellerDelivery} pendingAction={api.pendingAction} />;
+        else if (activeView === 'seller-order-details') content = <SellerOrderDetails state={api.state} releaseEscrowFunds={api.releaseEscrowFunds} submitOrderReview={api.submitOrderReview} submitBuyerReview={api.submitBuyerReview} openOrderDispute={api.openOrderDispute} sendEscrowMessage={api.sendEscrowMessage} markEscrowMessagesRead={api.markEscrowMessagesRead} mergeIncomingEscrowMessage={api.mergeIncomingEscrowMessage} refreshEscrowOrderDetail={api.refreshEscrowOrderDetail} submitSellerDelivery={api.submitSellerDelivery} pendingAction={api.pendingAction} />;
         else if (activeView === 'seller-payouts' || activeView === 'seller-wallet') content = <SellerWallet state={api.state} requestTopUp={api.requestTopUp} requestPayout={api.requestPayout} uploadSellerMedia={api.uploadSellerMedia} initialTab="wallet" pendingAction={api.pendingAction} />;
         else if (activeView === 'seller-top-up') content = <SellerWallet state={api.state} requestTopUp={api.requestTopUp} requestPayout={api.requestPayout} uploadSellerMedia={api.uploadSellerMedia} initialTab="topup" pendingAction={api.pendingAction} />;
         else if (activeView === 'seller-top-up-history') content = <SellerWallet state={api.state} requestTopUp={api.requestTopUp} requestPayout={api.requestPayout} uploadSellerMedia={api.uploadSellerMedia} initialTab="topup" pendingAction={api.pendingAction} />;
@@ -8797,7 +10949,7 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
         else if (activeView === 'seller-analytics' || activeView === 'seller-earnings') content = <SellerEarnings state={api.state} />;
         else if (activeView === 'seller-business' || activeView === 'seller-store-profile' || activeView === 'seller-store-settings') content = <SellerBusiness state={api.state} saveBusiness={api.saveBusiness} uploadSellerMedia={api.uploadSellerMedia} pendingAction={api.pendingAction} />;
         else if (activeView === 'seller-shipping-settings') content = <SellerShippingSettings state={api.state} saveShippingSettings={api.saveShippingSettings} pendingAction={api.pendingAction} />;
-        else if (activeView === 'seller-reviews') content = <SellerReviews state={api.state} />;
+        else if (activeView === 'seller-reviews') content = <SellerReviews state={api.state} markReviewHelpful={api.markReviewHelpful} pendingAction={api.pendingAction} />;
         else if (activeView === 'seller-notifications') content = <SellerNotifications state={api.state} />;
         else if (activeView === 'seller-kyc') content = <SellerKyc state={api.state} uploadKycDocument={api.uploadKycDocument} saveKycDraft={api.saveKycDraft} submitKyc={api.submitKyc} />;
         else if (activeView === 'seller-returns') content = <SellerReturns state={api.state} />;
@@ -8806,11 +10958,11 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
         else if (activeView === 'seller-support') content = <Support state={api.state} sendMessage={api.sendMessage} uploadSellerMedia={api.uploadSellerMedia} />;
         else content = <SellerDashboard state={api.state} />;
     } else if (activeView === 'marketplace') content = <Marketplace state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} />;
-    else if (activeView === 'product') content = <ProductDetail productId={productId} state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} />;
+    else if (activeView === 'product') content = <ProductDetail productId={productId} state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} markReviewHelpful={api.markReviewHelpful} pendingAction={api.pendingAction} />;
     else if (activeView === 'cart') content = <Cart state={api.state} updateCart={api.updateCart} removeCart={api.removeCart} />;
-    else if (activeView === 'checkout') content = <Checkout state={api.state} checkout={api.checkout} />;
+    else if (activeView === 'checkout') content = <Checkout state={api.state} checkout={api.checkout} saveBuyerAddress={api.saveBuyerAddress} saveBuyerPaymentMethod={api.saveBuyerPaymentMethod} pendingAction={api.pendingAction} />;
     else if (activeView === 'dashboard') content = <BuyerDashboard state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} />;
-    else if (activeView === 'order-details') content = <BuyerOrderDetails state={api.state} releaseEscrowFunds={api.releaseEscrowFunds} openOrderDispute={api.openOrderDispute} sendEscrowMessage={api.sendEscrowMessage} markEscrowMessagesRead={api.markEscrowMessagesRead} mergeIncomingEscrowMessage={api.mergeIncomingEscrowMessage} refreshEscrowOrderDetail={api.refreshEscrowOrderDetail} submitSellerDelivery={api.submitSellerDelivery} pendingAction={api.pendingAction} />;
+    else if (activeView === 'order-details') content = <BuyerOrderDetails state={api.state} releaseEscrowFunds={api.releaseEscrowFunds} submitOrderReview={api.submitOrderReview} submitBuyerReview={api.submitBuyerReview} openOrderDispute={api.openOrderDispute} sendEscrowMessage={api.sendEscrowMessage} markEscrowMessagesRead={api.markEscrowMessagesRead} mergeIncomingEscrowMessage={api.mergeIncomingEscrowMessage} refreshEscrowOrderDetail={api.refreshEscrowOrderDetail} submitSellerDelivery={api.submitSellerDelivery} pendingAction={api.pendingAction} />;
     else if (['orders', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests'].includes(activeView)) content = <BuyerOrdersCenter state={api.state} initialTab={activeView} />;
     else if (['wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards', 'coupons-promotions'].includes(activeView)) content = <BuyerWalletCenter state={api.state} initialTab={activeView} saveBuyerPaymentMethod={api.saveBuyerPaymentMethod} setDefaultBuyerPaymentMethod={api.setDefaultBuyerPaymentMethod} deleteBuyerPaymentMethod={api.deleteBuyerPaymentMethod} requestBuyerWalletTopUp={api.requestBuyerWalletTopUp} pendingAction={api.pendingAction} />;
     else if (['wishlist', 'saved-items', 'favorite-stores', 'recently-viewed'].includes(activeView)) content = <BuyerSavedCenter state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} initialTab={activeView} />;
@@ -8829,13 +10981,14 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
             notice={api.notice}
             notifications={activeNotifications}
             unreadNotificationCount={activeUnreadCount}
-            onRefreshNotifications={() => api.fetchNotifications(normalizedMode, { perPage: 12 })}
-            onMarkNotificationRead={(notificationId) => api.markNotificationRead(normalizedMode, notificationId)}
+            onRefreshNotifications={() => Promise.all((api.state.user?.hasSellerProfile ? ['buyer', 'seller'] : ['buyer']).map((role) => api.fetchNotifications(role, { perPage: 12 })))}
+            onMarkNotificationRead={(notification) => api.markNotificationRead(notification?.recipient_context || notification?.context || notification?.role || normalizedMode, notification?.id)}
             onMarkAllNotificationsRead={() => api.markAllNotificationsRead(normalizedMode)}
-            onDeleteNotification={(notificationId) => api.deleteNotification(normalizedMode, notificationId)}
+            onDeleteNotification={(notification) => api.deleteNotification(notification?.recipient_context || notification?.context || notification?.role || normalizedMode, notification?.id)}
             onClearNotifications={() => api.clearNotifications(normalizedMode)}
         >
             {content}
+            <CheckoutTransitionOverlay transition={api.routeTransition} />
             {normalizedMode === 'seller' ? null : <EnterpriseFooter trustItems={api.state.trustItems} />}
         </AppShell>
     );

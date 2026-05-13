@@ -1,46 +1,60 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SidebarNav } from '@/components/admin/SidebarNav';
 import { Topbar } from '@/components/admin/Topbar';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+const SIDEBAR_STORAGE_KEY = 'sellova-admin-sidebar-collapsed';
 
 /**
  * @param {{ children: import('react').ReactNode, className?: string }} props
  */
 export function AdminLayout({ children, className }) {
     const [mobileNav, setMobileNav] = useState(false);
+    const [collapsed, setCollapsed] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        setCollapsed(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1');
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? '1' : '0');
+    }, [collapsed]);
 
     return (
-        <TooltipProvider delayDuration={200}>
-        <div className={cn('min-h-screen bg-slate-50', className)}>
-            <Sheet open={mobileNav} onOpenChange={setMobileNav}>
-                <SheetContent side="left" className="w-[min(100%,280px)] p-0">
-                    <SheetHeader className="border-b border-border px-4 py-4 text-left">
-                        <SheetTitle className="text-base">Navigation</SheetTitle>
-                    </SheetHeader>
-                    <div className="overflow-y-auto px-2 py-4">
-                        <SidebarNav onNavigate={() => setMobileNav(false)} />
-                    </div>
-                </SheetContent>
-            </Sheet>
+        <TooltipProvider delayDuration={180}>
+            <div className={cn('admin-shell', className)}>
+                <Sheet open={mobileNav} onOpenChange={setMobileNav}>
+                    <SheetContent side="left" className="w-[min(100%,290px)] bg-sidebar p-0">
+                        <div className="flex h-full flex-col bg-sidebar px-3 py-2.5 text-sidebar-foreground">
+                            <SidebarNav mobile onNavigate={() => setMobileNav(false)} />
+                        </div>
+                    </SheetContent>
+                </Sheet>
 
-            <div className="flex min-h-screen">
-                <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-border/80 bg-card shadow-sm lg:flex lg:flex-col">
-                    <div className="flex h-14 items-center border-b border-border/80 px-4">
-                        <span className="text-sm font-semibold tracking-tight">Sellova Admin</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-2 py-4">
-                        <SidebarNav />
-                    </div>
-                </aside>
+                <div className="flex min-h-screen">
+                    <aside
+                        className={cn(
+                            'sticky top-0 hidden h-screen shrink-0 border-r border-[hsl(var(--sidebar-border))] bg-sidebar px-3 py-2.5 text-sidebar-foreground transition-[width] duration-300 lg:flex lg:flex-col',
+                            collapsed ? 'w-[92px]' : 'w-[272px]',
+                        )}
+                    >
+                        <SidebarNav collapsed={collapsed} onToggleCollapse={() => setCollapsed((value) => !value)} />
+                    </aside>
 
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <Topbar onOpenSidebar={() => setMobileNav(true)} />
-                    <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex min-h-screen flex-col">
+                            <Topbar collapsed={collapsed} onOpenSidebar={() => setMobileNav(true)} />
+                            <main className="flex-1 px-4 pb-6 pt-3.5 sm:px-5 lg:px-6 lg:pb-8 lg:pt-4">
+                                <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+                            </main>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
         </TooltipProvider>
     );
 }

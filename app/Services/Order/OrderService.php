@@ -333,6 +333,24 @@ class OrderService
                 correlationId: $command->idempotencyKey,
             );
 
+            $this->notificationService->notify(
+                userId: (int) $order->buyer_user_id,
+                template: 'order_created',
+                title: 'Order placed',
+                body: 'Your protected order '.($order->order_number ?? '#'.$order->id).' has been created.',
+                payload: [
+                    'order_id' => (int) $order->id,
+                    'order_number' => (string) ($order->order_number ?? $order->id),
+                    'role' => 'buyer',
+                    'recipient_context' => 'buyer',
+                    'recipient_role' => 'buyer',
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $order->id,
+                    'context_route_name' => 'buyer.orders.show',
+                    'action_url' => '/buyer/orders/'.(int) $order->id,
+                ],
+            );
+
             $order->loadMissing(['orderItems', 'escrowAccount']);
 
             $response = array_merge(OrderResource::detail($order), [
@@ -671,7 +689,7 @@ class OrderService
             $order->escrow_auto_release_at = $order->auto_release_at;
             $order->dispute_deadline_at = $order->buyer_review_expires_at;
             $order->delivery_deadline_at = $order->seller_deadline_at;
-            $order->delivery_status = 'preparing';
+            $order->delivery_status = 'pending';
             $order->save();
 
             $this->recordOrderStateTransition(
@@ -726,6 +744,12 @@ class OrderService
             [
                 'order_id' => (int) $order->id,
                 'order_number' => (string) ($order->order_number ?? $order->id),
+                'role' => 'seller',
+                'recipient_context' => 'seller',
+                'recipient_role' => 'seller',
+                'context_entity_type' => 'order',
+                'context_entity_id' => (int) $order->id,
+                'context_route_name' => 'seller.orders.show',
                 'buyer_user_id' => (int) $order->buyer_user_id,
                 'buyer_name' => $buyerLabel,
                 'buyer_email' => (string) ($buyer?->email ?? ''),
@@ -1006,7 +1030,7 @@ class OrderService
                 ]);
             }
 
-            if (! in_array($order->status, [OrderStatus::EscrowFunded, OrderStatus::PaidInEscrow, OrderStatus::Processing, OrderStatus::ShippedOrDelivered], true)) {
+            if (! in_array($order->status, [OrderStatus::EscrowFunded, OrderStatus::PaidInEscrow, OrderStatus::Processing, OrderStatus::DeliverySubmitted, OrderStatus::BuyerReview, OrderStatus::ShippedOrDelivered], true)) {
                 throw new InvalidOrderStateTransitionException(
                     orderId: $order->id,
                     fromStatus: $order->status->value,
@@ -1015,8 +1039,13 @@ class OrderService
             }
 
             $from = $order->status;
-            $order->status = OrderStatus::BuyerReview;
-            $order->fulfillment_state = 'buyer_review';
+            $alreadyShipped = $order->shipped_at !== null
+                || trim((string) ($order->tracking_id ?? '')) !== ''
+                || in_array((string) ($order->delivery_status ?? ''), ['shipped', 'in_transit', 'out_for_delivery'], true)
+                || $order->status === OrderStatus::ShippedOrDelivered;
+            $markDelivered = $alreadyShipped && ! in_array((string) ($order->delivery_status ?? ''), ['delivered', 'accepted'], true);
+            $order->status = $markDelivered ? OrderStatus::BuyerReview : OrderStatus::ShippedOrDelivered;
+            $order->fulfillment_state = $markDelivered ? 'buyer_review' : 'in_transit';
             if ($this->hasOrderColumn('courier_company')) {
                 $order->courier_company = $command->courierCompany;
             }
@@ -1025,7 +1054,7 @@ class OrderService
             }
             if ($this->hasOrderColumn('tracking_url')) {
                 $trackingUrl = trim((string) ($command->trackingUrl ?? ''));
-                $order->tracking_url = $trackingUrl !== '' ? $trackingUrl : sprintf('https://tracking.sellova.com/%s', rawurlencode($command->trackingId));
+                $order->tracking_url = $trackingUrl !== '' ? $trackingUrl : null;
             }
             if ($this->hasOrderColumn('shipping_note')) {
                 $order->shipping_note = $command->shippingNote;
@@ -1039,25 +1068,34 @@ class OrderService
                     $order->shipped_at = now();
                 }
             }
+            $order->delivery_status = $markDelivered ? 'delivered' : 'shipped';
+            if ($markDelivered) {
+                $order->delivered_at = $order->delivered_at ?? now();
+                $order->delivery_submitted_at = $order->delivery_submitted_at ?? now();
+                $order->delivery_note = $command->shippingNote;
+                $order->delivery_version = $command->trackingId;
+            }
             $order->save();
 
             $order->loadMissing('orderItems');
             foreach ($order->orderItems as $item) {
                 if ($item->delivery_state !== 'delivered') {
-                    $item->delivery_state = 'in_progress';
+                    $item->delivery_state = $markDelivered ? 'delivered' : 'in_progress';
                     $item->save();
                 }
             }
-            $this->timeoutSnapshots->snapshotAtDeliverySubmitted(
-                $order,
-                Product::query()->whereKey((int) ($order->primary_product_id ?? 0))->first(),
-            );
+            if ($markDelivered) {
+                $this->timeoutSnapshots->snapshotAtDeliverySubmitted(
+                    $order,
+                    Product::query()->whereKey((int) ($order->primary_product_id ?? 0))->first(),
+                );
+            }
 
             $this->recordOrderStateTransition(
                 order: $order,
                 from: $from,
-                to: OrderStatus::BuyerReview,
-                reasonCode: 'seller_shipped',
+                to: $order->status,
+                reasonCode: $markDelivered ? 'seller_confirmed_physical_delivery' : 'seller_shipped',
                 actorUserId: $command->actorUserId,
                 correlationId: $command->correlationId ?? (string) Str::uuid(),
             );
@@ -1213,6 +1251,12 @@ class OrderService
                     payload: [
                         'order_id' => (int) $order->id,
                         'order_number' => (string) ($order->order_number ?? $order->id),
+                        'role' => 'seller',
+                        'recipient_context' => 'seller',
+                        'recipient_role' => 'seller',
+                        'context_entity_type' => 'order',
+                        'context_entity_id' => (int) $order->id,
+                        'context_route_name' => 'seller.orders.show',
                         'escrow_status' => 'released',
                     ],
                 );
@@ -1225,6 +1269,12 @@ class OrderService
                 payload: [
                     'order_id' => (int) $order->id,
                     'order_number' => (string) ($order->order_number ?? $order->id),
+                    'role' => 'buyer',
+                    'recipient_context' => 'buyer',
+                    'recipient_role' => 'buyer',
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $order->id,
+                    'context_route_name' => 'buyer.orders.show',
                     'escrow_status' => 'released',
                 ],
             );
@@ -1547,6 +1597,53 @@ class OrderService
             'correlation_id' => $correlationId,
             'created_at' => now(),
         ]);
+
+        if ($from !== $to) {
+            $this->notifyOrderStatusChanged($order, $from, $to, $reasonCode, $actorUserId);
+        }
+    }
+
+    private function notifyOrderStatusChanged(Order $order, OrderStatus $from, OrderStatus $to, string $reasonCode, ?int $actorUserId): void
+    {
+        $orderNumber = (string) ($order->order_number ?? 'ORD-'.$order->id);
+        $fromLabel = ucwords(str_replace('_', ' ', $from->value));
+        $toLabel = ucwords(str_replace('_', ' ', $to->value));
+        $body = "Order {$orderNumber} changed from {$fromLabel} to {$toLabel}.";
+
+        $participants = [
+            [(int) $order->buyer_user_id, 'buyer', '/buyer/orders/'.(int) $order->id],
+            [(int) ($order->seller_user_id ?? 0), 'seller', '/seller/orders/'.(int) $order->id],
+        ];
+
+        foreach ($participants as [$userId, $role, $href]) {
+            if ($userId <= 0) {
+                continue;
+            }
+
+            app(NotificationService::class)->notify(
+                $userId,
+                'order.status.changed',
+                'Order status changed',
+                $body,
+                [
+                    'role' => $role,
+                    'recipient_context' => $role,
+                    'recipient_role' => $role,
+                    'order_id' => (int) $order->id,
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $order->id,
+                    'context_route_name' => $role.'.orders.show',
+                    'from_status' => $from->value,
+                    'to_status' => $to->value,
+                    'reason_code' => $reasonCode,
+                    'changed_by_user_id' => $actorUserId,
+                    'href' => $href,
+                    'action_url' => $href,
+                    'icon' => 'receipt-text',
+                    'color' => 'indigo',
+                ],
+            );
+        }
     }
 
     private function orderMarkPaidIdempotencyKey(int $orderId, int $paymentTransactionId): string

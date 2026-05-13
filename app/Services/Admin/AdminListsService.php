@@ -40,7 +40,7 @@ final class AdminListsService
         $status = trim((string) $request->query('status', ''));
 
         $builder = Order::query()
-            ->with(['buyer:id,email'])
+            ->with(['buyer:id,display_name,email'])
             ->orderByDesc('id');
 
         if ($status !== '') {
@@ -58,14 +58,17 @@ final class AdminListsService
         $total = (int) $builder->count();
         $rows = [];
         foreach ((clone $builder)->forPage($page, $perPage)->get() as $order) {
-            $buyerEmail = $order->buyer?->email;
             $rows[] = [
                 'order' => $order->order_number ?? '#'.$order->id,
-                'buyer' => $buyerEmail ?? '—',
+                'buyer' => $order->buyer?->display_name ?? ('Buyer #'.$order->buyer_user_id),
+                'buyer_email' => $order->buyer?->email,
+                'gross_amount' => (string) $order->gross_amount,
+                'currency' => (string) ($order->currency ?? ''),
                 'total' => trim(($order->currency ?? '').' '.(string) $order->gross_amount),
                 'status' => $order->status->value,
                 'placed' => $order->placed_at?->toIso8601String() ?? '—',
                 'href' => route('admin.orders.show', $order),
+                'delete_href' => route('admin.orders.destroy', $order),
             ];
         }
 
@@ -389,6 +392,7 @@ final class AdminListsService
                 'currency' => (string) ($escrow->currency ?? ''),
                 'order_href' => route('admin.orders.show', $escrow->order_id),
                 'href' => route('admin.escrows.show', $escrow),
+                'delete_href' => route('admin.escrows.destroy', $escrow),
             ];
         }
 
@@ -441,6 +445,8 @@ final class AdminListsService
                 'balance' => $latestLedger === null ? '—' : (string) $latestLedger,
                 'holds' => (string) $activeHolds,
                 'href' => route('admin.wallets.show', $wallet),
+                'export_href' => route('admin.wallets.ledger-export', $wallet),
+                'delete_href' => route('admin.wallets.destroy', $wallet),
             ];
         }
 
@@ -510,11 +516,12 @@ final class AdminListsService
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{status?: string}}
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string}}
      */
     public function withdrawalsIndex(Request $request, User $viewer): array
     {
         [$page, $perPage] = $this->pagination($request);
+        $q = trim((string) $request->query('q', ''));
         $status = trim((string) $request->query('status', ''));
         $warningHours = (int) config('admin_sla.withdrawals.warning_hours', 12);
         $breachHours = (int) config('admin_sla.withdrawals.breach_hours', 24);
@@ -530,6 +537,15 @@ final class AdminListsService
         }
         if ($status !== '') {
             $builder->where('status', $status);
+        }
+        if ($q !== '') {
+            $builder->where(function ($w) use ($q): void {
+                $w->where('id', $q)
+                    ->orWhere('currency', 'like', '%'.$q.'%')
+                    ->orWhereHas('seller_profile', static function ($sq) use ($q): void {
+                        $sq->where('display_name', 'like', '%'.$q.'%');
+                    });
+            });
         }
 
         $total = (int) $builder->count();
@@ -558,7 +574,7 @@ final class AdminListsService
         return [
             'rows' => $rows,
             'pagination' => $this->paginationPayload($page, $perPage, $total),
-            'filters' => array_filter(['status' => $status]),
+            'filters' => array_filter(['q' => $q, 'status' => $status]),
             'summary' => [
                 'requested' => (int) WithdrawalRequest::query()->where('status', 'requested')->count(),
                 'under_review' => (int) WithdrawalRequest::query()->where('status', 'under_review')->count(),
@@ -624,11 +640,12 @@ final class AdminListsService
     }
 
     /**
-     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{status?: string}}
+     * @return array{rows: list<array<string, mixed>>, pagination: array{page: int, perPage: int, total: int, lastPage: int}, filters: array{q?: string, status?: string}}
      */
     public function disputesIndex(Request $request, User $viewer): array
     {
         [$page, $perPage] = $this->pagination($request);
+        $q = trim((string) $request->query('q', ''));
         $status = trim((string) $request->query('status', ''));
         $warningHours = (int) config('admin_sla.disputes.warning_hours', 24);
         $breachHours = (int) config('admin_sla.disputes.breach_hours', 48);
@@ -652,6 +669,14 @@ final class AdminListsService
         if ($status !== '') {
             $builder->where('status', $status);
         }
+        if ($q !== '') {
+            $builder->where(function ($w) use ($q): void {
+                $w->where('id', $q)
+                    ->orWhereHas('order', static function ($oq) use ($q): void {
+                        $oq->where('order_number', 'like', '%'.$q.'%');
+                    });
+            });
+        }
 
         $total = (int) $builder->count();
         $rows = [];
@@ -671,13 +696,15 @@ final class AdminListsService
                 'sla_state' => $isBreach ? 'breach' : ($slaHours >= $warningHours ? 'warning' : 'ok'),
                 'is_escalated' => $case->escalated_at !== null,
                 'href' => route('admin.disputes.show', ['dispute' => $case->id]),
+                'order_href' => route('admin.orders.show', ['order' => $case->order_id]),
+                'delete_href' => route('admin.disputes.destroy', ['dispute' => $case->id]),
             ];
         }
 
         return [
             'rows' => $rows,
             'pagination' => $this->paginationPayload($page, $perPage, $total),
-            'filters' => array_filter(['status' => $status]),
+            'filters' => array_filter(['q' => $q, 'status' => $status]),
             'summary' => [
                 'opened' => (int) DisputeCase::query()->where('status', 'opened')->count(),
                 'under_review' => (int) DisputeCase::query()->where('status', 'under_review')->count(),
@@ -721,10 +748,11 @@ final class AdminListsService
                 ->count();
             $rows[] = [
                 'buyer' => '#'.$buyer->id,
+                'name' => $buyer->display_name ?? 'Buyer #'.$buyer->id,
                 'email' => $buyer->email ?? '—',
                 'status' => $buyer->status,
                 'risk' => $buyer->risk_level,
-                'user' => $buyer->email ?? '—',
+                'user' => trim((string) (($buyer->display_name ?? 'Buyer #'.$buyer->id).' · '.($buyer->email ?? 'No email'))),
                 'orders' => (string) $ordersCount,
                 'disputes' => (string) $disputesCount,
                 'href' => route('admin.buyers.show', $buyer),

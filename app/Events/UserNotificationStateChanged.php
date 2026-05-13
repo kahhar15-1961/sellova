@@ -24,9 +24,12 @@ final class UserNotificationStateChanged implements ShouldBroadcastNow
         public readonly array $payload,
     ) {}
 
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('App.Models.User.'.$this->userId);
+        return [
+            new PrivateChannel('App.Models.User.'.$this->userId),
+            new PrivateChannel('user.'.$this->userId),
+        ];
     }
 
     public function broadcastAs(): string

@@ -453,8 +453,14 @@ final class TimeoutAutomationService
     private function notifyBuyer(Order $order, string $template, string $title, string $body): void
     {
         $this->notifications->notify((int) $order->buyer_user_id, $template, $title, $body, [
+            'role' => 'buyer',
+            'recipient_context' => 'buyer',
+            'recipient_role' => 'buyer',
             'order_id' => (string) $order->id,
             'order_number' => (string) $order->order_number,
+            'context_entity_type' => 'order',
+            'context_entity_id' => (int) $order->id,
+            'context_route_name' => 'buyer.orders.show',
         ]);
     }
 
@@ -464,8 +470,14 @@ final class TimeoutAutomationService
             return;
         }
         $this->notifications->notify((int) $order->seller_user_id, $template, $title, $body, [
+            'role' => 'seller',
+            'recipient_context' => 'seller',
+            'recipient_role' => 'seller',
             'order_id' => (string) $order->id,
             'order_number' => (string) $order->order_number,
+            'context_entity_type' => 'order',
+            'context_entity_id' => (int) $order->id,
+            'context_route_name' => 'seller.orders.show',
         ]);
     }
 

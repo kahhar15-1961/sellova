@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatMoney } from '@/lib/utils';
 
 function fmtDate(iso) {
     if (!iso) return '—';
@@ -46,6 +47,7 @@ export default function BuyerShow({ header, buyer, stats, wallets, payment_metho
                         <CardDescription>Identity, account health, and checkout posture</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
+                        <p>Name: {buyer.name ?? `Buyer #${buyer.id}`}</p>
                         <p>Email: {buyer.email ?? '—'}</p>
                         <p>Phone: {buyer.phone ?? '—'}</p>
                         <p>Status: <StatusBadge status={buyer.status} /></p>
@@ -87,8 +89,8 @@ export default function BuyerShow({ header, buyer, stats, wallets, payment_metho
                                             </TableCell>
                                             <TableCell>{wallet.type}</TableCell>
                                             <TableCell><StatusBadge status={wallet.status} /></TableCell>
-                                            <TableCell>{wallet.currency} {wallet.available_balance}</TableCell>
-                                            <TableCell>{wallet.currency} {wallet.held_balance}</TableCell>
+                                            <TableCell>{formatMoney(wallet.available_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
+                                            <TableCell>{formatMoney(wallet.held_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

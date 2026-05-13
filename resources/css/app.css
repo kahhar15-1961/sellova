@@ -6,29 +6,432 @@
 
 @layer base {
     :root {
-        --background: 210 20% 98%;
-        --foreground: 222 47% 11%;
+        --background: 210 33% 98%;
+        --foreground: 218 28% 19%;
         --card: 0 0% 100%;
-        --card-foreground: 222 47% 11%;
-        --primary: 222 47% 18%;
-        --primary-foreground: 210 40% 98%;
-        --secondary: 214 32% 96%;
-        --secondary-foreground: 222 47% 18%;
-        --muted: 214 32% 94%;
-        --muted-foreground: 215 16% 42%;
-        --accent: 214 95% 96%;
-        --accent-foreground: 222 47% 18%;
-        --destructive: 0 72% 51%;
+        --card-foreground: 218 28% 19%;
+        --primary: 220 39% 17%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 24% 96%;
+        --secondary-foreground: 218 28% 19%;
+        --muted: 210 22% 95%;
+        --muted-foreground: 218 14% 49%;
+        --accent: 210 40% 97%;
+        --accent-foreground: 218 30% 22%;
+        --destructive: 0 73% 58%;
         --destructive-foreground: 0 0% 100%;
-        --border: 214 32% 91%;
-        --input: 214 32% 91%;
-        --ring: 222 47% 18%;
-        --radius: 0.65rem;
+        --border: 220 22% 89%;
+        --input: 220 26% 91%;
+        --ring: 221 32% 32%;
+        --radius: 1rem;
+        --sidebar: 0 0% 100%;
+        --sidebar-foreground: 221 18% 28%;
+        --sidebar-accent: 248 100% 72%;
+        --sidebar-accent-foreground: 248 100% 72%;
+        --sidebar-border: 220 25% 90%;
+        --sidebar-ring: 221 32% 32%;
+        --success: 148 49% 45%;
+        --success-soft: 150 58% 93%;
+        --warning: 42 92% 47%;
+        --warning-soft: 44 100% 94%;
+        --info: 219 83% 60%;
+        --info-soft: 214 100% 95%;
+        --shadow-color: 220 35% 22%;
+    }
+
+    .dark {
+        --background: 220 39% 11%;
+        --foreground: 220 22% 92%;
+        --card: 215 28% 17%;
+        --card-foreground: 220 22% 92%;
+        --primary: 210 30% 94%;
+        --primary-foreground: 220 39% 17%;
+        --secondary: 217 24% 20%;
+        --secondary-foreground: 220 22% 92%;
+        --muted: 223 18% 18%;
+        --muted-foreground: 219 14% 71%;
+        --accent: 222 16% 18%;
+        --accent-foreground: 220 23% 92%;
+        --destructive: 0 75% 64%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 222 14% 24%;
+        --input: 222 14% 25%;
+        --ring: 219 25% 70%;
+        --sidebar: 215 28% 17%;
+        --sidebar-foreground: 220 20% 90%;
+        --sidebar-accent: 248 100% 72%;
+        --sidebar-accent-foreground: 248 100% 72%;
+        --sidebar-border: 217 19% 26%;
+        --sidebar-ring: 219 25% 70%;
+        --success: 148 44% 65%;
+        --success-soft: 149 34% 19%;
+        --warning: 41 92% 66%;
+        --warning-soft: 40 46% 18%;
+        --info: 214 87% 70%;
+        --info-soft: 214 42% 20%;
+        --shadow-color: 0 0% 0%;
+    }
+
+    * {
+        @apply border-border;
+    }
+
+    html {
+        @apply scroll-smooth;
+        line-height: 1.5;
+        -webkit-text-size-adjust: 100%;
+        -moz-tab-size: 4;
+        -o-tab-size: 4;
+        tab-size: 4;
+        font-family: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+            'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+        font-feature-settings: normal;
+        font-variation-settings: normal;
+        -webkit-tap-highlight-color: transparent;
     }
 
     body {
-        @apply bg-background text-foreground font-sans;
+        @apply bg-background text-foreground antialiased;
+        font-family: 'Plus Jakarta Sans', Inter, sans-serif;
         font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
         text-rendering: optimizeLegibility;
+        background-image:
+            radial-gradient(circle at top left, hsl(var(--accent) / 0.95), transparent 26%),
+            radial-gradient(circle at bottom right, hsl(var(--muted) / 0.7), transparent 22%);
+        min-height: 100vh;
+    }
+
+    .dark body {
+        background-image:
+            radial-gradient(circle at top left, hsl(var(--accent) / 0.45), transparent 24%),
+            radial-gradient(circle at bottom right, hsl(var(--primary) / 0.08), transparent 22%);
+    }
+
+    ::selection {
+        background-color: hsl(var(--primary) / 0.18);
+    }
+
+    #app {
+        min-height: 100vh;
+    }
+}
+
+@layer utilities {
+    .admin-shell {
+        @apply min-h-screen bg-background;
+    }
+
+    .admin-surface {
+        @apply rounded-[1.5rem] border shadow-card backdrop-blur-xl;
+        border-color: hsl(var(--border) / 0.7);
+        background-color: hsl(var(--card) / 0.96);
+    }
+
+    .dark .admin-surface {
+        border-color: rgb(55 65 81 / 0.92);
+        background-color: rgb(31 41 55 / 0.98);
+        box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+    }
+
+    .admin-panel {
+        @apply rounded-[1.25rem] border shadow-card backdrop-blur-lg;
+        border-color: hsl(var(--border) / 0.7);
+        background-color: hsl(var(--card) / 0.98);
+    }
+
+    .dark .admin-panel {
+        border-color: rgb(55 65 81 / 0.92);
+        background-color: rgb(31 41 55 / 0.98);
+        box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+    }
+
+    .admin-panel-muted {
+        @apply rounded-[1.25rem] border shadow-card;
+        border-color: hsl(var(--border) / 0.6);
+        background-color: hsl(var(--secondary) / 0.75);
+    }
+
+    .admin-header-band {
+        border: 1px solid hsl(var(--border) / 0.75);
+        background:
+            linear-gradient(180deg, hsl(var(--card) / 0.9), hsl(var(--card) / 0.76)),
+            radial-gradient(circle at top right, hsl(var(--accent) / 0.8), transparent 30%);
+    }
+
+    .dark .admin-header-band {
+        border-color: hsl(var(--border) / 0.9);
+        background:
+            linear-gradient(180deg, hsl(var(--card) / 0.98), hsl(var(--secondary) / 0.88)),
+            radial-gradient(circle at top right, hsl(var(--primary) / 0.14), transparent 32%);
+    }
+
+    .admin-grid {
+        @apply grid gap-4 xl:gap-5;
+    }
+
+    .admin-hairline {
+        border-color: hsl(var(--border) / 0.7);
+    }
+
+    .admin-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: hsl(var(--border)) transparent;
+    }
+
+    .admin-scrollbar::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    .admin-scrollbar::-webkit-scrollbar-thumb {
+        background-color: hsl(var(--border));
+        border-radius: 9999px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+
+    .admin-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .ds-label {
+        @apply mb-2 block text-[13px] font-semibold tracking-[-0.01em] text-foreground;
+        color: hsl(var(--foreground) / 0.88);
+    }
+
+    .ds-helper {
+        @apply text-xs leading-5 text-muted-foreground;
+    }
+
+    .ds-control {
+        @apply h-12 w-full rounded-2xl border bg-card px-4 text-[14px] text-foreground shadow-sm outline-none transition-all duration-200;
+        border-color: hsl(var(--input) / 0.9);
+        caret-color: hsl(var(--foreground));
+        box-shadow:
+            0 1px 2px rgb(15 23 42 / 0.03),
+            0 0 0 1px rgb(255 255 255 / 0.55) inset;
+    }
+
+    .ds-control::placeholder {
+        color: hsl(var(--muted-foreground) / 0.75);
+    }
+
+    .ds-control:hover {
+        border-color: hsl(var(--border) / 1);
+        background-color: hsl(var(--card) / 1);
+    }
+
+    .ds-control:focus,
+    .ds-control:focus-visible,
+    .ds-control[data-state='open'] {
+        border-color: hsl(var(--ring) / 0.35);
+        box-shadow:
+            0 1px 2px rgb(15 23 42 / 0.03),
+            0 0 0 4px hsl(var(--ring) / 0.1);
+    }
+
+    .ds-control:disabled,
+    .ds-control[data-disabled='true'] {
+        @apply cursor-not-allowed text-muted-foreground;
+        background-color: hsl(var(--secondary) / 0.8);
+        box-shadow: none;
+    }
+
+    .ds-control[aria-invalid='true'],
+    .ds-control[data-invalid='true'] {
+        border-color: hsl(var(--destructive) / 0.38);
+        box-shadow:
+            0 1px 2px rgb(15 23 42 / 0.03),
+            0 0 0 4px hsl(var(--destructive) / 0.09);
+    }
+
+    .ds-control[data-success='true'] {
+        border-color: hsl(var(--success) / 0.34);
+        box-shadow:
+            0 1px 2px rgb(15 23 42 / 0.03),
+            0 0 0 4px hsl(var(--success) / 0.1);
+    }
+
+    .ds-control[readonly] {
+        @apply cursor-default text-foreground;
+        color: hsl(var(--foreground) / 0.8);
+        background-color: hsl(var(--secondary) / 0.72);
+    }
+
+    .users-table-checkbox {
+        @apply h-3.5 w-3.5 cursor-pointer rounded-[4px] border align-middle shadow-none transition;
+        appearance: none;
+        border-color: rgb(203 213 225);
+        background-color: rgb(255 255 255);
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: 10px 10px;
+    }
+
+    .users-table-checkbox:hover {
+        border-color: rgb(132 112 255);
+    }
+
+    .users-table-checkbox:checked {
+        border-color: rgb(132 112 255);
+        background-color: rgb(132 112 255);
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 6.15 5.05 8.2 9.25 3.8' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+
+    .users-table-checkbox:focus-visible {
+        @apply outline-none;
+        box-shadow: 0 0 0 3px rgb(132 112 255 / 0.18);
+    }
+
+    .dark .users-table-checkbox {
+        border-color: rgb(71 85 105);
+        background-color: rgb(31 41 55);
+    }
+
+    .dark .users-table-checkbox:checked {
+        border-color: rgb(132 112 255);
+        background-color: rgb(132 112 255);
+    }
+
+    .ds-card-grid {
+        @apply grid gap-5 md:grid-cols-2;
+    }
+
+    .ds-form-card {
+        @apply admin-panel space-y-6 p-6;
+    }
+
+    .ds-table-shell {
+        @apply overflow-hidden rounded-lg border bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)];
+        border-color: rgb(226 232 240);
+    }
+
+    .dark .ds-table-shell {
+        border-color: rgb(55 65 81);
+        background-color: rgb(31 41 55);
+        box-shadow: none;
+    }
+
+    .admin-list-toolbar {
+        @apply rounded-lg border bg-white px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)];
+        border-color: rgb(226 232 240);
+    }
+
+    .dark .admin-list-toolbar {
+        border-color: rgb(55 65 81);
+        background-color: rgb(31 41 55);
+        box-shadow: none;
+    }
+
+    .admin-list-select-trigger {
+        @apply h-[38px] rounded-md border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 shadow-none;
+        box-shadow: none;
+    }
+
+    .admin-list-select-trigger:hover,
+    .admin-list-select-trigger:focus,
+    .admin-list-select-trigger:focus-visible,
+    .admin-list-select-trigger[data-state='open'] {
+        border-color: rgb(203 213 225);
+        box-shadow: 0 0 0 3px rgb(148 163 184 / 0.14);
+    }
+
+    .dark .admin-list-select-trigger {
+        border-color: rgb(51 65 85);
+        background-color: rgb(31 41 55);
+        color: rgb(226 232 240);
+    }
+
+    .dark .admin-list-select-trigger:hover,
+    .dark .admin-list-select-trigger:focus,
+    .dark .admin-list-select-trigger:focus-visible,
+    .dark .admin-list-select-trigger[data-state='open'] {
+        border-color: rgb(71 85 105);
+        box-shadow: 0 0 0 3px rgb(148 163 184 / 0.1);
+    }
+
+    .admin-list-native-select {
+        @apply h-[38px] rounded-md border bg-white px-4 text-[13px] font-semibold text-slate-700 shadow-none outline-none transition;
+        border-color: rgb(226 232 240);
+    }
+
+    .admin-list-native-select:focus {
+        border-color: rgb(203 213 225);
+        box-shadow: 0 0 0 3px rgb(148 163 184 / 0.14);
+    }
+
+    .dark .admin-list-native-select {
+        border-color: rgb(51 65 85);
+        background-color: rgb(31 41 55);
+        color: rgb(226 232 240);
+    }
+
+    .ds-table-toolbar {
+        @apply flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between;
+        border-color: hsl(var(--border) / 0.7);
+        background: linear-gradient(180deg, hsl(var(--card) / 0.96), hsl(var(--secondary) / 0.4));
+    }
+
+    .dark .ds-table-toolbar {
+        border-color: rgb(55 65 81 / 0.9);
+        background: linear-gradient(180deg, rgb(31 41 55 / 0.98), rgb(31 41 55 / 0.94));
+    }
+
+    .ds-modal-panel {
+        @apply rounded-[1.75rem] border bg-card shadow-card;
+        border-color: hsl(var(--border) / 0.72);
+    }
+
+    .panel-card {
+        @apply rounded-[1.35rem] border bg-card shadow-card;
+        border-color: hsl(var(--border) / 0.72);
+    }
+
+    .dark .panel-card {
+        border-color: rgb(55 65 81 / 0.92);
+        background-color: rgb(31 41 55 / 0.98);
+        box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset;
+    }
+
+    .kpi-card {
+        @apply rounded-[1.2rem] border bg-card;
+        border-color: hsl(var(--border) / 0.78);
+        background-image: linear-gradient(180deg, hsl(var(--card) / 1), hsl(var(--card) / 0.965));
+        box-shadow:
+            0 18px 40px -28px rgb(15 23 42 / 0.18),
+            0 1px 0 rgb(255 255 255 / 0.78) inset;
+    }
+
+    .dark .kpi-card {
+        border-color: rgb(51 65 85 / 0.95);
+        background-color: rgb(31 41 55 / 1);
+        background-image: linear-gradient(180deg, rgb(43 53 68 / 0.98), rgb(31 41 55 / 0.98));
+        box-shadow:
+            0 16px 36px -26px rgb(2 6 23 / 0.88),
+            0 1px 0 rgb(255 255 255 / 0.04) inset;
+    }
+
+    .sidebar-active-item {
+        color: rgb(132 112 255);
+        background-image: linear-gradient(135deg, rgb(132 112 255 / 0.12), rgb(132 112 255 / 0.04));
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+    }
+
+    .dark .sidebar-active-item {
+        color: rgb(132 112 255);
+        background-image: linear-gradient(135deg, rgb(132 112 255 / 0.24), rgb(132 112 255 / 0));
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+    }
+
+    .sidebar-active-icon {
+        color: rgb(132 112 255);
+    }
+
+    .sidebar-submenu-active {
+        color: rgb(132 112 255);
+    }
+
+    .sidebar-submenu-active svg {
+        color: rgb(132 112 255);
     }
 }

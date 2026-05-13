@@ -17,20 +17,6 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        if (app()->environment('production')) {
-            $this->command?->error('DatabaseSeeder is disabled in the production environment.');
-
-            return;
-        }
-
-        LocalAppSeeder::seedAll();
-        PromotionSeeder::seedDefaults();
-
-        $this->command?->newLine();
-        $this->command?->info('Local dataset seeded (core tables were truncated).');
-        $this->command?->info('Password for all accounts: '.LocalAppSeeder::PASSWORD_PLAIN);
-        foreach (LocalAppSeeder::credentialsSummary()['emails'] as $line) {
-            $this->command?->line("  • {$line}");
-        }
+        $this->call(FinalMarketplaceSeeder::class);
     }
 }

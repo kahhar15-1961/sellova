@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatMoney } from '@/lib/utils';
 
 export default function WalletShow({ header, wallet, entries, holds, snapshots, list_href, export_url }) {
     return (
@@ -68,8 +69,8 @@ export default function WalletShow({ header, wallet, entries, holds, snapshots, 
                                         <TableCell>{e.id}</TableCell>
                                         <TableCell>{e.side}</TableCell>
                                         <TableCell>{e.type}</TableCell>
-                                        <TableCell>{e.amount}</TableCell>
-                                        <TableCell>{e.running_balance_after}</TableCell>
+                                        <TableCell>{formatMoney(e.amount, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
+                                        <TableCell>{formatMoney(e.running_balance_after, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
                                         <TableCell>{e.reference}</TableCell>
                                         <TableCell className="text-muted-foreground">{e.occurred_at ?? '—'}</TableCell>
                                     </TableRow>
@@ -104,7 +105,7 @@ export default function WalletShow({ header, wallet, entries, holds, snapshots, 
                                             <TableCell>{h.id}</TableCell>
                                             <TableCell><StatusBadge status={h.status} /></TableCell>
                                             <TableCell>{h.type}</TableCell>
-                                            <TableCell>{h.currency} {h.amount}</TableCell>
+                                            <TableCell>{formatMoney(h.amount, h.currency, { currencyDisplay: 'code' })}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
@@ -132,8 +133,8 @@ export default function WalletShow({ header, wallet, entries, holds, snapshots, 
                                     {snapshots.map((s, i) => (
                                         <TableRow key={i}>
                                             <TableCell className="text-muted-foreground">{s.as_of ?? '—'}</TableCell>
-                                            <TableCell>{s.available_balance}</TableCell>
-                                            <TableCell>{s.held_balance}</TableCell>
+                                            <TableCell>{formatMoney(s.available_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
+                                            <TableCell>{formatMoney(s.held_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

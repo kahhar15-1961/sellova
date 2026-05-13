@@ -51,16 +51,17 @@ final class BuyerShowController extends AdminPageController
 
         return Inertia::render('Admin/Buyers/Show', [
             'header' => $this->pageHeader(
-                'Buyer #'.$buyer->id,
+                $buyer->display_name ?? ('Buyer #'.$buyer->id),
                 'Buyer 360 profile with transaction behavior and support risk context.',
                 [
                     ['label' => 'Overview', 'href' => route('admin.dashboard')],
                     ['label' => 'Buyers', 'href' => route('admin.buyers.index')],
-                    ['label' => $buyer->email ?? ('#'.$buyer->id)],
+                    ['label' => trim((string) (($buyer->display_name ?? 'Buyer #'.$buyer->id).' · '.($buyer->email ?? 'No email')))],
                 ],
             ),
             'buyer' => [
                 'id' => $buyer->id,
+                'name' => $buyer->display_name,
                 'email' => $buyer->email,
                 'phone' => $buyer->phone,
                 'status' => $buyer->status,

@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { formatMoney } from '@/lib/utils';
 
 export default function WithdrawalShow({ header, withdrawal, can_review, review_open, list_href, review_url }) {
     const page = usePage();
@@ -43,10 +44,10 @@ export default function WithdrawalShow({ header, withdrawal, can_review, review_
                             Status: <StatusBadge status={withdrawal.status} />
                         </p>
                         <p>
-                            Requested: {withdrawal.currency} {withdrawal.requested_amount}
+                            Requested: {formatMoney(withdrawal.requested_amount, withdrawal.currency, { currencyDisplay: 'code' })}
                         </p>
                         <p>
-                            Net payout: {withdrawal.currency} {withdrawal.net_payout_amount}
+                            Net payout: {formatMoney(withdrawal.net_payout_amount, withdrawal.currency, { currencyDisplay: 'code' })}
                         </p>
                         <p className="text-muted-foreground">Created: {withdrawal.created_at}</p>
                         <p className="text-muted-foreground">Reviewed: {withdrawal.reviewed_at ?? '—'}</p>

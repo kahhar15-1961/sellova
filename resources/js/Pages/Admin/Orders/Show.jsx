@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatMoney } from '@/lib/utils';
 
 function fmtDate(value) {
     if (!value) return '—';
@@ -16,10 +17,7 @@ function fmtDate(value) {
 }
 
 function moneyLine(currency, amount) {
-    const normalized = Number.parseFloat(String(amount ?? 0));
-    const formatted = Number.isFinite(normalized) ? normalized.toFixed(2) : String(amount ?? '0.00');
-    const code = (currency || '').toString().trim().toUpperCase();
-    return code ? `${code} ${formatted}` : formatted;
+    return formatMoney(amount, currency, { currencyDisplay: 'code' });
 }
 
 function TimerPanel({ state }) {
@@ -122,8 +120,8 @@ function WalletTable({ wallets }) {
                         <TableCell>
                             <StatusBadge status={wallet.status} />
                         </TableCell>
-                        <TableCell>{wallet.currency} {wallet.available_balance}</TableCell>
-                        <TableCell>{wallet.currency} {wallet.held_balance}</TableCell>
+                        <TableCell>{moneyLine(wallet.currency, wallet.available_balance)}</TableCell>
+                        <TableCell>{moneyLine(wallet.currency, wallet.held_balance)}</TableCell>
                     </TableRow>
                 ))}
             </TableBody>
@@ -171,9 +169,12 @@ export default function OrderShow({
                             <p>
                                 <span className="text-muted-foreground">Buyer:</span>{' '}
                                 {buyer ? (
-                                    <Link href={buyer.href} className="font-medium text-primary hover:underline">
-                                        {buyer.email ?? `#${buyer.id}`}
-                                    </Link>
+                                    <span className="inline-flex flex-col align-top">
+                                        <Link href={buyer.href} className="font-medium text-primary hover:underline">
+                                            {buyer.name ?? `Buyer #${buyer.id}`}
+                                        </Link>
+                                        <span className="text-xs text-muted-foreground">{buyer.email ?? 'No email'}</span>
+                                    </span>
                                 ) : (
                                     '—'
                                 )}
@@ -181,9 +182,12 @@ export default function OrderShow({
                             <p>
                                 <span className="text-muted-foreground">Seller:</span>{' '}
                                 {seller ? (
-                                    <Link href={seller.href} className="font-medium text-primary hover:underline">
-                                        {seller.display_name ?? `#${seller.id}`}
-                                    </Link>
+                                    <span className="inline-flex flex-col align-top">
+                                        <Link href={seller.href} className="font-medium text-primary hover:underline">
+                                            {seller.display_name ?? `Seller #${seller.id}`}
+                                        </Link>
+                                        <span className="text-xs text-muted-foreground">{seller.account_email ?? 'No email'}</span>
+                                    </span>
                                 ) : (
                                     '—'
                                 )}
@@ -258,6 +262,9 @@ export default function OrderShow({
                                     <p>Email: {buyer.email ?? '—'}</p>
                                     <p>Status: <StatusBadge status={buyer.status} /></p>
                                 </div>
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={buyer.trust_href}>Open buyer trust details</Link>
+                                </Button>
                                 <WalletTable wallets={buyer.wallets} />
                             </>
                         )}
@@ -281,6 +288,9 @@ export default function OrderShow({
                                     <p>Verification: <StatusBadge status={seller.verification_status} /></p>
                                     <p>Store status: <StatusBadge status={seller.store_status} /></p>
                                 </div>
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={seller.trust_href}>Open seller trust details</Link>
+                                </Button>
                                 <WalletTable wallets={seller.wallets} />
                             </>
                         )}
@@ -344,9 +354,9 @@ export default function OrderShow({
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <p>State: {escrow.state}</p>
                                 <p>Currency: {escrow.currency}</p>
-                                <p>Held: {escrow.currency} {escrow.held_amount}</p>
-                                <p>Released: {escrow.currency} {escrow.released_amount}</p>
-                                <p>Refunded: {escrow.currency} {escrow.refunded_amount}</p>
+                                <p>Held: {moneyLine(escrow.currency, escrow.held_amount)}</p>
+                                <p>Released: {moneyLine(escrow.currency, escrow.released_amount)}</p>
+                                <p>Refunded: {moneyLine(escrow.currency, escrow.refunded_amount)}</p>
                             </div>
                         )}
                     </CardContent>
@@ -391,7 +401,7 @@ export default function OrderShow({
                                                     <Link href={w.href} className="text-primary hover:underline">#{w.id}</Link>
                                                 </TableCell>
                                                 <TableCell><StatusBadge status={w.status} /></TableCell>
-                                                <TableCell>{w.currency} {w.net_payout_amount}</TableCell>
+                                                <TableCell>{moneyLine(w.currency, w.net_payout_amount)}</TableCell>
                                                 <TableCell className="text-muted-foreground">{fmtDate(w.created_at)}</TableCell>
                                             </TableRow>
                                         ))}

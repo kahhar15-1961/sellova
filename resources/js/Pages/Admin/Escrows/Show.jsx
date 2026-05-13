@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { formatMoney } from '@/lib/utils';
 
 function fmtDate(iso) {
     if (!iso) return '—';
@@ -18,8 +19,7 @@ function fmtDate(iso) {
 }
 
 function money(currency, amount) {
-    const formatted = Number.parseFloat(String(amount ?? 0)).toFixed(2);
-    return `${currency || ''} ${formatted}`.trim();
+    return formatMoney(amount, currency, { currencyDisplay: 'code' });
 }
 
 function toInputDateTime(value) {
@@ -184,18 +184,24 @@ export default function EscrowShow({ header, escrow, disputes, events, can_manag
                             {escrow.buyer ? (
                                 <p>
                                     Buyer:{' '}
-                                    <Link href={escrow.buyer.href} className="font-medium text-primary hover:underline">
-                                        {escrow.buyer.email}
-                                    </Link>
+                                    <span className="inline-flex flex-col align-top">
+                                        <Link href={escrow.buyer.href} className="font-medium text-primary hover:underline">
+                                            {escrow.buyer.name ?? `Buyer #${escrow.buyer.id}`}
+                                        </Link>
+                                        <span className="text-xs text-muted-foreground">{escrow.buyer.email ?? 'No email'}</span>
+                                    </span>
                                 </p>
                             ) : <p className="text-muted-foreground">No buyer linked.</p>}
                             {escrow.seller ? (
                                 <div className="space-y-1">
                                     <p>
                                         Seller:{' '}
-                                        <Link href={escrow.seller.href} className="font-medium text-primary hover:underline">
-                                            {escrow.seller.display_name ?? `#${escrow.seller.id}`}
-                                        </Link>
+                                        <span className="inline-flex flex-col align-top">
+                                            <Link href={escrow.seller.href} className="font-medium text-primary hover:underline">
+                                                {escrow.seller.display_name ?? `Seller #${escrow.seller.id}`}
+                                            </Link>
+                                            <span className="text-xs text-muted-foreground">{escrow.seller.account_email ?? 'No email'}</span>
+                                        </span>
                                     </p>
                                     {escrow.seller.storefront ? (
                                         <p className="text-muted-foreground">

@@ -19,7 +19,7 @@ final class NotificationPresenter
             : (is_array($notification->payload_json ?? null) ? $notification->payload_json : []);
 
         $role = self::normalizeRole(
-            (string) ($notification->user_role ?? ($metadata['role'] ?? '')),
+            (string) ($metadata['recipient_context'] ?? $metadata['recipient_role'] ?? $notification->user_role ?? ($metadata['role'] ?? '')),
             self::actionUrl($notification, $metadata),
         );
         $actionUrl = self::sanitizeActionUrl(self::actionUrl($notification, $metadata), $role);
@@ -65,9 +65,20 @@ final class NotificationPresenter
             'createdAt' => $notification->created_at?->toIso8601String(),
             'metadata' => $metadata,
             'payload' => $metadata,
+            'recipient_user_id' => (int) ($metadata['recipient_user_id'] ?? $notification->user_id),
+            'recipient_account_id' => $metadata['recipient_account_id'] ?? null,
+            'recipient_role' => (string) ($metadata['recipient_role'] ?? $role),
+            'recipient_context' => (string) ($metadata['recipient_context'] ?? $role),
+            'actor_user_id' => $metadata['actor_user_id'] ?? null,
+            'actor_role' => $metadata['actor_role'] ?? null,
+            'notification_type' => (string) ($metadata['notification_type'] ?? $type),
+            'context_route_name' => $metadata['context_route_name'] ?? null,
+            'context_entity_type' => $metadata['context_entity_type'] ?? null,
+            'context_entity_id' => $metadata['context_entity_id'] ?? ($metadata['order_id'] ?? null),
             'priority' => $priority,
             'channel' => (string) $notification->channel,
             'role' => $role,
+            'context' => $role,
             'kind' => $type,
         ];
     }
@@ -77,7 +88,10 @@ final class NotificationPresenter
      */
     public static function inferRoleFromMetadata(array $metadata): string
     {
-        return self::normalizeRole(isset($metadata['role']) ? (string) $metadata['role'] : '', isset($metadata['href']) ? (string) $metadata['href'] : null);
+        return self::normalizeRole(
+            (string) ($metadata['recipient_context'] ?? $metadata['recipient_role'] ?? $metadata['role'] ?? ''),
+            isset($metadata['href']) ? (string) $metadata['href'] : null,
+        );
     }
 
     private static function actionUrl(Notification $notification, array $metadata): ?string
@@ -92,16 +106,24 @@ final class NotificationPresenter
     private static function normalizeRole(string $role, ?string $actionUrl): string
     {
         $normalized = Str::of($role)->lower()->trim()->toString();
-        if (in_array($normalized, ['buyer', 'seller', 'all'], true)) {
+        if (in_array($normalized, ['buyer', 'seller', 'admin', 'all'], true)) {
             return $normalized;
         }
 
-        return str_starts_with((string) $actionUrl, '/seller/') ? 'seller' : 'buyer';
+        return match (true) {
+            str_starts_with((string) $actionUrl, '/seller/') => 'seller',
+            str_starts_with((string) $actionUrl, '/admin/') => 'admin',
+            default => 'buyer',
+        };
     }
 
     private static function sanitizeActionUrl(?string $actionUrl, string $role): string
     {
-        $fallback = $role === 'seller' ? '/seller/notifications' : '/notifications';
+        $fallback = match ($role) {
+            'seller' => '/seller/notifications',
+            'admin' => '/admin',
+            default => '/notifications',
+        };
         $url = trim((string) $actionUrl);
 
         if ($url === '' || str_starts_with($url, '//') || preg_match('/^\s*(javascript|data):/i', $url)) {

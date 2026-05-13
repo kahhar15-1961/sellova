@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatMoney } from '@/lib/utils';
 
 function fmtDate(iso) {
     if (!iso) return '—';
@@ -135,8 +136,8 @@ export default function SellerProfileShow({
                                             </TableCell>
                                             <TableCell>{wallet.type}</TableCell>
                                             <TableCell><StatusBadge status={wallet.status} /></TableCell>
-                                            <TableCell>{wallet.currency} {wallet.available_balance}</TableCell>
-                                            <TableCell>{wallet.currency} {wallet.held_balance}</TableCell>
+                                            <TableCell>{formatMoney(wallet.available_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
+                                            <TableCell>{formatMoney(wallet.held_balance, wallet.currency, { currencyDisplay: 'code' })}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
@@ -266,7 +267,7 @@ export default function SellerProfileShow({
                                                 <Link href={withdrawal.href} className="font-medium text-primary hover:underline">#{withdrawal.id}</Link>
                                             </TableCell>
                                             <TableCell><StatusBadge status={withdrawal.status} /></TableCell>
-                                            <TableCell>{withdrawal.currency} {withdrawal.net_payout_amount}</TableCell>
+                                            <TableCell>{formatMoney(withdrawal.net_payout_amount, withdrawal.currency, { currencyDisplay: 'code' })}</TableCell>
                                             <TableCell className="text-muted-foreground">{fmtDate(withdrawal.created_at)}</TableCell>
                                         </TableRow>
                                     ))}

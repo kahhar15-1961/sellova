@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/admin/PageHeader';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatMoney } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -72,7 +73,7 @@ export default function DisputeShow({
                             <ul className="space-y-1">
                                 <li>State: {escrow.state}</li>
                                 <li>
-                                    Held: {escrow.currency} {escrow.held_amount}
+                                    Held: {formatMoney(escrow.held_amount, escrow.currency, { currencyDisplay: 'code' })}
                                 </li>
                             </ul>
                         )}
@@ -146,8 +147,8 @@ export default function DisputeShow({
                     <CardContent className="text-sm">
                         <p>Outcome: {decision.outcome}</p>
                         <p>
-                            Buyer: {decision.currency} {decision.buyer_amount} · Seller: {decision.currency}{' '}
-                            {decision.seller_amount}
+                            Buyer: {formatMoney(decision.buyer_amount, decision.currency, { currencyDisplay: 'code' })} · Seller:{' '}
+                            {formatMoney(decision.seller_amount, decision.currency, { currencyDisplay: 'code' })}
                         </p>
                         <p>Reason: {decision.reason_code}</p>
                         <p className="text-muted-foreground">Decided: {decision.decided_at}</p>

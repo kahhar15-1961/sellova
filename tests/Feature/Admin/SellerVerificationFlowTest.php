@@ -8,10 +8,22 @@ use App\Auth\RoleCodes;
 use App\Models\StaffUser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 final class SellerVerificationFlowTest extends TestCase
 {
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function postWithCsrf(string $uri, array $data = []): TestResponse
+    {
+        $token = 'seller-verification-test-token';
+
+        return $this->withSession(['_token' => $token])
+            ->post($uri, ['_token' => $token, ...$data]);
+    }
+
     private function seedSuperAdminRoleId(): int
     {
         $now = now();
@@ -109,8 +121,9 @@ final class SellerVerificationFlowTest extends TestCase
     {
         ['admin' => $admin, 'kycId' => $kycId] = $this->seedSubmittedKycCase();
 
-        $this->actingAs($admin, 'web')
-            ->post(route('admin.sellers.kyc.claim', ['kyc' => $kycId]))
+        $this->actingAs($admin, 'web');
+
+        $this->postWithCsrf(route('admin.sellers.kyc.claim', ['kyc' => $kycId]))
             ->assertRedirect();
 
         $this->assertDatabaseHas('kyc_verifications', [
@@ -118,8 +131,7 @@ final class SellerVerificationFlowTest extends TestCase
             'status' => 'under_review',
         ]);
 
-        $this->actingAs($admin, 'web')
-            ->post(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
+        $this->postWithCsrf(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
                 'decision' => 'approved',
                 'reason' => null,
             ])
@@ -143,15 +155,15 @@ final class SellerVerificationFlowTest extends TestCase
     {
         ['admin' => $admin, 'kycId' => $kycId] = $this->seedSubmittedKycCase();
 
-        $this->actingAs($admin, 'web')->post(route('admin.sellers.kyc.claim', ['kyc' => $kycId]));
-        $this->actingAs($admin, 'web')->post(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
+        $this->actingAs($admin, 'web');
+        $this->postWithCsrf(route('admin.sellers.kyc.claim', ['kyc' => $kycId]));
+        $this->postWithCsrf(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
             'decision' => 'approved',
         ]);
 
         $countAfterFirst = DB::table('audit_logs')->where('target_type', 'kyc_verification')->where('target_id', $kycId)->count();
 
-        $this->actingAs($admin, 'web')
-            ->post(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
+        $this->postWithCsrf(route('admin.sellers.kyc.review', ['kyc' => $kycId]), [
                 'decision' => 'approved',
             ])
             ->assertRedirect(route('admin.sellers.kyc.show', ['kyc' => $kycId]));

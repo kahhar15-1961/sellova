@@ -14,8 +14,8 @@ export const Switch = React.forwardRef(function Switch(
       disabled={disabled}
       onClick={() => onCheckedChange?.(!checked)}
       className={[
-        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors',
-        checked ? 'bg-primary' : 'bg-muted',
+        'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+        checked ? 'border-primary/10 bg-primary' : 'border-border/80 bg-secondary',
         disabled ? 'cursor-not-allowed opacity-50' : '',
         className,
       ].join(' ')}
@@ -24,8 +24,8 @@ export const Switch = React.forwardRef(function Switch(
       <span
         data-state={checked ? 'checked' : 'unchecked'}
         className={[
-          'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow transition-transform',
-          checked ? 'translate-x-5' : 'translate-x-1',
+          'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1',
         ].join(' ')}
       />
     </button>

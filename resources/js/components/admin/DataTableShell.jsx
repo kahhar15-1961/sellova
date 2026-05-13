@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { EmptyState } from '@/components/admin/EmptyState';
 import { Package } from 'lucide-react';
+import { EmptyState } from '@/components/admin/EmptyState';
+import { DataTable, TableContainer, TableHead } from '@/components/admin/data-table';
 import { cn } from '@/lib/utils';
 
 /**
@@ -29,39 +29,45 @@ export function DataTableShell({
     }
 
     return (
-        <div className={cn('overflow-x-auto rounded-lg border border-border/80 bg-card shadow-sm', className)}>
-            <Table>
-                <TableHeader className={cn(stickyHeader && 'sticky top-0 z-10 bg-card')}>
-                    <TableRow>
-                        {columns.map((col) => (
-                            <TableHead key={col}>{col}</TableHead>
-                        ))}
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {rows.map((row, ri) => {
-                        const href = typeof row.href === 'string' ? row.href : null;
-                        return (
-                            <TableRow key={ri} className="hover:bg-muted/40">
-                                {columns.map((col, ci) => {
-                                    const raw = row[col] ?? '—';
-                                    const rendered = renderers[col] ? renderers[col](raw, row) : String(raw);
-                                    if (linkableFirstColumn && ci === 0 && href) {
+        <DataTable className={className}>
+            <div className="admin-scrollbar overflow-x-auto">
+                <TableContainer className="rounded-none border-0 bg-transparent shadow-none">
+                    <thead className={cn(stickyHeader && 'sticky top-0 z-10')}>
+                        <tr className="h-[38px] border-b border-slate-200 bg-slate-50/80 hover:bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/30 dark:hover:bg-slate-900/30">
+                            {columns.map((col) => (
+                                <TableHead key={col} className="px-3 text-[10px] font-bold uppercase tracking-normal text-slate-500 dark:text-slate-400">{col}</TableHead>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row, ri) => {
+                            const href = typeof row.href === 'string' ? row.href : null;
+                            return (
+                                <tr key={ri} className="h-[49px] border-b border-slate-100 transition-colors hover:bg-slate-50/70 dark:border-slate-700/70 dark:hover:bg-slate-900/22">
+                                    {columns.map((col, ci) => {
+                                        const raw = row[col] ?? '—';
+                                        const rendered = renderers[col] ? renderers[col](raw, row) : String(raw);
+                                        if (linkableFirstColumn && ci === 0 && href) {
+                                            return (
+                                                <td key={col} className={cn('px-3 align-middle text-[12px]', dense ? 'py-2' : 'py-3')}>
+                                                    <Link href={href} className="font-semibold text-slate-950 transition-colors hover:text-primary dark:text-slate-100">
+                                                        {rendered}
+                                                    </Link>
+                                                </td>
+                                            );
+                                        }
                                         return (
-                                            <TableCell key={col} className={cn(dense && 'py-2')}>
-                                                <Link href={href} className="font-medium text-primary hover:underline">
-                                                    {rendered}
-                                                </Link>
-                                            </TableCell>
+                                            <td key={col} className={cn('px-3 align-middle text-[12px] text-slate-700 dark:text-slate-300', dense ? 'py-2' : 'py-3')}>
+                                                {rendered}
+                                            </td>
                                         );
-                                    }
-                                    return <TableCell key={col} className={cn(dense && 'py-2')}>{rendered}</TableCell>;
-                                })}
-                            </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
-        </div>
+                                    })}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </TableContainer>
+            </div>
+        </DataTable>
     );
 }

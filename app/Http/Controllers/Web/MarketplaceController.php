@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Web;
 
 use App\Domain\Commands\WalletLedger\ComputeWalletBalancesCommand;
+use App\Domain\Commands\Order\AddOrderShippingDetailsCommand;
 use App\Domain\Commands\Order\CreateOrderCommand;
 use App\Domain\Commands\Product\CreateProductCommand;
+use App\Domain\Enums\ProductType;
 use App\Domain\Commands\WalletTopUp\RequestWalletTopUpCommand;
 use App\Domain\Commands\Withdrawal\RequestWithdrawalCommand;
 use App\Domain\Enums\WalletAccountStatus;
 use App\Domain\Enums\WalletType;
+use App\Domain\Exceptions\OrderValidationFailedException;
 use App\Domain\Exceptions\WithdrawalValidationFailedException;
 use App\Domain\Value\CartLineItem;
 use App\Domain\Value\CartSnapshot;
@@ -21,6 +24,7 @@ use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\BuyerReview;
 use App\Models\DigitalDeliveryFile;
 use App\Models\AuditLog;
 use App\Models\InventoryRecord;
@@ -67,6 +71,7 @@ use App\Services\DigitalDelivery\DigitalDeliveryService;
 use App\Services\Product\ProductService;
 use App\Services\Promotion\PromotionService;
 use App\Services\Kyc\KycProviderService;
+use App\Services\Marketplace\ReviewService as MarketplaceReviewService;
 use App\Services\Dispute\DisputeService;
 use App\Services\WalletLedger\WalletLedgerService;
 use App\Services\Withdrawal\WithdrawalService;
@@ -112,11 +117,15 @@ final class MarketplaceController extends Controller
     {
         if (! Auth::check()) {
             request()->session()->put('url.intended', '/seller/dashboard');
-            return redirect()->route('login', ['panel' => 'seller']);
+            request()->session()->put('auth.panel', 'seller');
+
+            return redirect()->route('login');
         }
 
         if (Auth::user()?->sellerProfile === null) {
-            return redirect()->route('web.register', ['panel' => 'seller']);
+            request()->session()->put('auth.panel', 'seller');
+
+            return redirect()->route('web.register');
         }
 
         return $this->render('seller', 'seller-dashboard');
@@ -146,17 +155,28 @@ final class MarketplaceController extends Controller
     public function buyerView(string $view): Response|RedirectResponse
     {
         if (in_array($view, [
-            'dashboard', 'orders', 'order-details', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests',
+            'dashboard', 'checkout', 'orders', 'order-details', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests',
             'wishlist', 'saved-items', 'favorite-stores', 'recently-viewed', 'profile', 'profile-settings', 'security-settings',
             'address-book', 'wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards',
             'coupons-promotions', 'support', 'support-tickets', 'notifications', 'messages', 'product-reviews', 'seller-reviews',
             'kyc-verification', 'device-management',
         ], true) && ! Auth::check()) {
             request()->session()->put('url.intended', '/'.$view);
-            return redirect()->route('login', ['panel' => 'buyer']);
+            request()->session()->put('auth.panel', 'buyer');
+
+            return redirect()->route('login');
         }
 
         return $this->render('buyer', $view);
+    }
+
+    public function buyerOrderShow(Order $order): Response|RedirectResponse
+    {
+        $this->authorizeOrderParticipant($order, 'buyer');
+
+        request()->query->set('order', (string) $order->id);
+
+        return $this->render('buyer', 'order-details');
     }
 
     public function sellerView(string|int|null $view = null, ?string $routeView = null): Response|RedirectResponse
@@ -165,14 +185,27 @@ final class MarketplaceController extends Controller
 
         if (! Auth::check()) {
             request()->session()->put('url.intended', '/seller/'.($view === null ? 'dashboard' : $view));
-            return redirect()->route('login', ['panel' => 'seller']);
+            request()->session()->put('auth.panel', 'seller');
+
+            return redirect()->route('login');
         }
 
         if (Auth::user()?->sellerProfile === null) {
-            return redirect()->route('web.register', ['panel' => 'seller']);
+            request()->session()->put('auth.panel', 'seller');
+
+            return redirect()->route('web.register');
         }
 
         return $this->render('seller', $view === null ? 'seller-dashboard' : 'seller-'.$view);
+    }
+
+    public function sellerOrderShow(Order $order): Response|RedirectResponse
+    {
+        $this->authorizeOrderParticipant($order, 'seller');
+
+        request()->query->set('order', (string) $order->id);
+
+        return $this->render('seller', 'seller-order-details');
     }
 
     public function cartAdd(Request $request): JsonResponse
@@ -184,7 +217,13 @@ final class MarketplaceController extends Controller
         ]);
         $productId = (int) $payload['product_id'];
         $product = Product::query()
-            ->with(['seller_profile', 'category.parent', 'inventoryRecords', 'productVariants.inventoryRecords'])
+            ->with([
+                'seller_profile.user',
+                'category.parent',
+                'inventoryRecords',
+                'productVariants.inventoryRecords',
+                'reviews' => static fn ($query) => $query->where('status', 'visible')->with('buyer')->latest(),
+            ])
             ->withCount([
                 'reviews' => static fn ($query) => $query->where('status', 'visible'),
                 'orderItems',
@@ -236,10 +275,33 @@ final class MarketplaceController extends Controller
 
     public function orderEscrowDetail(Request $request, Order $order): JsonResponse
     {
-        $viewerId = $this->authorizeOrderParticipant($order);
+        $context = $request->query('context');
+        $viewerId = $this->authorizeOrderParticipant($order, in_array($context, ['buyer', 'seller'], true) ? (string) $context : null);
         $detail = app(EscrowOrderDetailService::class)->build($order, $viewerId);
 
         return response()->json(['ok' => true, 'detail' => $detail]);
+    }
+
+    public function buyerOrderApiShow(Order $order): JsonResponse
+    {
+        $viewerId = $this->authorizeOrderParticipant($order, 'buyer');
+
+        return response()->json([
+            'ok' => true,
+            'context' => 'buyer',
+            'detail' => app(EscrowOrderDetailService::class)->build($order, $viewerId),
+        ]);
+    }
+
+    public function sellerOrderApiShow(Order $order): JsonResponse
+    {
+        $viewerId = $this->authorizeOrderParticipant($order, 'seller');
+
+        return response()->json([
+            'ok' => true,
+            'context' => 'seller',
+            'detail' => app(EscrowOrderDetailService::class)->build($order, $viewerId),
+        ]);
     }
 
     public function buyerOrderRelease(Request $request, Order $order): JsonResponse
@@ -256,6 +318,171 @@ final class MarketplaceController extends Controller
             'ok' => true,
             'marketplace' => $this->marketplacePayload(),
             'escrow_order_detail' => app(EscrowOrderDetailService::class)->build($order->fresh(), $viewerId),
+        ]);
+    }
+
+    public function buyerOrderReviewStore(Request $request, Order $order): JsonResponse
+    {
+        $viewerId = $this->authorizeOrderParticipant($order, 'buyer');
+        $payload = $request->validate([
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'feedback_type' => ['nullable', 'string', 'in:good,neutral,bad'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+            'tags' => ['nullable', 'array', 'max:12'],
+            'tags.*' => ['string', 'max:40'],
+            'category_ratings' => ['nullable', 'array'],
+        ]);
+
+        $order->loadMissing(['orderItems']);
+        $status = $order->status instanceof \BackedEnum ? (string) $order->status->value : (string) $order->status;
+        abort_unless($status === 'completed' || $order->completed_at !== null || (string) $order->escrow_status === 'released', 422, 'Reviews can be submitted only after the order is completed.');
+
+        $item = $order->orderItems->first();
+        abort_unless($item instanceof OrderItem, 422, 'This order does not have a reviewable item.');
+
+        $review = Review::query()
+            ->where('order_item_id', (int) $item->id)
+            ->where('buyer_user_id', $viewerId)
+            ->first();
+
+        if (! $review instanceof Review) {
+            $review = new Review([
+                'uuid' => (string) Str::uuid(),
+                'order_item_id' => (int) $item->id,
+                'buyer_user_id' => $viewerId,
+            ]);
+        }
+
+        $review->seller_profile_id = (int) ($item->seller_profile_id ?? $order->seller_profile_id ?? 0);
+        $review->product_id = (int) ($item->product_id ?? $order->primary_product_id ?? 0);
+        $review->rating = (int) $payload['rating'];
+        $review->feedback_type = (string) ($payload['feedback_type'] ?? $this->feedbackTypeForRating((int) $payload['rating']));
+        $review->comment = trim((string) ($payload['comment'] ?? ''));
+        $review->tags = array_values(array_slice(array_filter((array) ($payload['tags'] ?? [])), 0, 12));
+        $review->status = 'visible';
+        $review->helpful_count = (int) ($review->helpful_count ?? 0);
+        $review->save();
+        app(MarketplaceReviewService::class)->store($request->user(), [
+            'reviewer_role' => 'buyer',
+            'reviewed_role' => 'seller',
+            'reviewed_id' => (int) $review->seller_profile_id,
+            'order_id' => (int) $order->id,
+            'rating' => (int) $payload['rating'],
+            'feedback_type' => (string) $review->feedback_type,
+            'comment' => (string) ($review->comment ?? ''),
+            'tags' => $review->tags ?? [],
+            'category_ratings' => $payload['category_ratings'] ?? [],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'review' => [
+                'id' => (int) $review->id,
+                'rating' => (int) $review->rating,
+                'comment' => (string) ($review->comment ?? ''),
+                'createdAt' => $review->created_at?->toIso8601String(),
+            ],
+            'marketplace' => $this->marketplacePayload(),
+            'escrow_order_detail' => app(EscrowOrderDetailService::class)->build($order->fresh(), $viewerId),
+        ]);
+    }
+
+    public function sellerBuyerReviewStore(Request $request, Order $order): JsonResponse
+    {
+        $viewerId = $this->authorizeOrderParticipant($order, 'seller');
+        $payload = $request->validate([
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'feedback_type' => ['nullable', 'string', 'in:good,neutral,bad'],
+            'comment' => ['nullable', 'string', 'max:2000'],
+            'tags' => ['nullable', 'array', 'max:12'],
+            'tags.*' => ['string', 'max:40'],
+            'category_ratings' => ['nullable', 'array'],
+        ]);
+
+        $status = $order->status instanceof \BackedEnum ? (string) $order->status->value : (string) $order->status;
+        abort_unless($status === 'completed' || $order->completed_at !== null || (string) $order->escrow_status === 'released', 422, 'Buyer reviews can be submitted only after the order is completed.');
+
+        $order->loadMissing(['orderItems']);
+        $sellerProfileId = (int) ($order->orderItems->first()?->seller_profile_id ?? 0);
+        if ($sellerProfileId <= 0) {
+            $sellerProfileId = (int) SellerProfile::query()->where('user_id', $viewerId)->value('id');
+        }
+        abort_unless($sellerProfileId > 0, 403);
+
+        $review = BuyerReview::query()
+            ->where('order_id', (int) $order->id)
+            ->where('seller_profile_id', $sellerProfileId)
+            ->first();
+
+        if (! $review instanceof BuyerReview) {
+            $review = new BuyerReview([
+                'uuid' => (string) Str::uuid(),
+                'order_id' => (int) $order->id,
+                'seller_user_id' => $viewerId,
+                'seller_profile_id' => $sellerProfileId,
+                'buyer_user_id' => (int) $order->buyer_user_id,
+            ]);
+        }
+
+        $review->rating = (int) $payload['rating'];
+        $review->feedback_type = (string) ($payload['feedback_type'] ?? $this->feedbackTypeForRating((int) $payload['rating']));
+        $review->comment = trim((string) ($payload['comment'] ?? ''));
+        $review->tags = array_values(array_slice(array_filter((array) ($payload['tags'] ?? [])), 0, 12));
+        $review->status = 'visible';
+        $review->save();
+        app(MarketplaceReviewService::class)->store($request->user(), [
+            'reviewer_role' => 'seller',
+            'reviewed_role' => 'buyer',
+            'reviewed_id' => (int) $order->buyer_user_id,
+            'order_id' => (int) $order->id,
+            'rating' => (int) $payload['rating'],
+            'feedback_type' => (string) $review->feedback_type,
+            'comment' => (string) ($review->comment ?? ''),
+            'tags' => $review->tags ?? [],
+            'category_ratings' => $payload['category_ratings'] ?? [],
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'buyer_review' => [
+                'id' => (int) $review->id,
+                'rating' => (int) $review->rating,
+                'comment' => (string) ($review->comment ?? ''),
+                'createdAt' => $review->created_at?->toIso8601String(),
+            ],
+            'marketplace' => $this->marketplacePayload(),
+            'escrow_order_detail' => app(EscrowOrderDetailService::class)->build($order->fresh(), $viewerId),
+        ]);
+    }
+
+    public function reviewHelpfulStore(Request $request, Review $review): JsonResponse
+    {
+        $viewerId = (int) $request->user()->id;
+        $review->loadMissing(['seller_profile']);
+
+        abort_unless((string) $review->status === 'visible', 404);
+        abort_if((int) ($review->seller_profile?->user_id ?? 0) === $viewerId, 422, 'Sellers cannot mark their own store reviews as helpful.');
+
+        DB::transaction(function () use ($review, $viewerId): void {
+            $inserted = DB::table('review_helpful_votes')->insertOrIgnore([
+                'review_id' => (int) $review->id,
+                'user_id' => $viewerId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            if ($inserted > 0) {
+                $review->increment('helpful_count');
+            }
+        });
+
+        return response()->json([
+            'ok' => true,
+            'review' => [
+                'id' => (int) $review->id,
+                'helpfulCount' => (int) $review->fresh()->helpful_count,
+            ],
+            'marketplace' => $this->marketplacePayload(),
         ]);
     }
 
@@ -291,16 +518,66 @@ final class MarketplaceController extends Controller
             'delivery_version' => ['nullable', 'string', 'max:32'],
             'files.*' => ['nullable', 'file', 'max:25600'],
         ]);
+        $deliveryNote = trim((string) ($payload['delivery_message'] ?? ''));
+        if ($deliveryNote === '') {
+            $deliveryNote = 'Marked delivered by seller.';
+        }
 
-        app(DigitalDeliveryService::class)->submitDelivery(
-            order: $order,
-            actorUserId: $viewerId,
-            note: $payload['delivery_message'] ?? null,
-            externalUrl: $payload['external_delivery_url'] ?? null,
-            version: $payload['delivery_version'] ?? null,
-            files: array_values($request->file('files', [])),
-            correlationId: 'web:seller:delivery:'.$order->id,
-        );
+        $productType = ProductType::normalize((string) $order->product_type);
+        if ($productType === ProductType::Physical) {
+            $proofFiles = array_values($request->file('files', []));
+            $trackingId = trim((string) ($payload['delivery_version'] ?? ''));
+            if ($trackingId === '' || strtolower($trackingId) === 'v1') {
+                $trackingId = 'SELL-'.$order->id.'-'.now()->format('YmdHis');
+            }
+            $trackingUrl = trim((string) ($payload['external_delivery_url'] ?? ''));
+            $alreadyShipped = $order->shipped_at !== null
+                || trim((string) ($order->tracking_id ?? '')) !== ''
+                || in_array((string) ($order->delivery_status ?? ''), ['shipped', 'in_transit', 'out_for_delivery'], true);
+
+            app(OrderService::class)->addShippingDetails(new AddOrderShippingDetailsCommand(
+                orderId: (int) $order->id,
+                actorUserId: $viewerId,
+                courierCompany: 'Seller delivery',
+                trackingId: $trackingId,
+                trackingUrl: $trackingUrl !== '' ? $trackingUrl : null,
+                shippingNote: $deliveryNote,
+                shippedAtIso: now()->toIso8601String(),
+                correlationId: 'web:seller:delivery:'.$order->id,
+            ));
+            $freshOrder = $order->fresh();
+            $freshOrder->tracking_url = $trackingUrl !== '' ? $trackingUrl : null;
+            $freshOrder->delivery_note = $deliveryNote;
+            $freshOrder->delivery_version = $trackingId;
+            $freshOrder->delivery_files_count = count($proofFiles);
+            if ($alreadyShipped) {
+                $freshOrder->delivery_status = 'delivered';
+                $freshOrder->delivered_at = $freshOrder->delivered_at ?: now();
+                $freshOrder->delivery_submitted_at = $freshOrder->delivery_submitted_at ?: now();
+            } else {
+                $freshOrder->delivery_status = 'shipped';
+            }
+            $freshOrder->save();
+
+            app(OrderMessageService::class)->sendMessage(
+                order: $freshOrder,
+                senderUserId: $viewerId,
+                body: $deliveryNote,
+                attachments: $proofFiles,
+                artifactType: 'physical_delivery_submission',
+                isDeliveryProof: true,
+            );
+        } else {
+            app(DigitalDeliveryService::class)->submitDelivery(
+                order: $order,
+                actorUserId: $viewerId,
+                note: $deliveryNote,
+                externalUrl: $payload['external_delivery_url'] ?? null,
+                version: $payload['delivery_version'] ?? null,
+                files: array_values($request->file('files', [])),
+                correlationId: 'web:seller:delivery:'.$order->id,
+            );
+        }
 
         return response()->json([
             'ok' => true,
@@ -408,63 +685,141 @@ final class MarketplaceController extends Controller
     public function checkout(Request $request): JsonResponse
     {
         $payload = $request->validate([
+            'address_id' => ['nullable', 'integer'],
             'shipping_address_line' => ['nullable', 'string', 'max:5000'],
+            'recipient_name' => ['nullable', 'string', 'max:191'],
+            'shipping_phone' => ['nullable', 'string', 'max:40'],
             'shipping_method' => ['nullable', 'string', 'in:standard,express'],
             'payment_method' => ['nullable', 'string', Rule::in(['wallet', 'manual'])],
+            'payment_method_id' => ['nullable', 'integer'],
             'payment_reference' => ['nullable', 'string', 'max:191'],
         ]);
 
         if (Auth::check()) {
             $cart = $this->activeCart();
-            $cart->load('cartItems');
+            $cart->load('cartItems.product.seller_profile');
             if ($cart->cartItems->isEmpty()) {
                 return response()->json(['ok' => false, 'message' => 'Cart is empty.'], 422);
             }
-            $lines = $cart->cartItems->map(static fn (CartItem $item): CartLineItem => new CartLineItem(
-                productId: (int) $item->product_id,
-                productVariantId: $item->product_variant_id !== null ? (int) $item->product_variant_id : null,
-                sellerProfileId: (int) $item->seller_profile_id,
-                quantity: (int) $item->quantity,
-                unitPrice: (string) $item->unit_price_snapshot,
-                currency: (string) $item->currency_snapshot,
-            ))->values()->all();
-            $orderResult = $this->orderService->createOrder(new CreateOrderCommand(
-                buyerUserId: (int) Auth::id(),
-                cartSnapshot: new CartSnapshot($lines),
-                idempotencyKey: (string) Str::uuid(),
-                shippingMethod: (string) ($payload['shipping_method'] ?? 'standard'),
-                shippingMethodProvided: true,
-                shippingAddressLine: $payload['shipping_address_line'] ?? null,
-            ));
-            $orderId = (int) ($orderResult['order_id'] ?? 0);
-            $correlationId = (string) Str::uuid();
-            $paymentMethod = (string) ($payload['payment_method'] ?? 'wallet');
+            $requiresShipping = $cart->cartItems->contains(static fn (CartItem $item): bool => (string) ($item->product?->product_type ?? 'physical') === 'physical');
+            $selectedAddress = null;
+            if (! empty($payload['address_id'])) {
+                $selectedAddress = UserAddress::query()
+                    ->where('user_id', (int) Auth::id())
+                    ->whereKey((int) $payload['address_id'])
+                    ->first();
 
-            if ($paymentMethod === 'manual') {
-                $reference = trim((string) ($payload['payment_reference'] ?? ''));
-                $this->orderService->payOrderWithManualMethod(
-                    orderId: $orderId,
-                    actorUserId: (int) Auth::id(),
-                    provider: 'bank',
-                    providerReference: $reference !== '' ? $reference : 'WEB-MANUAL-'.$orderResult['order_number'],
-                    correlationId: $correlationId,
-                );
-            } else {
-                $this->orderService->payOrderWithWallet(
-                    orderId: $orderId,
-                    actorUserId: (int) Auth::id(),
-                    correlationId: $correlationId,
-                );
+                if (! $selectedAddress instanceof UserAddress) {
+                    return response()->json(['ok' => false, 'message' => 'The selected address is not available for this account.'], 422);
+                }
+            }
+
+            $shippingAddressLine = trim((string) ($selectedAddress?->address_line ?? ($payload['shipping_address_line'] ?? '')));
+            $shippingRecipientName = trim((string) ($selectedAddress?->recipient_name ?? ($payload['recipient_name'] ?? '')));
+            $shippingPhone = trim((string) ($selectedAddress?->phone ?? ($payload['shipping_phone'] ?? '')));
+            if ($requiresShipping && $shippingAddressLine === '') {
+                return response()->json(['ok' => false, 'message' => 'A shipping address is required before placing this order.'], 422);
+            }
+
+            $selectedPaymentMethod = null;
+            if (! empty($payload['payment_method_id'])) {
+                $selectedPaymentMethod = UserPaymentMethod::query()
+                    ->where('user_id', (int) Auth::id())
+                    ->whereKey((int) $payload['payment_method_id'])
+                    ->first();
+
+                if (! $selectedPaymentMethod instanceof UserPaymentMethod) {
+                    return response()->json(['ok' => false, 'message' => 'The selected payment method is not available for this account.'], 422);
+                }
+            }
+
+            $paymentMethod = (string) ($payload['payment_method'] ?? 'wallet');
+            $orderResults = [];
+
+            try {
+                DB::transaction(function () use ($cart, $payload, $selectedAddress, $shippingRecipientName, $shippingAddressLine, $shippingPhone, $paymentMethod, $selectedPaymentMethod, &$orderResults): void {
+                    $groups = $cart->cartItems
+                        ->groupBy(static function (CartItem $item): string {
+                            $type = (string) ($item->product?->product_type ?? 'physical');
+
+                            return ((int) $item->seller_profile_id).'|'.$type;
+                        })
+                        ->values();
+
+                    foreach ($groups as $index => $items) {
+                        $lines = $items->map(static fn (CartItem $item): CartLineItem => new CartLineItem(
+                            productId: (int) $item->product_id,
+                            productVariantId: $item->product_variant_id !== null ? (int) $item->product_variant_id : null,
+                            sellerProfileId: (int) $item->seller_profile_id,
+                            quantity: (int) $item->quantity,
+                            unitPrice: (string) $item->unit_price_snapshot,
+                            currency: (string) $item->currency_snapshot,
+                        ))->values()->all();
+
+                        $orderResult = $this->orderService->createOrder(new CreateOrderCommand(
+                            buyerUserId: (int) Auth::id(),
+                            cartSnapshot: new CartSnapshot($lines),
+                            idempotencyKey: (string) Str::uuid(),
+                            shippingMethod: (string) ($payload['shipping_method'] ?? 'standard'),
+                            shippingMethodProvided: true,
+                            shippingAddressId: $selectedAddress?->id !== null ? (string) $selectedAddress->id : null,
+                            shippingRecipientName: $shippingRecipientName !== '' ? $shippingRecipientName : null,
+                            shippingAddressLine: $shippingAddressLine !== '' ? $shippingAddressLine : null,
+                            shippingPhone: $shippingPhone !== '' ? $shippingPhone : null,
+                        ));
+
+                        $orderId = (int) ($orderResult['order_id'] ?? 0);
+                        $correlationId = (string) Str::uuid();
+
+                        if ($paymentMethod === 'manual') {
+                            $reference = trim((string) ($payload['payment_reference'] ?? ''));
+                            $this->orderService->payOrderWithManualMethod(
+                                orderId: $orderId,
+                                actorUserId: (int) Auth::id(),
+                                provider: 'bank',
+                                providerReference: $reference !== ''
+                                    ? ($reference.(count($groups) > 1 ? '-'.($index + 1) : ''))
+                                    : ($selectedPaymentMethod instanceof UserPaymentMethod
+                                        ? 'WEB-MANUAL-'.$selectedPaymentMethod->id.'-'.Str::slug($selectedPaymentMethod->label ?: $selectedPaymentMethod->kind).(count($groups) > 1 ? '-'.($index + 1) : '')
+                                        : 'WEB-MANUAL-'.$orderResult['order_number']),
+                                correlationId: $correlationId,
+                            );
+                        } else {
+                            $this->orderService->payOrderWithWallet(
+                                orderId: $orderId,
+                                actorUserId: (int) Auth::id(),
+                                correlationId: $correlationId,
+                            );
+                        }
+
+                        $orderResults[] = $orderResult;
+                    }
+                });
+            } catch (OrderValidationFailedException $exception) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => $this->friendlyOrderValidationMessage($exception->reasonCode),
+                    'reason_code' => $exception->reasonCode,
+                ], 422);
             }
 
             $cart->cartItems()->delete();
             $cart->status = 'checked_out';
             $cart->save();
+
+            $orderId = (int) ($orderResults[0]['order_id'] ?? 0);
+            $redirectUrl = '/buyer/orders/'.$orderId;
         } else {
             $orders = $request->session()->get('web_guest_orders', []);
             $cart = $request->session()->get('web_cart', []);
             if ($cart === []) {
                 return response()->json(['ok' => false, 'message' => 'Cart is empty.'], 422);
+            }
+            $hasProtectedDigital = collect($this->cartPayload())->contains(static fn (array $item): bool => in_array((string) ($item['productType'] ?? 'physical'), ['digital', 'service'], true));
+            if ($hasProtectedDigital) {
+                $request->session()->put('url.intended', '/checkout');
+
+                return response()->json(['ok' => false, 'message' => 'Login or register before placing a protected digital order.'], 401);
             }
             $amount = collect($this->cartPayload())->sum(static fn (array $item): float => (float) ($item['price'] ?? 0) * (int) ($item['quantity'] ?? 1));
             $orders[] = [
@@ -479,9 +834,29 @@ final class MarketplaceController extends Controller
             $request->session()->put('web_guest_orders', $orders);
             $request->session()->forget('web_cart');
             $request->session()->forget('web_cart_snapshots');
+            $redirectUrl = '/orders';
         }
 
-        return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
+        return response()->json([
+            'ok' => true,
+            'marketplace' => $this->marketplacePayload(),
+            'order_id' => $orderId ?? null,
+            'order_ids' => collect($orderResults ?? [])->pluck('order_id')->map(static fn ($id): int => (int) $id)->values()->all(),
+            'redirect_url' => $redirectUrl ?? '/escrow-orders',
+        ]);
+    }
+
+    private function friendlyOrderValidationMessage(string $reasonCode): string
+    {
+        return match ($reasonCode) {
+            'multi_seller_escrow_not_supported' => 'This cart contains products from multiple sellers. We could not create separate protected orders. Please try again or checkout one seller at a time.',
+            'mixed_product_type_checkout_not_supported' => 'This cart contains different fulfillment types. Please checkout physical, digital, and service items separately.',
+            'mixed_currency_checkout_not_supported' => 'This cart contains multiple currencies. Please checkout one currency at a time.',
+            'self_purchase_not_allowed' => 'You cannot purchase your own listing.',
+            'product_not_found' => 'One item in your cart is no longer available. Please refresh your cart and try again.',
+            'invalid_quantity' => 'One item in your cart has an invalid quantity. Please update your cart and try again.',
+            default => 'We could not validate this order. Please review your cart and try again.',
+        };
     }
 
     public function wishlistToggle(Request $request): JsonResponse
@@ -1584,7 +1959,7 @@ final class MarketplaceController extends Controller
             'brand' => ['nullable', 'string', 'max:120'],
             'category_id' => ['nullable', 'integer', 'min:1'],
             'subcategory_id' => ['nullable', 'integer', 'min:1'],
-            'product_type' => ['nullable', Rule::in(['physical', 'digital', 'service'])],
+            'product_type' => ['nullable', Rule::in(['physical', 'digital'])],
             'short_description' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string', 'max:20000'],
             'image_url' => ['nullable', 'string', 'max:2048'],
@@ -1624,6 +1999,7 @@ final class MarketplaceController extends Controller
             'license_type' => ['nullable', 'string', 'max:120'],
             'delivery_fulfillment_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
             'is_instant_delivery' => ['nullable', 'boolean'],
+            'is_service_product' => ['nullable', 'boolean'],
             'instant_delivery_expiration_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
             'digital_access_validity_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
         ]);
@@ -1647,8 +2023,18 @@ final class MarketplaceController extends Controller
             $discountType = (string) ($payload['discount_type'] ?? 'percentage');
             $discountValue = isset($payload['discount_value']) && $payload['discount_value'] !== '' ? (float) $payload['discount_value'] : null;
             $discountPercentage = 0.0;
-            $productType = (string) ($payload['product_type'] ?? 'physical');
-            $isInstantDelivery = $productType === 'digital' && filter_var($payload['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL);
+            $requestedProductType = (string) ($payload['product_type'] ?? 'physical');
+            $isServiceProduct = $requestedProductType === 'digital' && filter_var($payload['is_service_product'] ?? false, FILTER_VALIDATE_BOOL);
+            $isInstantDelivery = $requestedProductType === 'digital' && ! $isServiceProduct && filter_var($payload['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL);
+            $productType = match (true) {
+                $isServiceProduct => 'service',
+                $isInstantDelivery => 'digital',
+                $requestedProductType === 'digital' => 'physical',
+                default => 'physical',
+            };
+            $deliveryFulfillmentHours = isset($payload['delivery_fulfillment_hours']) && $payload['delivery_fulfillment_hours'] !== ''
+                ? max(1, min(8760, (int) $payload['delivery_fulfillment_hours']))
+                : ($isInstantDelivery ? 1 : ($isServiceProduct ? 72 : null));
             if ($salePrice !== null && $salePrice < $basePrice && $basePrice > 0) {
                 $discountPercentage = round((($basePrice - $salePrice) / $basePrice) * 100, 2);
             } elseif ($discountValue !== null) {
@@ -1686,11 +2072,13 @@ final class MarketplaceController extends Controller
                 'access_type' => $payload['access_type'] ?? null,
                 'platform' => $payload['platform'] ?? null,
                 'license_type' => $payload['license_type'] ?? null,
-                'delivery_fulfillment_hours' => $payload['delivery_fulfillment_hours'] ?? null,
+                'delivery_fulfillment_hours' => $deliveryFulfillmentHours,
                 'is_instant_delivery' => $isInstantDelivery,
+                'is_service_product' => $isServiceProduct,
+                'requested_product_type' => $requestedProductType,
                 'instant_delivery_expiration_hours' => $isInstantDelivery ? ($payload['instant_delivery_expiration_hours'] ?? null) : null,
                 'digital_access_validity_hours' => $payload['digital_access_validity_hours'] ?? null,
-                'tags' => array_values(array_filter(['web', 'seller', $productType, $isInstantDelivery ? 'instant_delivery' : null])),
+                'tags' => array_values(array_filter(['web', 'seller', $productType, $isInstantDelivery ? 'instant_delivery' : null, $isServiceProduct ? 'service' : null])),
             ], static fn ($value): bool => $value !== null && $value !== '');
 
             $storefront = $this->ensureSellerStorefront($seller);
@@ -2066,7 +2454,13 @@ final class MarketplaceController extends Controller
     {
         $user = Auth::user();
         $products = Product::query()
-            ->with(['seller_profile', 'category.parent', 'inventoryRecords', 'productVariants.inventoryRecords'])
+            ->with([
+                'seller_profile.user',
+                'category.parent',
+                'inventoryRecords',
+                'productVariants.inventoryRecords',
+                'reviews' => static fn ($query) => $query->where('status', 'visible')->with('buyer')->latest(),
+            ])
             ->withCount([
                 'reviews' => static fn ($query) => $query->where('status', 'visible'),
                 'orderItems',
@@ -2130,7 +2524,7 @@ final class MarketplaceController extends Controller
             'user' => $user === null ? $this->guestUserPayload() : [
                 'id' => (int) $user->id,
                 'isAuthenticated' => true,
-                'name' => (string) ($user->display_name ?? $user->email ?? 'User'),
+                'name' => (string) ($user->display_name ?: 'User #'.(int) $user->id),
                 'email' => (string) ($user->email ?? ''),
                 'role' => $user->sellerProfile === null ? 'buyer' : 'seller',
                 'roles' => array_values(array_filter([
@@ -2138,6 +2532,8 @@ final class MarketplaceController extends Controller
                     $user->sellerProfile === null ? null : 'seller',
                 ])),
                 'hasSellerProfile' => $user->sellerProfile !== null,
+                'buyerAccountId' => (int) $user->id,
+                'sellerAccountId' => $user->sellerProfile?->id ? (int) $user->sellerProfile->id : null,
                 'status' => (string) ($user->status ?? 'active'),
                 'phone' => (string) ($user->phone ?? ''),
                 'avatarUrl' => $this->imageUrl($user->avatar_url),
@@ -2149,6 +2545,7 @@ final class MarketplaceController extends Controller
             'cart' => $this->cartPayload(),
             'wishlist' => $this->wishlistPayload(),
             'orders' => $this->ordersPayload(),
+            'checkoutContext' => $this->checkoutContextPayload(),
             'buyerOps' => $this->buyerOperationsPayload(),
             'sellerProducts' => $this->sellerProductsPayload(),
             'coupons' => $this->couponPayload(),
@@ -2162,6 +2559,84 @@ final class MarketplaceController extends Controller
             'flashDeal' => $this->flashDealPayload($products),
             'trustItems' => $this->trustItemsPayload(),
             'metrics' => $this->metricsPayload($products),
+        ];
+    }
+
+    private function checkoutContextPayload(): array
+    {
+        $items = collect($this->cartPayload())->values();
+        $subtotal = round($items->sum(static fn (array $item): float => (float) ($item['price'] ?? 0) * (int) ($item['quantity'] ?? 1)), 2);
+        $requiresShipping = $items->contains(static fn (array $item): bool => (string) ($item['productType'] ?? 'physical') === 'physical');
+        $hasDigital = $items->contains(static fn (array $item): bool => (string) ($item['productType'] ?? '') === 'digital');
+        $hasService = $items->contains(static fn (array $item): bool => (string) ($item['productType'] ?? '') === 'service');
+
+        $shippingOptions = $requiresShipping
+            ? collect(['standard', 'express'])->map(fn (string $code): array => [
+                'code' => $code,
+                'label' => $code === 'express' ? 'Express delivery' : 'Standard delivery',
+                'fee' => number_format($this->promotionService->shippingFeeForMethod($code, true), 2, '.', ''),
+                'processing_time' => $code === 'express' ? 'Priority dispatch' : '1-3 business days',
+            ])->values()->all()
+            : [[
+                'code' => 'digital',
+                'label' => $hasService ? 'Service coordination' : 'Digital delivery',
+                'fee' => '0.00',
+                'processing_time' => $hasService ? 'Seller will coordinate fulfillment in chat' : 'Delivered digitally after secure payment',
+            ]];
+
+        $selectedAddress = null;
+        $selectedPaymentMethod = null;
+        $walletAvailable = '0.00';
+        $walletHeld = '0.00';
+        if (Auth::check()) {
+            $selectedAddress = UserAddress::query()
+                ->where('user_id', (int) Auth::id())
+                ->orderByDesc('is_default')
+                ->latest('id')
+                ->first();
+            $selectedPaymentMethod = UserPaymentMethod::query()
+                ->where('user_id', (int) Auth::id())
+                ->orderByDesc('is_default')
+                ->latest('id')
+                ->first();
+
+            $walletLedger = app(WalletLedgerService::class);
+            $buyerWallet = Wallet::query()
+                ->where('user_id', (int) Auth::id())
+                ->where('wallet_type', WalletType::Buyer)
+                ->orderBy('id')
+                ->first();
+            if ($buyerWallet instanceof Wallet) {
+                $balances = $walletLedger->computeWalletBalances(new ComputeWalletBalancesCommand((int) $buyerWallet->id));
+                $walletAvailable = number_format((float) ($balances['available_balance'] ?? 0), 2, '.', '');
+                $walletHeld = number_format((float) ($balances['held_balance'] ?? 0), 2, '.', '');
+            }
+        }
+
+        $defaultShippingCode = $shippingOptions[0]['code'] ?? 'standard';
+        $shippingFee = (float) ($shippingOptions[0]['fee'] ?? 0);
+        $total = round($subtotal + $shippingFee, 2);
+
+        return [
+            'items_count' => $items->count(),
+            'requires_shipping' => $requiresShipping,
+            'has_digital' => $hasDigital,
+            'has_service' => $hasService,
+            'currency' => (string) ($items->first()['currency'] ?? 'BDT'),
+            'shipping_options' => $shippingOptions,
+            'default_shipping_method' => $defaultShippingCode,
+            'default_address_id' => $selectedAddress?->id,
+            'default_payment_method_id' => $selectedPaymentMethod?->id,
+            'wallet_available' => $walletAvailable,
+            'wallet_held' => $walletHeld,
+            'summary' => [
+                'subtotal' => number_format($subtotal, 2, '.', ''),
+                'shipping_fee' => number_format($shippingFee, 2, '.', ''),
+                'escrow_fee' => '0.00',
+                'discount' => '0.00',
+                'tax' => '0.00',
+                'total' => number_format($total, 2, '.', ''),
+            ],
         ];
     }
 
@@ -2180,9 +2655,12 @@ final class MarketplaceController extends Controller
             ? (string) ($campaign['badge'] ?? $campaign['title'] ?? '')
             : $product->discount_label;
         $productType = (string) ($product->product_type ?? 'physical');
-        $isInstantDelivery = $productType === 'instant_delivery'
+            $isInstantDelivery = $productType === 'instant_delivery'
             || filter_var($attributes['is_instant_delivery'] ?? false, FILTER_VALIDATE_BOOL)
             || in_array(strtolower((string) ($attributes['delivery_type'] ?? '')), ['instant', 'instant_delivery'], true);
+        $isServiceProduct = $productType === 'service'
+            || filter_var($attributes['is_service_product'] ?? false, FILTER_VALIDATE_BOOL)
+            || in_array(strtolower((string) ($attributes['delivery_type'] ?? '')), ['service', 'manual_delivery'], true);
         $normalizedProductType = $productType === 'instant_delivery' ? 'digital' : $productType;
         $stockOnHand = (int) $product->inventoryRecords->sum('stock_on_hand');
         $stockReserved = (int) $product->inventoryRecords->sum('stock_reserved');
@@ -2195,6 +2673,72 @@ final class MarketplaceController extends Controller
         if ($averageRating === null && $reviewCount > 0) {
             $averageRating = $product->reviews()->where('status', 'visible')->avg('rating');
         }
+        $seller = $product->seller_profile;
+        $includedItems = is_array($attributes['included_items'] ?? null)
+            ? array_values(array_filter(array_map('strval', $attributes['included_items'])))
+            : [
+                'Escrow checkout protection',
+                'Verified seller signals',
+                $isInstantDelivery ? 'Automatic digital fulfillment' : 'Order chat support',
+                $isInstantDelivery ? 'Instant delivery access' : 'Delivery tracking workflow',
+            ];
+        $coverItems = is_array($attributes['what_we_cover'] ?? null)
+            ? array_values(array_filter(array_map('strval', $attributes['what_we_cover'])))
+            : array_values(array_filter([
+                ($attributes['return_policy'] ?? null) ? 'Return policy: '.$attributes['return_policy'] : 'Protected return and dispute workflow',
+                ($attributes['warranty_status'] ?? null) ? 'Warranty: '.$attributes['warranty_status'] : 'Seller support after purchase',
+                ($attributes['shipping_weight'] ?? null) ? 'Shipping weight: '.$attributes['shipping_weight'] : null,
+                $isServiceProduct ? 'Service delivery milestone review' : null,
+                $isInstantDelivery ? 'Secure instant access after checkout' : null,
+            ]));
+        $faqItems = collect(is_array($attributes['faqs'] ?? null) ? $attributes['faqs'] : [])
+            ->map(static function ($item): array {
+                if (is_array($item)) {
+                    return [
+                        'question' => (string) ($item['question'] ?? $item['title'] ?? ''),
+                        'answer' => (string) ($item['answer'] ?? $item['body'] ?? ''),
+                    ];
+                }
+
+                return ['question' => '', 'answer' => (string) $item];
+            })
+            ->filter(static fn (array $item): bool => $item['question'] !== '' || $item['answer'] !== '')
+            ->values()
+            ->all();
+        if ($faqItems === []) {
+            $faqItems = [
+                [
+                    'question' => 'How does protected checkout work?',
+                    'answer' => 'Payment is handled through the marketplace checkout flow, with order status, chat, delivery, return, and dispute support available from the buyer dashboard.',
+                ],
+                [
+                    'question' => 'Can I contact the seller before buying?',
+                    'answer' => 'Yes. Use Chat Seller to ask about availability, fulfillment, warranty, delivery timing, or custom requirements before placing the order.',
+                ],
+                [
+                    'question' => 'What happens after I buy?',
+                    'answer' => $this->productTypeHint($normalizedProductType, $isInstantDelivery),
+                ],
+            ];
+        }
+        $reviews = $product->relationLoaded('reviews')
+            ? $product->reviews
+                ->map(fn ($review): array => [
+                    'id' => (int) $review->id,
+                    'rating' => (int) $review->rating,
+                    'feedbackType' => (string) ($review->feedback_type ?? ((int) $review->rating >= 4 ? 'good' : ((int) $review->rating <= 2 ? 'bad' : 'neutral'))),
+                    'comment' => (string) ($review->comment ?? ''),
+                    'tags' => $review->tags ?? [],
+                    'sellerReply' => (string) ($review->seller_reply ?? ''),
+                    'helpfulCount' => (int) ($review->helpful_count ?? 0),
+                    'buyer' => (string) ($review->buyer?->name ?? 'Verified buyer'),
+                    'buyerProfileHref' => ((int) $review->buyer_user_id) > 0 ? '/profiles/buyers/'.(int) $review->buyer_user_id : null,
+                    'sellerProfileId' => (int) $review->seller_profile_id,
+                    'createdAt' => $review->created_at?->toIso8601String(),
+                ])
+                ->values()
+                ->all()
+            : [];
 
         return [
             'id' => (int) $product->id,
@@ -2211,6 +2755,8 @@ final class MarketplaceController extends Controller
             'productTypeLabel' => $this->productTypeLabel($normalizedProductType, $isInstantDelivery),
             'fulfillmentHint' => $this->productTypeHint($normalizedProductType, $isInstantDelivery),
             'isInstantDelivery' => $isInstantDelivery,
+            'isServiceProduct' => $isServiceProduct,
+            'deliveryFulfillmentHours' => isset($attributes['delivery_fulfillment_hours']) ? (int) $attributes['delivery_fulfillment_hours'] : null,
             'price' => $price,
             'oldPrice' => $discountPercentage > 0 ? $basePrice : $price,
             'regularPrice' => $basePrice,
@@ -2228,10 +2774,28 @@ final class MarketplaceController extends Controller
             'warehouseStocks' => [
                 (string) (($attributes['warehouse'] ?? null) ?: 'Main Warehouse') => max(0, $stockOnHand - $stockReserved),
             ],
-            'city' => (string) ($product->seller_profile?->city ?? $attributes['product_location'] ?? ''),
-            'seller' => (string) ($product->seller_profile?->display_name ?? 'Verified seller'),
-            'sellerStatus' => (string) ($product->seller_profile?->verification_status ?? ''),
-            'storeStatus' => (string) ($product->seller_profile?->store_status ?? ''),
+            'city' => (string) ($seller?->city ?? $attributes['product_location'] ?? ''),
+            'seller' => (string) ($seller?->display_name ?? 'Verified seller'),
+            'sellerProfileId' => $seller !== null ? (int) $seller->id : null,
+            'sellerProfileHref' => $seller !== null ? '/profiles/sellers/'.(int) $seller->id : null,
+            'sellerStatus' => (string) ($seller?->verification_status ?? ''),
+            'storeStatus' => (string) ($seller?->store_status ?? ''),
+            'sellerDetails' => [
+                'id' => $seller !== null ? (int) $seller->id : null,
+                'href' => $seller !== null ? '/profiles/sellers/'.(int) $seller->id : null,
+                'name' => (string) ($seller?->display_name ?? 'Verified seller'),
+                'legalName' => (string) ($seller?->legal_name ?? ''),
+                'logo' => $this->imageUrl((string) ($seller?->store_logo_url ?? '')),
+                'banner' => $this->imageUrl((string) ($seller?->banner_image_url ?? '')),
+                'city' => (string) ($seller?->city ?? ''),
+                'region' => (string) ($seller?->region ?? ''),
+                'country' => (string) ($seller?->country ?? ''),
+                'memberSince' => $seller?->created_at?->format('Y'),
+                'verificationStatus' => (string) ($seller?->verification_status ?? ''),
+                'storeStatus' => (string) ($seller?->store_status ?? ''),
+                'processingTime' => (string) ($seller?->processing_time_label ?? ''),
+                'description' => (string) ($attributes['seller_description'] ?? $seller?->legal_name ?? 'This seller is part of the Sellova marketplace and supports protected order communication, fulfillment updates, and post-purchase support.'),
+            ],
             'rating' => $averageRating !== null ? round((float) $averageRating, 1) : null,
             'reviewCount' => $reviewCount,
             'salesCount' => (int) ($product->order_items_count ?? 0),
@@ -2243,6 +2807,10 @@ final class MarketplaceController extends Controller
             'videoUrl' => (string) ($attributes['video_url'] ?? ''),
             'attributes' => $attributes,
             'attributeRows' => $this->attributeRows($attributes),
+            'includedItems' => $includedItems,
+            'coverItems' => $coverItems,
+            'faqs' => $faqItems,
+            'reviews' => $reviews,
             'brand' => (string) ($attributes['brand'] ?? ''),
             'warrantyStatus' => (string) ($attributes['warranty_status'] ?? ''),
             'returnPolicy' => (string) ($attributes['return_policy'] ?? ''),
@@ -2535,6 +3103,7 @@ final class MarketplaceController extends Controller
             ->where('buyer_user_id', (int) Auth::id())
             ->with([
                 'primaryProduct',
+                'orderItems',
                 'seller',
                 'paymentIntents',
                 'paymentTransactions',
@@ -2546,7 +3115,7 @@ final class MarketplaceController extends Controller
             ->limit(20)
             ->get();
         $favoriteStores = $buyerOrders
-            ->groupBy(static fn (Order $order): string => (string) ($order->seller?->display_name ?? $order->seller?->email ?? 'Seller'))
+            ->groupBy(static fn (Order $order): string => (string) ($order->seller?->display_name ?: 'Seller #'.(int) ($order->seller_user_id ?? 0)))
             ->map(static fn ($orders, string $label): array => [
                 'id' => Str::slug($label) ?: 'seller',
                 'name' => $label,
@@ -2718,7 +3287,7 @@ final class MarketplaceController extends Controller
                 ->latest('id')
                 ->limit(12)
                 ->get()
-                ->map(static fn (Review $review): array => [
+                ->map(fn (Review $review): array => [
                     'id' => (int) $review->id,
                     'product' => (string) ($review->product?->title ?? 'Marketplace listing'),
                     'seller' => (string) ($review->seller_profile?->display_name ?? 'Seller'),
@@ -2790,7 +3359,9 @@ final class MarketplaceController extends Controller
                     'code' => (string) ($order->order_number ?? 'SO-'.$order->id),
                     'product' => (string) ($order->primaryProduct?->title ?? $order->product_type ?? 'Marketplace order'),
                     'image' => $this->imageUrl($order->primaryProduct?->image_url),
-                    'seller' => (string) ($order->seller?->display_name ?? $order->seller?->email ?? 'Seller'),
+                    'seller' => (string) ($order->seller?->display_name ?: 'Seller #'.(int) ($order->seller_user_id ?? 0)),
+                    'sellerProfileId' => (int) ($order->orderItems->first()?->seller_profile_id ?? 0),
+                    'sellerProfileHref' => ($order->orderItems->first()?->seller_profile_id ?? null) ? '/profiles/sellers/'.(int) $order->orderItems->first()->seller_profile_id : null,
                     'status' => $status,
                     'paymentStatus' => $latestIntent?->status ?? $status,
                     'paymentMethod' => $latestTxn?->raw_payload_json['method']
@@ -3209,13 +3780,17 @@ final class MarketplaceController extends Controller
                 ->get()
                 ->map(static fn (Review $review): array => [
                     'id' => (int) $review->id,
-                    'buyer' => (string) ($review->buyer?->display_name ?? $review->buyer?->email ?? 'Buyer'),
+                    'buyer' => (string) ($review->buyer?->display_name ?: 'Buyer #'.(int) $review->buyer_user_id),
+                    'buyerProfileHref' => '/profiles/buyers/'.(int) $review->buyer_user_id,
                     'product' => (string) ($review->product?->title ?? 'Marketplace listing'),
                     'rating' => (int) $review->rating,
+                    'feedbackType' => (string) ($review->feedback_type ?? $this->feedbackTypeForRating((int) $review->rating)),
                     'comment' => (string) ($review->comment ?? ''),
+                    'tags' => $review->tags ?? [],
                     'status' => (string) $review->status,
                     'sellerReply' => (string) ($review->seller_reply ?? ''),
                     'sellerRepliedAt' => $review->seller_replied_at?->format('M j, Y'),
+                    'sellerProfileId' => (int) $review->seller_profile_id,
                     'helpfulCount' => (int) ($review->helpful_count ?? 0),
                     'createdAt' => $review->created_at?->format('M j, Y'),
                 ])
@@ -3278,7 +3853,9 @@ final class MarketplaceController extends Controller
                         'code' => (string) ($order->order_number ?? 'SO-'.$order->id),
                         'product' => (string) ($order->primaryProduct?->title ?? 'Marketplace order'),
                         'image' => $this->imageUrl($order->primaryProduct?->image_url),
-                        'buyer' => (string) ($order->buyer?->name ?? $order->buyer?->email ?? 'Buyer'),
+                        'buyer' => (string) ($order->buyer?->display_name ?: 'Buyer #'.(int) $order->buyer_user_id),
+                        'buyerId' => (int) $order->buyer_user_id,
+                        'buyerProfileHref' => '/profiles/buyers/'.(int) $order->buyer_user_id,
                         'status' => (string) $order->status->value,
                         'escrowState' => (string) ($order->escrow_status ?: ($order->escrowAccount?->state?->value ?? '')),
                         'deliveryStatus' => (string) ($order->delivery_status ?? ($delivery?->status ?? 'pending')),
@@ -3764,6 +4341,8 @@ final class MarketplaceController extends Controller
         }
 
         return [
+            'id' => (int) $seller->id,
+            'href' => '/profiles/sellers/'.(int) $seller->id,
             'name' => (string) ($seller->display_name ?? 'Verified seller'),
             'description' => (string) ($seller->storefront?->description ?? 'Verified marketplace seller with protected checkout and active catalog operations.'),
             'image' => $this->imageUrl($seller->banner_image_url),
@@ -3838,6 +4417,15 @@ final class MarketplaceController extends Controller
             'hasSellerProfile' => false,
             'city' => (string) ($profile['city'] ?? ''),
         ];
+    }
+
+    private function feedbackTypeForRating(int $rating): string
+    {
+        return match (true) {
+            $rating >= 4 => 'good',
+            $rating <= 2 => 'bad',
+            default => 'neutral',
+        };
     }
 
     private function imageUrl(?string $image): ?string

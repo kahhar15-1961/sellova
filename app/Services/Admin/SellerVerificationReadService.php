@@ -45,6 +45,7 @@ final class SellerVerificationReadService
                 'kyc_verifications.sla_warning_sent_at',
                 'kyc_verifications.escalated_at',
                 'kyc_verifications.escalation_reason',
+                'kyc_verifications.risk_level',
                 'kyc_verifications.submitted_at',
                 'kyc_verifications.reviewed_at',
             ])
@@ -57,6 +58,9 @@ final class SellerVerificationReadService
                 },
                 'assigned_to_user' => static function ($q): void {
                     $q->select(['id', 'email', 'uuid']);
+                },
+                'kycDocuments' => static function ($q): void {
+                    $q->select(['id', 'kyc_verification_id', 'doc_type', 'status'])->orderBy('id');
                 },
             ])
             ->orderByDesc('kyc_verifications.submitted_at');
@@ -298,9 +302,54 @@ final class SellerVerificationReadService
             'seller_verification_status' => $sp ? (string) $sp->verification_status : null,
             'account_email' => $user?->email,
             'assigned_to_email' => $kyc->assigned_to_user?->email,
+            'risk_level' => $this->riskLevel($kyc),
+            'verification_type' => $this->verificationType($kyc),
+            'document_label' => $this->documentLabel($kyc),
             'sla_state' => $this->slaState($kyc),
             'workspace_url' => route('admin.sellers.kyc.show', ['kyc' => $kyc->id]),
         ];
+    }
+
+    private function riskLevel(KycVerification $kyc): string
+    {
+        $risk = strtolower(trim((string) ($kyc->risk_level ?? '')));
+        if (in_array($risk, ['low', 'medium', 'high'], true)) {
+            return $risk;
+        }
+
+        return match ($this->slaState($kyc)) {
+            'breach' => 'high',
+            'warning' => 'medium',
+            default => 'low',
+        };
+    }
+
+    private function verificationType(KycVerification $kyc): string
+    {
+        $types = $kyc->kycDocuments->pluck('doc_type')->map(static fn ($type): string => strtolower((string) $type));
+        if ($types->contains(static fn (string $type): bool => str_contains($type, 'business') || str_contains($type, 'certificate'))) {
+            return 'Business KYC';
+        }
+        if ($types->contains(static fn (string $type): bool => str_contains($type, 'address') || str_contains($type, 'utility'))) {
+            return 'Address Verification';
+        }
+
+        return 'Identity Verification';
+    }
+
+    private function documentLabel(KycVerification $kyc): string
+    {
+        $type = strtolower((string) ($kyc->kycDocuments->first()?->doc_type ?? 'passport'));
+
+        return match ($type) {
+            'nid', 'national_id', 'identity_card' => 'National ID',
+            'driving_license', 'driver_license', 'drivers_license' => 'Driver License',
+            'trade_license' => 'Trade License',
+            'business_registration', 'incorporation_certificate', 'certificate_of_incorporation' => 'Certificate of Incorporation',
+            'utility_bill', 'address_proof' => 'Utility Bill',
+            'bank_statement' => 'Bank Statement',
+            default => ucwords(str_replace('_', ' ', $type ?: 'passport')),
+        };
     }
 
     /**

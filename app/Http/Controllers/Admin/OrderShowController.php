@@ -176,6 +176,7 @@ final class OrderShowController extends AdminPageController
                 'shipping_method' => $order->shipping_method,
                 'placed_at' => $order->placed_at?->toIso8601String(),
                 'timeout_state' => $timeoutState,
+                'buyer_name' => $order->buyer?->display_name,
                 'buyer_email' => $order->buyer?->email,
                 'payment_intent' => $latestIntent ? [
                     'id' => $latestIntent->id,
@@ -195,10 +196,12 @@ final class OrderShowController extends AdminPageController
             ],
             'buyer' => $order->buyer ? [
                 'id' => $order->buyer->id,
+                'name' => $order->buyer->display_name,
                 'email' => $order->buyer->email,
                 'status' => $order->buyer->status,
                 'wallets' => $buyerWalletSummaries,
                 'href' => route('admin.buyers.show', $order->buyer),
+                'trust_href' => '/profiles/buyers/'.(int) $order->buyer->id,
             ] : null,
             'seller' => $sellerProfile === null ? null : [
                 'id' => $sellerProfile->id,
@@ -208,6 +211,7 @@ final class OrderShowController extends AdminPageController
                 'store_status' => $sellerProfile->store_status,
                 'account_email' => $sellerProfile->user?->email,
                 'href' => route('admin.seller-profiles.show', $sellerProfile),
+                'trust_href' => '/profiles/sellers/'.(int) $sellerProfile->id,
                 'wallets' => $sellerWalletSummaries,
             ],
             'items' => $items,

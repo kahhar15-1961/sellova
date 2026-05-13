@@ -15,13 +15,13 @@ import { Button } from '@/components/ui/button';
 
 export function Field({ label, hint, required = false, className, children }) {
     return (
-        <div className={cn('space-y-2', className)}>
+        <div className={cn('space-y-3', className)}>
             <div className="flex items-center justify-between gap-3">
-                <label className="text-sm font-semibold text-foreground">
+                <label className="ds-label mb-0">
                     {label}
-                    {required ? <span className="ml-1 text-rose-600">*</span> : null}
+                    {required ? <span className="ml-1 text-destructive">*</span> : null}
                 </label>
-                {hint ? <span className="text-xs font-medium text-muted-foreground">{hint}</span> : null}
+                {hint ? <span className="ds-helper">{hint}</span> : null}
             </div>
             {children}
         </div>
@@ -42,7 +42,7 @@ export function EnterpriseSelect({ name, options = [], defaultValue = '', placeh
         <div className={className}>
             {name ? <input type="hidden" name={name} value={resolvedValue || ''} required={required} /> : null}
             <Select value={resolvedValue || undefined} onValueChange={handleChange}>
-                <SelectTrigger className="h-10 border-border/80 bg-background font-medium shadow-sm">
+                <SelectTrigger className="font-medium">
                     <SelectValue placeholder={placeholder || undefined} />
                 </SelectTrigger>
                 <SelectContent>
@@ -74,7 +74,7 @@ export function EnterpriseMultiSelect({ name, options = [], hint = 'Hold Cmd/Ctr
             ))}
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" className="h-auto min-h-10 w-full justify-between gap-3 px-3 py-2 text-left font-medium">
+                    <Button type="button" variant="outline" className="h-auto min-h-12 w-full justify-between gap-3 rounded-2xl px-4 py-3 text-left font-medium">
                         <span className="min-w-0 flex-1 truncate">
                             {selectedLabels.length ? selectedLabels.join(', ') : hint}
                         </span>
@@ -129,7 +129,7 @@ export function DateTimeField({ name, type = 'datetime-local', defaultValue = ''
     const Icon = type === 'time' ? Clock : CalendarClock;
     return (
         <div className={cn('relative', className)}>
-            <Input name={name} type={type} defaultValue={defaultValue} className="h-10 pr-10 font-medium" />
+            <Input name={name} type={type} defaultValue={defaultValue} className="pr-11 font-medium" />
             <Icon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         </div>
     );
@@ -137,7 +137,7 @@ export function DateTimeField({ name, type = 'datetime-local', defaultValue = ''
 
 export function FileUploadField({ name, multiple = false, accept = 'image/*' }) {
     return (
-        <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-5 text-center transition hover:border-primary/60 hover:bg-primary/5">
+        <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-[hsl(var(--ring)/0.35)] bg-[hsl(var(--accent)/0.65)] px-4 py-6 text-center transition hover:border-[hsl(var(--ring)/0.55)] hover:bg-[hsl(var(--accent)/0.9)]">
             <ImagePlus className="h-5 w-5 text-muted-foreground" />
             <span className="mt-2 text-sm font-semibold text-foreground">{multiple ? 'Upload gallery images' : 'Upload primary image'}</span>
             <span className="mt-1 text-xs text-muted-foreground">JPG, PNG, WebP up to 5 MB</span>
@@ -149,12 +149,12 @@ export function FileUploadField({ name, multiple = false, accept = 'image/*' }) 
 export function SectionHeader({ icon: Icon = Check, title, description, className }) {
     return (
         <div className={cn('flex items-start gap-3', className)}>
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background text-primary">
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-accent/70 text-primary shadow-sm">
                 <Icon className="h-4 w-4" />
             </span>
             <div>
-                <h3 className="text-sm font-bold uppercase tracking-wide text-foreground">{title}</h3>
-                {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+                <h3 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-foreground">{title}</h3>
+                {description ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p> : null}
             </div>
         </div>
     );

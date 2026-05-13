@@ -3,17 +3,17 @@ import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-    'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+    'inline-flex items-center rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-[0.01em] transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
     {
         variants: {
             variant: {
-                default: 'border-transparent bg-primary text-primary-foreground shadow',
-                secondary: 'border-transparent bg-secondary text-secondary-foreground',
-                outline: 'text-foreground',
-                success: 'border-transparent bg-emerald-50 text-emerald-800 border-emerald-200',
-                warning: 'border-transparent bg-amber-50 text-amber-900 border-amber-200',
-                danger: 'border-transparent bg-red-50 text-red-800 border-red-200',
-                muted: 'border-transparent bg-muted text-muted-foreground',
+                default: 'border-transparent bg-primary/10 text-primary',
+                secondary: 'border-transparent bg-secondary/85 text-secondary-foreground',
+                outline: 'border-border/80 text-foreground',
+                success: 'border-transparent bg-[hsl(var(--success-soft))] text-[hsl(var(--success))]',
+                warning: 'border-transparent bg-[hsl(var(--warning-soft))] text-[hsl(var(--warning))]',
+                danger: 'border-transparent bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-200',
+                muted: 'border-transparent bg-muted/90 text-muted-foreground',
             },
         },
         defaultVariants: {

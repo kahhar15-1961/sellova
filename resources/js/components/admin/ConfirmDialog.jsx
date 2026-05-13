@@ -1,12 +1,4 @@
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { ConfirmationModal } from '@/components/admin/modal-system';
 
 /**
  * @param {{ open: boolean, onOpenChange: (v: boolean) => void, title: string, description?: string, confirmLabel?: string, cancelLabel?: string, onConfirm: () => void, variant?: 'default' | 'destructive' }} props
@@ -22,28 +14,18 @@ export function ConfirmDialog({
     variant = 'default',
 }) {
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    {description && <DialogDescription>{description}</DialogDescription>}
-                </DialogHeader>
-                <DialogFooter className="gap-2 sm:gap-0">
-                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                        {cancelLabel}
-                    </Button>
-                    <Button
-                        type="button"
-                        variant={variant === 'destructive' ? 'destructive' : 'default'}
-                        onClick={() => {
-                            onConfirm();
-                            onOpenChange(false);
-                        }}
-                    >
-                        {confirmLabel}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+        <ConfirmationModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={title}
+            description={description}
+            confirmLabel={confirmLabel}
+            cancelLabel={cancelLabel}
+            tone={variant === 'destructive' ? 'danger' : 'info'}
+            onConfirm={() => {
+                onConfirm();
+                onOpenChange(false);
+            }}
+        />
     );
 }

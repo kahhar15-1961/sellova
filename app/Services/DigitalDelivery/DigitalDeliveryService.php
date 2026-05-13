@@ -114,7 +114,13 @@ class DigitalDeliveryService
                 'Delivery submitted',
                 'Your seller submitted a digital delivery for order '.($locked->order_number ?? '#'.$locked->id).'.',
                 [
+                    'role' => 'buyer',
+                    'recipient_context' => 'buyer',
+                    'recipient_role' => 'buyer',
                     'order_id' => (int) $locked->id,
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $locked->id,
+                    'context_route_name' => 'buyer.orders.show',
                     'delivery_id' => (int) $delivery->id,
                 ],
             );
@@ -168,7 +174,15 @@ class DigitalDeliveryService
                 'escrow.delivery.revision_requested',
                 'Revision requested',
                 'The buyer asked for a revision on order '.($locked->order_number ?? '#'.$locked->id).'.',
-                ['order_id' => (int) $locked->id],
+                [
+                    'role' => 'seller',
+                    'recipient_context' => 'seller',
+                    'recipient_role' => 'seller',
+                    'order_id' => (int) $locked->id,
+                    'context_entity_type' => 'order',
+                    'context_entity_id' => (int) $locked->id,
+                    'context_route_name' => 'seller.orders.show',
+                ],
             );
 
             $this->audit->record(

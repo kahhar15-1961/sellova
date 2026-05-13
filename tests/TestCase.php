@@ -34,7 +34,30 @@ abstract class TestCase extends BaseTestCase
         $this->ensureEscrowTimeoutTables();
         $this->ensurePaymentGatewaysTable();
         $this->ensureNotificationPanelSchema();
+        $this->ensureBuyerReviewsTable();
         $this->ensureDigitalEscrowSupportSchema();
+    }
+
+    private function ensureBuyerReviewsTable(): void
+    {
+        if (Schema::hasTable('buyer_reviews')) {
+            return;
+        }
+
+        Schema::create('buyer_reviews', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->unsignedBigInteger('order_id');
+            $table->unsignedBigInteger('seller_user_id');
+            $table->unsignedBigInteger('seller_profile_id');
+            $table->unsignedBigInteger('buyer_user_id');
+            $table->unsignedTinyInteger('rating');
+            $table->text('comment')->nullable();
+            $table->string('status', 32)->default('visible');
+            $table->timestamps();
+            $table->unique(['order_id', 'seller_profile_id'], 'uq_buyer_reviews_order_seller');
+            $table->index(['buyer_user_id', 'status', 'created_at'], 'idx_buyer_reviews_buyer_status');
+        });
     }
 
     private function ensurePaymentGatewaysTable(): void
@@ -123,7 +146,7 @@ abstract class TestCase extends BaseTestCase
     {
         $tables = [
             'cache', 'cache_locks', 'sessions',
-            'outbox_events', 'audit_logs', 'notifications', 'escrow_timeout_events', 'reviews', 'dispute_decisions', 'dispute_evidences',
+            'outbox_events', 'audit_logs', 'notifications', 'escrow_timeout_events', 'buyer_reviews', 'reviews', 'dispute_decisions', 'dispute_evidences',
             'dispute_cases', 'membership_subscriptions', 'payout_accounts', 'withdrawal_transactions',
             'withdrawal_requests', 'wallet_top_up_requests', 'wallet_balance_snapshots', 'wallet_ledger_entries', 'wallet_ledger_batches',
             'wallet_holds', 'wallets', 'escrow_events', 'escrow_accounts', 'payment_webhook_events',

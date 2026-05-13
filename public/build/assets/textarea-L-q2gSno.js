@@ -1,0 +1,1 @@
+import{r as s,j as t}from"./app-CzRKING7.js";import{c as o}from"./button-B8IbpOJb.js";const x=s.forwardRef(({className:a,...r},e)=>t.jsx("textarea",{className:o("ds-control flex min-h-[132px] py-3.5 leading-6",a),ref:e,...r}));x.displayName="Textarea";export{x as T};

@@ -15,6 +15,8 @@ final class AdminEscalationsInboxController extends AdminPageController
 {
     public function __invoke(Request $request): Response
     {
+        $page = max(1, (int) $request->query('page', 1));
+        $perPage = min(100, max(1, (int) $request->query('per_page', 25)));
         $status = (string) $request->query('status', 'open');
         $queue = (string) $request->query('queue', '');
         $q = trim((string) $request->query('q', ''));
@@ -38,7 +40,8 @@ final class AdminEscalationsInboxController extends AdminPageController
             });
         }
 
-        $incidents = $builder->limit(200)->get();
+        $total = (int) (clone $builder)->count();
+        $incidents = (clone $builder)->forPage($page, $perPage)->get();
 
         return Inertia::render('Admin/Escalations/Index', [
             'header' => $this->pageHeader(
@@ -51,6 +54,12 @@ final class AdminEscalationsInboxController extends AdminPageController
                 ],
             ),
             'filters' => ['status' => $status, 'queue' => $queue, 'q' => $q],
+            'pagination' => [
+                'page' => $page,
+                'perPage' => $perPage,
+                'total' => $total,
+                'lastPage' => max(1, (int) ceil(max(1, $total) / $perPage)),
+            ],
             'index_url' => route('admin.escalations.index'),
             'action_url' => route('admin.escalations.action'),
             'slo_export_url' => route('admin.escalations.slo-export', ['days' => 30]),
