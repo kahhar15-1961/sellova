@@ -1274,7 +1274,8 @@ export function AppShell({
         }
     }, [isAuthenticated]);
 
-    const isBuyerCommandCenter = mode === 'buyer' && view === 'dashboard';
+    const buyerCommandViews = ['dashboard', 'orders', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests'];
+    const isBuyerCommandCenter = mode === 'buyer' && buyerCommandViews.includes(view);
 
     if (isBuyerCommandCenter) {
         return (
@@ -3598,7 +3599,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
         firstActionOrder ? {
             label: String(firstActionOrder.status || '').toLowerCase().includes('delivered') ? 'Confirm delivery' : 'Open active order',
             hint: `${firstActionOrder.code || 'Order'} ${firstActionOrder.escrowState ? `is ${humanizeOrderState(firstActionOrder.escrowState).toLowerCase()}` : 'needs your attention'}.`,
-            href: `/orders/${firstActionOrder.id}`,
+            href: `/buyer/orders/${firstActionOrder.id}`,
         } : {
             label: 'Start a protected order',
             hint: 'Browse marketplace products and keep checkout protected by escrow.',
@@ -3731,7 +3732,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                             {priorityOrders.length ? (
                                 <div className="grid gap-3 p-3 md:hidden">
                                     {priorityOrders.map((order) => (
-                                        <Link key={order.id} href={`/orders/${order.id}`} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-indigo-200 hover:bg-indigo-50">
+                                        <Link key={order.id} href={`/buyer/orders/${order.id}`} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-indigo-200 hover:bg-indigo-50">
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <p className="line-clamp-2 text-sm font-black leading-5 text-slate-950">{order.code || `Order #${order.id}`} {order.product || ''}</p>
@@ -3767,13 +3768,13 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                                             {priorityOrders.map((order) => (
                                                 <tr key={order.id} className="border-b border-slate-100 last:border-b-0">
                                                     <td className="px-4 py-3 align-middle">
-                                                        <Link href={`/orders/${order.id}`} className="line-clamp-2 text-sm font-black leading-5 text-slate-950 hover:text-indigo-600">{order.code || `Order #${order.id}`} {order.product || ''}</Link>
+                                                        <Link href={`/buyer/orders/${order.id}`} className="line-clamp-2 text-sm font-black leading-5 text-slate-950 hover:text-indigo-600">{order.code || `Order #${order.id}`} {order.product || ''}</Link>
                                                         <p className="mt-1 truncate text-xs font-extrabold text-slate-400">{order.trackingId ? `Tracking: ${order.trackingId}` : order.paymentMethod || 'Escrow protected checkout'}</p>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm font-extrabold text-slate-700">{order.seller || 'Verified seller'}</td>
                                                     <td className="px-4 py-3"><BuyerDashboardStatus tone={buyerDashboardStatusTone(order)}>{humanizeOrderState(order.status || order.escrowState || 'Active')}</BuyerDashboardStatus></td>
                                                     <td className="px-4 py-3 text-sm font-black text-slate-700">{money(order.amount)}</td>
-                                                    <td className="px-4 py-3"><Button asChild className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-black hover:bg-indigo-700"><Link href={`/orders/${order.id}`}>Open</Link></Button></td>
+                                                    <td className="px-4 py-3"><Button asChild className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-black hover:bg-indigo-700"><Link href={`/buyer/orders/${order.id}`}>Open</Link></Button></td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -3899,142 +3900,228 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
     const returns = buyerOps.returns || [];
     const [activeOrderFilter, setActiveOrderFilter] = useState('all');
     const [visibleOrderCount, setVisibleOrderCount] = useState(PAGE_SIZE);
+    const [orderQuery, setOrderQuery] = useState('');
     const activeOrdersCount = orders.filter((item) => !['completed', 'cancelled', 'refunded'].includes(String(item.status || '').toLowerCase())).length;
     const escrowOrdersCount = escrows.length;
     const returnCount = returns.length;
+    const walletSummary = buyerOps.walletSummary || {};
+    const notifications = (buyerOps.notifications || []).filter((item) => !(item.is_read ?? item.read));
+    const unreadNotificationCount = buyerOps.unreadNotificationCount ?? notifications.length;
     const orderFilters = [
         { key: 'all', label: 'All', count: orders.length },
         { key: 'escrow', label: 'In Escrow', count: orders.filter((item) => buyerOrderFilterKey(item) === 'escrow').length },
         { key: 'completed', label: 'Completed', count: orders.filter((item) => buyerOrderFilterKey(item) === 'completed').length },
         { key: 'cancelled', label: 'Cancelled', count: orders.filter((item) => buyerOrderFilterKey(item) === 'cancelled').length },
     ];
-    const filteredOrders = activeOrderFilter === 'all'
+    const filteredByStatus = activeOrderFilter === 'all'
         ? orders
         : orders.filter((item) => buyerOrderFilterKey(item) === activeOrderFilter);
+    const normalizedQuery = orderQuery.trim().toLowerCase();
+    const filteredOrders = normalizedQuery
+        ? filteredByStatus.filter((item) => [item.code, item.orderNumber, item.product, item.seller, item.status, item.escrowState, item.trackingId].filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery))
+        : filteredByStatus;
     const displayedOrders = filteredOrders.slice(0, visibleOrderCount);
     const canLoadMoreOrders = initialTab === 'orders' && visibleOrderCount < filteredOrders.length;
+    const activeQueue = [
+        activeOrdersCount ? ['Review active orders', `${activeOrdersCount} orders still moving through fulfillment.`, '/orders'] : ['Shop marketplace', 'Start a new protected purchase with escrow.', '/marketplace'],
+        escrowOrdersCount ? ['Open escrow cases', `${escrowOrdersCount} protected payment flows need visibility.`, '/escrow-orders'] : ['Security check', 'Review devices and account protection.', '/profile'],
+        returnCount ? ['Handle returns', `${returnCount} return or refund records are available.`, '/refund-requests'] : ['Saved sellers', 'Reorder faster from trusted sellers.', '/wishlist'],
+    ];
+    const railLinks = [
+        ['/', 'Home', Home, false],
+        ['/dashboard', 'Dashboard', LayoutDashboard, false],
+        ['/marketplace', 'Marketplace', PackageSearch, false],
+        ['/orders', 'Orders', Truck, true],
+        ['/wallet', 'Wallet', WalletCards, false],
+        ['/wishlist', 'Saved', Heart, false],
+        ['/support', 'Inbox', MessageSquareText, false],
+        ['/profile', 'Profile', User, false],
+    ];
+    const mobileLinks = railLinks.filter(([href]) => ['/', '/dashboard', '/marketplace', '/orders', '/profile'].includes(href));
+    const workspaceTabs = [
+        ['All orders', '/orders', initialTab === 'orders'],
+        ['Escrow', '/escrow-orders', initialTab === 'escrow-orders'],
+        ['Refunds', '/refund-requests', ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab)],
+    ];
 
     useEffect(() => {
         setVisibleOrderCount(PAGE_SIZE);
-    }, [initialTab, orders.length, activeOrderFilter]);
+    }, [initialTab, orders.length, activeOrderFilter, orderQuery]);
 
     return (
-        <BuyerPanelShell
-            activeKey="orders"
-            eyebrow="Buyer orders"
-            title="Order management, escrow visibility, and post-purchase actions"
-            description="Track physical and digital orders, monitor escrow state, inspect timelines, and keep return and refund workflows together."
-        >
-            <BuyerMetricsGrid items={[
-                { label: 'All orders', value: orders.length, hint: 'Buyer-side order records', icon: ReceiptText },
-                { label: 'Active orders', value: activeOrdersCount, hint: 'Still moving through fulfillment', icon: Truck },
-                { label: 'Escrow cases', value: escrowOrdersCount, hint: 'Protected payment flows', icon: ShieldCheck },
-                { label: 'Returns & refunds', value: returnCount, hint: 'Post-purchase requests', icon: FileText },
-            ]} />
-            <Panel title={initialTab === 'escrow-orders' ? 'Escrow orders' : 'Buyer orders'} icon={ShieldCheck}>
-                {initialTab === 'orders' ? (
-                    <div className="mb-6 inline-flex flex-wrap gap-2 rounded-[28px] border border-slate-200 bg-slate-100/90 p-2 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.55)]">
-                        {orderFilters.map((filter) => (
-                            <button
-                                key={filter.key}
-                                type="button"
-                                onClick={() => setActiveOrderFilter(filter.key)}
-                                className={cn(
-                                    'rounded-2xl px-5 py-3 text-sm font-extrabold transition',
-                                    activeOrderFilter === filter.key
-                                        ? 'bg-white text-slate-950 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.75)] ring-1 ring-slate-200'
-                                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-800',
-                                )}
-                            >
-                                {filter.label}
-                                <span className="ml-2 text-xs font-black text-slate-400">{filter.count}</span>
-                            </button>
-                        ))}
+        <div className="grid min-h-screen grid-cols-1 bg-[#eef3f9] lg:grid-cols-[72px_minmax(0,1fr)]">
+            <aside className="sticky top-0 hidden h-screen flex-col items-center gap-4 border-r border-slate-200 bg-white/85 px-2.5 py-3.5 backdrop-blur-xl lg:flex">
+                <Link href="/" title="Sellova home" className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_18px_36px_-22px_rgba(88,71,245,0.95)]">
+                    <ShoppingBag className="size-5" />
+                </Link>
+                <nav className="grid gap-2">
+                    {railLinks.map(([href, label, Icon, active]) => <BuyerCommandIcon key={href} href={href} label={label} icon={Icon} active={active} />)}
+                </nav>
+                <div className="mt-auto grid gap-2">
+                    <BuyerCommandIcon href="/profile" label="Security" icon={ShieldCheck} />
+                    <BuyerCommandIcon href="/profile-settings" label="Settings" icon={Settings} />
+                </div>
+            </aside>
+
+            <section className="min-w-0">
+                <header className="sticky top-0 z-30 grid min-h-[68px] gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(220px,340px)_minmax(260px,1fr)_auto] lg:items-center lg:px-6">
+                    <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Buyer workspace</p>
+                        <h1 className="mt-1 flex items-baseline gap-1 text-xl font-black leading-none tracking-tight text-slate-950"><span>Order</span><span>Control</span></h1>
                     </div>
-                ) : null}
-                <div className={cn('grid gap-4', initialTab === 'orders' ? '2xl:grid-cols-2' : 'xl:grid-cols-2')}>
-                    {(initialTab === 'escrow-orders' ? escrows : displayedOrders).length ? (initialTab === 'escrow-orders' ? escrows : displayedOrders).map((item) => (
-                        initialTab === 'orders' ? (
-                            <article key={item.id} className="rounded-[20px] border border-slate-200 bg-white p-3.5 shadow-[0_12px_28px_-28px_rgba(15,23,42,0.3)] transition hover:border-slate-300 hover:shadow-[0_16px_34px_-28px_rgba(15,23,42,0.36)]">
-                                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                                    <div className="flex min-w-0 gap-3">
-                                        <ProductMedia src={item.image} alt={item.product} className="size-[72px] shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
+                    <div className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-extrabold text-slate-400">
+                        <Search className="size-5 shrink-0" />
+                        <input value={orderQuery} onChange={(event) => setOrderQuery(event.target.value)} className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-extrabold text-slate-700 placeholder:text-slate-400 focus:ring-0" placeholder="Search orders, sellers, tracking, escrow..." />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        <Link href="/escrow-orders" className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700">
+                            <ShieldCheck className="size-4" /> Escrow secured
+                        </Link>
+                        <Link href="/wallet" className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{money(walletSummary.available)}</Link>
+                        <Link href="/notifications" className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{unreadNotificationCount} alerts</Link>
+                        <Link href="/profile" className="flex size-10 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white">{String(state.user?.name || 'B1').slice(0, 2).toUpperCase()}</Link>
+                    </div>
+                </header>
+
+                <main className="grid min-w-0 gap-5 p-4 pb-28 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
+                    <div className="grid min-w-0 gap-4">
+                        <section className="relative grid min-h-[176px] overflow-hidden rounded-2xl border border-slate-950/10 bg-[linear-gradient(135deg,#07111f,#222b48_55%,#5847f5)] p-5 text-white shadow-[0_24px_70px_-52px_rgba(7,17,31,0.8)] lg:grid-cols-[1fr_260px] lg:p-6">
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:36px_36px]" />
+                            <div className="relative">
+                                <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/10 px-3 text-[11px] font-black uppercase tracking-[0.09em] text-indigo-100">Order operations</span>
+                                <h2 className="mt-4 max-w-3xl text-3xl font-black leading-[1.06] tracking-tight md:text-[34px]">Orders, escrow, returns, and delivery tracking in one command view.</h2>
+                                <p className="mt-3 max-w-3xl text-sm font-bold leading-7 text-slate-300">Review live purchases, inspect protected payment states, open order detail pages, and move between post-purchase workflows without losing workspace context.</p>
+                                <div className="mt-5 flex flex-wrap gap-2">
+                                    <Button asChild className="h-10 rounded-lg bg-white px-4 text-xs font-black text-slate-950 hover:bg-indigo-50">
+                                        <Link href="/marketplace"><PackageSearch className="size-4" />Order new</Link>
+                                    </Button>
+                                    <Button asChild variant="outline" className="h-10 rounded-lg border-white/20 bg-white/10 px-4 text-xs font-black text-white hover:bg-white/15 hover:text-white">
+                                        <Link href="/escrow-orders"><ShieldCheck className="size-4" />Escrow cases</Link>
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="relative mt-5 hidden rounded-xl border border-white/15 bg-white/10 p-4 lg:grid lg:content-center">
+                                {[
+                                    ['Orders', orders.length],
+                                    ['Active', activeOrdersCount],
+                                    ['Escrow', escrowOrdersCount],
+                                ].map(([label, value]) => (
+                                    <div key={label} className="flex justify-between gap-4 border-b border-white/10 py-2.5 text-xs font-extrabold text-slate-300 last:border-b-0">
+                                        <span>{label}</span>
+                                        <strong className="text-white">{value}</strong>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <BuyerDashboardStat label="All orders" value={orders.length} hint="Buyer-side order records" icon={ReceiptText} />
+                            <BuyerDashboardStat label="Active orders" value={activeOrdersCount} hint="Still moving through fulfillment" icon={Truck} />
+                            <BuyerDashboardStat label="Escrow cases" value={escrowOrdersCount} hint="Protected payment flows" icon={ShieldCheck} />
+                            <BuyerDashboardStat label="Returns & refunds" value={returnCount} hint="Post-purchase requests" icon={FileText} />
+                        </section>
+
+                        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <div className="flex min-h-[58px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                                <h2 className="text-base font-black tracking-tight text-slate-950">{initialTab === 'escrow-orders' ? 'Escrow orders' : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? 'Return and refund queue' : 'Buyer orders'}</h2>
+                                <div className="flex gap-1.5 overflow-x-auto">
+                                    {workspaceTabs.map(([label, href, active]) => (
+                                        <Link key={label} href={href} className={cn('shrink-0 rounded-lg px-3 py-2 text-[11px] font-black transition', active ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700')}>
+                                            {label}
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {initialTab === 'orders' ? (
+                                <div className="border-b border-slate-100 px-4 py-3">
+                                    <div className="flex gap-2 overflow-x-auto">
+                                        {orderFilters.map((filter) => (
+                                            <button
+                                                key={filter.key}
+                                                type="button"
+                                                onClick={() => setActiveOrderFilter(filter.key)}
+                                                className={cn(
+                                                    'shrink-0 rounded-lg px-3 py-2 text-xs font-black transition',
+                                                    activeOrderFilter === filter.key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700',
+                                                )}
+                                            >
+                                                {filter.label}<span className="ml-2 opacity-75">{filter.count}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <div className="grid gap-3 p-3">
+                                {(initialTab === 'escrow-orders' ? escrows : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? returns : displayedOrders).length ? (initialTab === 'escrow-orders' ? escrows : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? returns : displayedOrders).map((item) => (
+                                    <Link key={item.id} href={item.id ? `/buyer/orders/${item.id}` : '/orders'} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-200 hover:bg-indigo-50/40 md:grid-cols-[72px_minmax(0,1fr)_auto] md:items-center">
+                                        <ProductMedia src={item.image} alt={item.product || item.code || 'Order'} className="hidden size-[72px] rounded-lg object-cover ring-1 ring-slate-200 md:block" />
                                         <div className="min-w-0">
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <Link href={`/buyer/orders/${item.id}`} className="text-base font-bold tracking-tight text-slate-950 hover:text-indigo-600">
-                                                    {item.code || item.orderNumber}
-                                                </Link>
-                                                <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-bold', orderStatusPillClasses(item))}>
-                                                    {humanizeOrderState(item.escrowState && !['released', 'not_active', 'inactive'].includes(String(item.escrowState).toLowerCase()) ? 'In Escrow' : item.status)}
-                                                </span>
+                                                <p className="line-clamp-1 text-sm font-black text-slate-950">{item.code || item.orderNumber || 'Order request'}</p>
+                                                <BuyerDashboardStatus tone={buyerDashboardStatusTone(item)}>{humanizeOrderState(item.escrowState && !['released', 'not_active', 'inactive'].includes(String(item.escrowState).toLowerCase()) ? 'In Escrow' : item.status || item.state || 'active')}</BuyerDashboardStatus>
                                             </div>
-                                            <p className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 tracking-tight text-slate-800 md:text-[15px]">
-                                                {item.product}
-                                            </p>
-                                            <p className="mt-1 text-xs font-medium text-slate-500 md:text-sm">
-                                                Purchased on {item.placedAt ? new Date(item.placedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'recently'}
-                                                {' • '}
-                                                Seller: {item.sellerProfileHref ? <Link href={item.sellerProfileHref} className="font-extrabold text-indigo-600 hover:text-indigo-800">{item.seller || 'Seller'}</Link> : (item.seller || 'Seller')}
-                                            </p>
+                                            <p className="mt-1 line-clamp-2 text-sm font-extrabold leading-5 text-slate-700">{item.product || item.reason || 'Return request'}</p>
+                                            <p className="mt-1 truncate text-xs font-bold text-slate-500">Seller: {item.seller || 'Seller'} {item.trackingId ? `· Tracking ${item.trackingId}` : ''}</p>
                                         </div>
-                                    </div>
-                                    <div className="flex items-end justify-between gap-2.5 border-t border-slate-100 pt-2.5 2xl:min-w-[132px] 2xl:flex-col 2xl:items-end 2xl:justify-center 2xl:border-t-0 2xl:border-l 2xl:border-slate-100 2xl:pl-4 2xl:pt-0">
-                                        <div className="text-left 2xl:text-right">
-                                            <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">Total</p>
-                                            <p className="mt-1 text-lg font-bold tracking-tight text-slate-950 md:text-xl">{money(item.amount)}</p>
+                                        <div className="flex items-center justify-between gap-3 md:min-w-[150px] md:flex-col md:items-end">
+                                            <span className="text-base font-black text-slate-950">{money(item.amount || item.heldAmount)}</span>
+                                            <span className="inline-flex h-9 items-center rounded-lg bg-indigo-600 px-4 text-xs font-black text-white">Open</span>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-[11px] font-semibold text-slate-500 md:text-xs">{humanizeOrderState(item.paymentStatus || 'pending')}</p>
-                                            <p className="mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{item.paymentMethod || item.currency || 'Wallet'}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </article>
-                        ) : (
-                            <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <Link href={`/buyer/orders/${item.id}`} className="font-extrabold text-slate-950 hover:text-indigo-600">{item.code || item.orderNumber}</Link>
-                                        <p className="mt-1 text-sm font-semibold text-slate-500">{item.product}</p>
-                                    </div>
-                                    <Badge variant="secondary">{humanizeOrderState(item.status || item.state || 'active')}</Badge>
-                                </div>
-                                <div className="mt-3 grid gap-2 text-sm font-semibold text-slate-600 md:grid-cols-2">
-                                    <p>Amount: {money(item.amount || item.heldAmount)}</p>
-                                    <p>Escrow: {item.escrowState || item.state || 'n/a'}</p>
-                                    <p>Payment: {item.paymentMethod || item.currency || 'n/a'}</p>
-                                    <p>Tracking: {item.trackingId || item.carrier || 'Not attached yet'}</p>
-                                </div>
-                                {(item.timeline || []).length ? <div className="mt-4 grid gap-2">{item.timeline.slice(0, 4).map((step) => <div key={step.id} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-500 ring-1 ring-slate-200">{step.to || step.type} {step.createdAt ? `· ${new Date(step.createdAt).toLocaleString()}` : ''}</div>)}</div> : null}
+                                    </Link>
+                                )) : <p className="rounded-xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">No matching order records for this section yet.</p>}
                             </div>
-                        )
-                    )) : <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">No matching order records for this section yet.</p>}
-                </div>
-                {canLoadMoreOrders ? (
-                    <div className="mt-5 flex justify-center">
-                        <Button variant="outline" className="rounded-full px-6" onClick={() => setVisibleOrderCount((current) => Math.min(current + PAGE_SIZE, filteredOrders.length))}>
-                            Load more orders
-                        </Button>
-                    </div>
-                ) : null}
-            </Panel>
-            {['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? (
-                <Panel title="Return and refund queue" icon={FileText}>
-                    <div className="grid gap-3 xl:grid-cols-3">
-                        {returns.length ? returns.map((item) => (
-                            <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <p className="font-extrabold text-slate-950">{item.code}</p>
-                                    <Badge variant="secondary">{String(item.status || 'pending').replaceAll('_', ' ')}</Badge>
+
+                            {canLoadMoreOrders ? (
+                                <div className="border-t border-slate-100 p-4 text-center">
+                                    <Button variant="outline" className="rounded-lg px-6" onClick={() => setVisibleOrderCount((current) => Math.min(current + PAGE_SIZE, filteredOrders.length))}>
+                                        Load more orders
+                                    </Button>
                                 </div>
-                                <p className="mt-2 text-sm font-semibold text-slate-500">{item.reason || 'Return request'}</p>
-                                <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-400">Refund: {item.refundStatus || 'Pending'}</p>
-                            </div>
-                        )) : <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">Return and refund submissions will appear here.</p>}
+                            ) : null}
+                        </section>
                     </div>
-                </Panel>
-            ) : null}
-        </BuyerPanelShell>
+
+                    <aside className="grid gap-3 self-start lg:sticky lg:top-[88px]">
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Order actions</h2>
+                            <div className="mt-3 divide-y divide-slate-100">
+                                {activeQueue.map(([label, hint, href], index) => (
+                                    <Link key={label} href={href} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 py-3">
+                                        <span className="flex size-7 items-center justify-center rounded-lg bg-slate-100 text-xs font-black text-slate-500">{index + 1}</span>
+                                        <span><strong className="block text-sm font-black text-slate-950">{label}</strong><span className="mt-1 block text-xs font-extrabold leading-5 text-slate-500">{hint}</span></span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </section>
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Settlement health</h2>
+                            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-[88%] rounded-full bg-gradient-to-r from-emerald-500 to-indigo-600" /></div>
+                            <p className="mt-4 text-sm font-black text-slate-950">{escrowOrdersCount || activeOrdersCount} protected workflows</p>
+                            <p className="mt-1 text-xs font-extrabold leading-5 text-slate-500">Escrow, payment, delivery, and return records stay connected to the buyer workspace.</p>
+                        </section>
+                        <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                            <h2 className="text-base font-black tracking-tight text-slate-950">Support desk</h2>
+                            <p className="mt-3 text-sm font-black text-slate-950">{state.supportTickets.length} open conversations</p>
+                            <p className="mt-1 text-xs font-extrabold leading-5 text-slate-500">Keep order messages, dispute follow-ups, and seller responses visible.</p>
+                            <Button asChild className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-xs font-black hover:bg-indigo-700"><Link href="/support">Open support</Link></Button>
+                        </section>
+                    </aside>
+                </main>
+
+                <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-18px_50px_-36px_rgba(15,23,42,0.75)] backdrop-blur lg:hidden">
+                    <div className="mx-auto grid max-w-md grid-cols-5 gap-1 px-2 py-2">
+                        {mobileLinks.map(([href, label, Icon, active]) => (
+                            <Link key={href} href={href} className={cn('flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-black transition', active ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950')}>
+                                <Icon className="size-5" />
+                                <span className="truncate">{label === 'Marketplace' ? 'Shop' : label}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </nav>
+            </section>
+        </div>
     );
 }
 
