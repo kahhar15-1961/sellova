@@ -3587,6 +3587,13 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
         ['/support', 'Inbox', MessageSquareText, false],
         ['/profile', 'Profile', User, false],
     ];
+    const mobileLinks = railLinks.filter(([href]) => ['/', '/dashboard', '/marketplace', '/orders', '/profile'].includes(href));
+    const orderTabs = [
+        ['Priority', '/orders'],
+        ['Escrow', '/escrow-orders'],
+        ['Transit', '/orders'],
+        ['Completed', '/orders'],
+    ];
     const actionQueue = [
         firstActionOrder ? {
             label: String(firstActionOrder.status || '').toLowerCase().includes('delivered') ? 'Confirm delivery' : 'Open active order',
@@ -3672,7 +3679,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                     </div>
                 </header>
 
-                <main className="grid min-w-0 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
+                <main className="grid min-w-0 gap-5 p-4 pb-28 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
                     <div className="grid min-w-0 gap-4">
                         <section className="relative grid min-h-[176px] overflow-hidden rounded-2xl border border-slate-950/10 bg-[linear-gradient(135deg,#07111f,#222b48_55%,#5847f5)] p-5 text-white shadow-[0_24px_70px_-52px_rgba(7,17,31,0.8)] lg:grid-cols-[1fr_260px] lg:p-6">
                             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:36px_36px]" />
@@ -3680,6 +3687,14 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                                 <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/10 px-3 text-[11px] font-black uppercase tracking-[0.09em] text-indigo-100">Live buyer operations</span>
                                 <h2 className="mt-4 max-w-3xl text-3xl font-black leading-[1.06] tracking-tight md:text-[34px]">Everything important in one dense, secure workspace.</h2>
                                 <p className="mt-3 max-w-3xl text-sm font-bold leading-7 text-slate-300">Orders, escrow, wallet, alerts, saved sellers, and support actions stay visible without a wide side menu. The page works like an enterprise console, not a marketing page.</p>
+                                <div className="mt-5 flex flex-wrap gap-2">
+                                    <Button asChild className="h-10 rounded-lg bg-white px-4 text-xs font-black text-slate-950 hover:bg-indigo-50">
+                                        <Link href="/marketplace"><PackageSearch className="size-4" />Shop marketplace</Link>
+                                    </Button>
+                                    <Button asChild variant="outline" className="h-10 rounded-lg border-white/20 bg-white/10 px-4 text-xs font-black text-white hover:bg-white/15 hover:text-white">
+                                        <Link href="/orders"><Truck className="size-4" />Track orders</Link>
+                                    </Button>
+                                </div>
                             </div>
                             <div className="relative mt-5 hidden rounded-xl border border-white/15 bg-white/10 p-4 lg:grid lg:content-center">
                                 {[
@@ -3705,12 +3720,39 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <div className="flex min-h-[58px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                                 <h2 className="text-base font-black tracking-tight text-slate-950">Active orders</h2>
-                                <div className="flex gap-1.5">
-                                    {['Priority', 'Escrow', 'Transit', 'Completed'].map((item, index) => <span key={item} className={cn('rounded-lg px-3 py-2 text-[11px] font-black', index === 0 ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500')}>{item}</span>)}
+                                <div className="flex gap-1.5 overflow-x-auto">
+                                    {orderTabs.map(([item, href], index) => (
+                                        <Link key={item} href={href} className={cn('shrink-0 rounded-lg px-3 py-2 text-[11px] font-black transition', index === 0 ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700')}>
+                                            {item}
+                                        </Link>
+                                    ))}
                                 </div>
                             </div>
                             {priorityOrders.length ? (
-                                <div className="overflow-x-auto">
+                                <div className="grid gap-3 p-3 md:hidden">
+                                    {priorityOrders.map((order) => (
+                                        <Link key={order.id} href={`/orders/${order.id}`} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition hover:border-indigo-200 hover:bg-indigo-50">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="line-clamp-2 text-sm font-black leading-5 text-slate-950">{order.code || `Order #${order.id}`} {order.product || ''}</p>
+                                                    <p className="mt-1 truncate text-xs font-extrabold text-slate-500">{order.seller || 'Verified seller'}</p>
+                                                </div>
+                                                <BuyerDashboardStatus tone={buyerDashboardStatusTone(order)}>{humanizeOrderState(order.status || order.escrowState || 'Active')}</BuyerDashboardStatus>
+                                            </div>
+                                            <div className="mt-4 flex items-center justify-between gap-3">
+                                                <span className="text-sm font-black text-slate-800">{money(order.amount)}</span>
+                                                <span className="inline-flex h-9 items-center rounded-lg bg-indigo-600 px-4 text-xs font-black text-white">Open</span>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-6">
+                                    <Empty title="No buyer orders yet" action="/marketplace" label="Shop marketplace" />
+                                </div>
+                            )}
+                            {priorityOrders.length ? (
+                                <div className="hidden overflow-x-auto md:block">
                                     <table className="min-w-[760px] table-fixed">
                                         <thead>
                                             <tr className="border-b border-slate-100 text-left text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">
@@ -3737,11 +3779,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                                         </tbody>
                                     </table>
                                 </div>
-                            ) : (
-                                <div className="p-6">
-                                    <Empty title="No buyer orders yet" action="/marketplace" label="Shop marketplace" />
-                                </div>
-                            )}
+                            ) : null}
                         </section>
 
                         <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
@@ -3832,6 +3870,23 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                         </section>
                     </aside>
                 </main>
+                <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-18px_50px_-36px_rgba(15,23,42,0.75)] backdrop-blur lg:hidden">
+                    <div className="mx-auto grid max-w-md grid-cols-5 gap-1 px-2 py-2">
+                        {mobileLinks.map(([href, label, Icon, active]) => (
+                            <Link
+                                key={href}
+                                href={href}
+                                className={cn(
+                                    'flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-black transition',
+                                    active ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950',
+                                )}
+                            >
+                                <Icon className="size-5" />
+                                <span className="truncate">{label === 'Marketplace' ? 'Shop' : label}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </nav>
             </section>
         </div>
     );
