@@ -3985,35 +3985,6 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
 
                 <main className="grid min-w-0 gap-5 p-4 pb-28 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
                     <div className="grid min-w-0 gap-4">
-                        <section className="relative grid min-h-[176px] overflow-hidden rounded-2xl border border-slate-950/10 bg-[linear-gradient(135deg,#07111f,#222b48_55%,#5847f5)] p-5 text-white shadow-[0_24px_70px_-52px_rgba(7,17,31,0.8)] lg:grid-cols-[1fr_260px] lg:p-6">
-                            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:36px_36px]" />
-                            <div className="relative">
-                                <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/10 px-3 text-[11px] font-black uppercase tracking-[0.09em] text-indigo-100">Order operations</span>
-                                <h2 className="mt-4 max-w-3xl text-3xl font-black leading-[1.06] tracking-tight md:text-[34px]">Orders, escrow, returns, and delivery tracking in one command view.</h2>
-                                <p className="mt-3 max-w-3xl text-sm font-bold leading-7 text-slate-300">Review live purchases, inspect protected payment states, open order detail pages, and move between post-purchase workflows without losing workspace context.</p>
-                                <div className="mt-5 flex flex-wrap gap-2">
-                                    <Button asChild className="h-10 rounded-lg bg-white px-4 text-xs font-black text-slate-950 hover:bg-indigo-50">
-                                        <Link href="/marketplace"><PackageSearch className="size-4" />Order new</Link>
-                                    </Button>
-                                    <Button asChild variant="outline" className="h-10 rounded-lg border-white/20 bg-white/10 px-4 text-xs font-black text-white hover:bg-white/15 hover:text-white">
-                                        <Link href="/escrow-orders"><ShieldCheck className="size-4" />Escrow cases</Link>
-                                    </Button>
-                                </div>
-                            </div>
-                            <div className="relative mt-5 hidden rounded-xl border border-white/15 bg-white/10 p-4 lg:grid lg:content-center">
-                                {[
-                                    ['Orders', orders.length],
-                                    ['Active', activeOrdersCount],
-                                    ['Escrow', escrowOrdersCount],
-                                ].map(([label, value]) => (
-                                    <div key={label} className="flex justify-between gap-4 border-b border-white/10 py-2.5 text-xs font-extrabold text-slate-300 last:border-b-0">
-                                        <span>{label}</span>
-                                        <strong className="text-white">{value}</strong>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-
                         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             <BuyerDashboardStat label="All orders" value={orders.length} hint="Buyer-side order records" icon={ReceiptText} />
                             <BuyerDashboardStat label="Active orders" value={activeOrdersCount} hint="Still moving through fulfillment" icon={Truck} />
