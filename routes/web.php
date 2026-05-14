@@ -89,7 +89,7 @@ Route::middleware('auth')->group(function (): void {
 Route::get('/buyer/orders/{order}', [MarketplaceController::class, 'buyerOrderShow'])->whereNumber('order')->name('buyer.orders.show');
 Route::get('/seller/orders/{order}', [MarketplaceController::class, 'sellerOrderShow'])->whereNumber('order')->name('seller.orders.show');
 Route::get('/{view}', [MarketplaceController::class, 'buyerView'])
-    ->where('view', 'dashboard|cart|checkout|orders|order-details|escrow-orders|refund-requests|return-requests|replacement-requests|wishlist|saved-items|favorite-stores|recently-viewed|profile|profile-settings|security-settings|address-book|wallet|top-up-history|transaction-history|referral-dashboard|loyalty-rewards|coupons-promotions|support|support-tickets|notifications|messages|product-reviews|seller-reviews|kyc-verification|device-management')
+    ->where('view', 'dashboard|cart|checkout|orders|order-details|escrow-orders|refund-requests|return-requests|replacement-requests|wishlist|saved-items|favorite-stores|recently-viewed|profile|profile-settings|security-settings|address-book|activity-log|wallet|top-up-history|transaction-history|referral-dashboard|loyalty-rewards|coupons-promotions|support|support-tickets|notifications|messages|product-reviews|seller-reviews|kyc-verification|device-management')
     ->name('web.buyer.view');
 Route::get('/seller/withdraw/history', static fn () => redirect('/seller/withdraw-history'));
 Route::get('/seller/products/create', [MarketplaceController::class, 'sellerView'])->defaults('view', 'products-create')->name('web.seller.products.create');
@@ -121,6 +121,7 @@ Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
     Route::post('buyer/password', [MarketplaceController::class, 'profilePasswordUpdate'])->name('buyer.password.update');
     Route::post('buyer/profile-photo', [MarketplaceController::class, 'buyerProfilePhotoUpload'])->name('buyer.profile-photo.upload');
     Route::post('buyer/notification-preferences', [MarketplaceController::class, 'buyerNotificationPreferencesUpdate'])->name('buyer.notification-preferences.update');
+    Route::post('buyer/activity-log/clear', [MarketplaceController::class, 'buyerActivityLogClear'])->name('buyer.activity-log.clear');
     Route::post('buyer/addresses', [MarketplaceController::class, 'buyerAddressStore'])->name('buyer.addresses.store');
     Route::post('buyer/addresses/{address}', [MarketplaceController::class, 'buyerAddressUpdate'])->whereNumber('address')->name('buyer.addresses.update');
     Route::post('buyer/addresses/{address}/delete', [MarketplaceController::class, 'buyerAddressDestroy'])->whereNumber('address')->name('buyer.addresses.destroy');
@@ -147,6 +148,7 @@ Route::prefix('web/actions')->name('web.actions.')->group(function (): void {
     Route::post('seller/coupons/{promotion}/delete', [MarketplaceController::class, 'couponDestroy'])->whereNumber('promotion')->name('seller.coupons.destroy');
     Route::post('seller/payouts', [MarketplaceController::class, 'payoutRequestStore'])->name('seller.payouts.store');
     Route::post('support/messages', [MarketplaceController::class, 'supportMessageStore'])->name('support.messages.store');
+    Route::post('support/messages/read', [MarketplaceController::class, 'supportMessagesRead'])->name('support.messages.read');
     Route::get('buyer/orders/{order}', [MarketplaceController::class, 'buyerOrderApiShow'])->whereNumber('order')->name('buyer.orders.show-api');
     Route::get('seller/orders/{order}', [MarketplaceController::class, 'sellerOrderApiShow'])->whereNumber('order')->name('seller.orders.show-api');
     Route::get('orders/{order}/escrow', [MarketplaceController::class, 'orderEscrowDetail'])->whereNumber('order')->name('orders.escrow.show');

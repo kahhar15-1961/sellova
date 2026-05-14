@@ -23,6 +23,7 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Category;
 use App\Models\ChatMessage;
+use App\Models\ChatThreadRead;
 use App\Models\ChatThread;
 use App\Models\BuyerReview;
 use App\Models\DigitalDeliveryFile;
@@ -53,6 +54,7 @@ use App\Models\ShippingMethod;
 use App\Models\StockMovement;
 use App\Models\Storefront;
 use App\Models\PushDevice;
+use App\Models\User;
 use App\Models\UserWishlistItem;
 use App\Models\UserAddress;
 use App\Models\UserNotificationPreference;
@@ -157,7 +159,7 @@ final class MarketplaceController extends Controller
         if (in_array($view, [
             'dashboard', 'checkout', 'orders', 'order-details', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests',
             'wishlist', 'saved-items', 'favorite-stores', 'recently-viewed', 'profile', 'profile-settings', 'security-settings',
-            'address-book', 'wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards',
+            'address-book', 'activity-log', 'wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards',
             'coupons-promotions', 'support', 'support-tickets', 'notifications', 'messages', 'product-reviews', 'seller-reviews',
             'kyc-verification', 'device-management',
         ], true) && ! Auth::check()) {
@@ -1703,6 +1705,41 @@ final class MarketplaceController extends Controller
         return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
     }
 
+    public function supportMessagesRead(Request $request): JsonResponse
+    {
+        if (! Auth::check()) {
+            return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
+        }
+
+        $payload = $request->validate([
+            'thread_id' => ['nullable', 'integer', 'min:1'],
+            'all' => ['nullable', 'boolean'],
+        ]);
+
+        $actorId = (int) Auth::id();
+        $threads = ChatThread::query()
+            ->where(function ($query) use ($actorId): void {
+                $query->where('buyer_user_id', $actorId)
+                    ->orWhere('seller_user_id', $actorId);
+            })
+            ->when(empty($payload['all']), function ($query) use ($payload): void {
+                $threadId = (int) ($payload['thread_id'] ?? 0);
+                if ($threadId > 0) {
+                    $query->whereKey($threadId);
+                }
+            })
+            ->get(['id']);
+
+        foreach ($threads as $thread) {
+            ChatThreadRead::query()->updateOrCreate(
+                ['thread_id' => (int) $thread->id, 'user_id' => $actorId],
+                ['last_read_at' => now()]
+            );
+        }
+
+        return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
+    }
+
     public function profileUpdate(Request $request): JsonResponse
     {
         $payload = $request->validate([
@@ -1815,6 +1852,23 @@ final class MarketplaceController extends Controller
         ]);
         $preferences->save();
         $this->writeBuyerAudit('buyer.notifications.updated', 'notification_preferences_updated');
+
+        return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
+    }
+
+    public function buyerActivityLogClear(Request $request): JsonResponse
+    {
+        if (! Auth::check()) {
+            return response()->json(['ok' => false, 'message' => 'Sign in to clear your activity log.'], 403);
+        }
+
+        $clearedAt = now();
+        AuditLog::query()
+            ->where('actor_user_id', (int) Auth::id())
+            ->where('created_at', '<=', $clearedAt)
+            ->delete();
+
+        $request->session()->put('buyer_activity_log_cleared_at', $clearedAt->toIso8601String());
 
         return response()->json(['ok' => true, 'marketplace' => $this->marketplacePayload()]);
     }
@@ -3026,19 +3080,42 @@ final class MarketplaceController extends Controller
                 'escrows' => [],
                 'ordersDetailed' => [],
                 'savedItems' => [],
-            'security' => [
-                'accountStatus' => 'guest',
-                'lastLoginAt' => null,
-                'twoFactorEnabled' => false,
-            ],
-            'notificationPreferences' => [
-                'inAppEnabled' => true,
-                'emailEnabled' => true,
-                'orderUpdatesEnabled' => true,
-                'promotionEnabled' => false,
-                'securityAlertsEnabled' => true,
-            ],
-            'addresses' => [],
+                'coupons' => [],
+                'referral' => [
+                    'code' => null,
+                    'completedOrders' => 0,
+                    'qualifiedOrders' => 0,
+                    'earned' => '0.00',
+                    'status' => 'Sign in to activate referrals',
+                ],
+                'loyalty' => [
+                    'points' => 0,
+                    'tier' => 'Guest',
+                    'completedOrders' => 0,
+                    'lifetimeSpend' => '0.00',
+                    'nextTierAt' => 1,
+                ],
+                'kyc' => [
+                    'status' => 'guest',
+                    'label' => 'Sign in required',
+                    'summary' => 'Create or sign in to a buyer account to manage identity and checkout trust.',
+                    'requirements' => [],
+                ],
+                'security' => [
+                    'accountStatus' => 'guest',
+                    'lastLoginAt' => null,
+                    'twoFactorEnabled' => false,
+                    'score' => 0,
+                    'checks' => [],
+                ],
+                'notificationPreferences' => [
+                    'inAppEnabled' => true,
+                    'emailEnabled' => true,
+                    'orderUpdatesEnabled' => true,
+                    'promotionEnabled' => false,
+                    'securityAlertsEnabled' => true,
+                ],
+                'addresses' => [],
             ];
         }
 
@@ -3135,6 +3212,44 @@ final class MarketplaceController extends Controller
                 'promotion_enabled' => false,
             ],
         );
+        $completedOrders = $buyerOrders->filter(static fn (Order $order): bool => (string) ($order->status instanceof \BackedEnum ? $order->status->value : $order->status) === 'completed');
+        $lifetimeSpend = $completedOrders->sum(static fn (Order $order): float => (float) ($order->gross_amount ?? $order->net_amount ?? 0));
+        $loyaltyPoints = (int) floor($lifetimeSpend);
+        $nextTierAt = $loyaltyPoints >= 25000 ? null : ($loyaltyPoints >= 10000 ? 25000 : ($loyaltyPoints >= 2500 ? 10000 : 2500));
+        $loyaltyTier = $loyaltyPoints >= 25000 ? 'Platinum' : ($loyaltyPoints >= 10000 ? 'Gold' : ($loyaltyPoints >= 2500 ? 'Silver' : 'Starter'));
+        $savedItems = UserWishlistItem::query()
+            ->where('user_id', (int) Auth::id())
+            ->with(['product.seller_profile', 'product.category.parent', 'product.inventoryRecords', 'product.productVariants.inventoryRecords'])
+            ->latest('id')
+            ->limit(24)
+            ->get()
+            ->map(fn (UserWishlistItem $item): ?array => $item->product instanceof Product ? [
+                ...$this->productPayload($item->product),
+                'savedAt' => $item->created_at?->toIso8601String(),
+            ] : null)
+            ->filter()
+            ->values()
+            ->all();
+        $buyerCoupons = Promotion::query()
+            ->where('campaign_type', 'coupon')
+            ->where('is_active', true)
+            ->where(static function ($query): void {
+                $query->whereNull('starts_at')->orWhere('starts_at', '<=', now());
+            })
+            ->where(static function ($query): void {
+                $query->whereNull('ends_at')->orWhere('ends_at', '>=', now());
+            })
+            ->orderByDesc('priority')
+            ->latest('id')
+            ->limit(16)
+            ->get()
+            ->map(fn (Promotion $promotion): array => $this->sellerCouponPayload($promotion))
+            ->values()
+            ->all();
+        $buyerKyc = $this->buyerIdentityPayload($user, $buyerOrders);
+        $buyerSecurity = $this->buyerSecurityPayload($user, $notificationPreferences);
+        $activityClearedAt = request()->session()->get('buyer_activity_log_cleared_at');
+        $activityClearedTimestamp = $activityClearedAt ? (strtotime((string) $activityClearedAt) ?: 0) : 0;
 
         return [
             'wallets' => $wallets->all(),
@@ -3207,6 +3322,7 @@ final class MarketplaceController extends Controller
                 ])->values()->all(),
             'activity' => collect(AuditLog::query()
                 ->where('actor_user_id', (int) Auth::id())
+                ->when($activityClearedTimestamp > 0, fn ($query) => $query->where('created_at', '>', date('Y-m-d H:i:s', $activityClearedTimestamp)))
                 ->latest('created_at')
                 ->limit(12)
                 ->get()
@@ -3274,6 +3390,7 @@ final class MarketplaceController extends Controller
                         'createdAt' => $device->last_seen_at?->toIso8601String(),
                     ]))
                 ->filter(static fn (array $item): bool => ! empty($item['createdAt']))
+                ->filter(static fn (array $item): bool => $activityClearedTimestamp <= 0 || (strtotime((string) $item['createdAt']) ?: 0) > $activityClearedTimestamp)
                 ->sortByDesc(static fn (array $item): int => strtotime((string) $item['createdAt']) ?: 0)
                 ->unique(static fn (array $item): string => (string) $item['id'])
                 ->take(16)
@@ -3385,22 +3502,99 @@ final class MarketplaceController extends Controller
                     'hasDispute' => $order->disputeCases->isNotEmpty(),
                 ];
             })->values()->all(),
-            'savedItems' => collect($this->cartPayload())
-                ->map(static fn (array $item): array => [
-                    'id' => (int) ($item['id'] ?? 0),
-                    'title' => (string) ($item['title'] ?? 'Saved item'),
-                    'price' => (float) ($item['price'] ?? 0),
-                    'image' => (string) ($item['image'] ?? ''),
-                    'quantity' => (int) ($item['quantity'] ?? 1),
-                ])->values()->all(),
-            'selectedEscrowOrder' => $this->selectedEscrowOrderDetailPayload(),
-            'security' => [
-                'accountStatus' => (string) ($user?->status ?? 'active'),
-                'lastLoginAt' => $user?->last_login_at?->toIso8601String(),
-                'phone' => (string) ($user?->phone ?? ''),
-                'email' => (string) ($user?->email ?? ''),
-                'twoFactorEnabled' => false,
+            'savedItems' => $savedItems,
+            'coupons' => $buyerCoupons,
+            'referral' => [
+                'code' => 'BUYER'.str_pad((string) $user->id, 5, '0', STR_PAD_LEFT),
+                'completedOrders' => $completedOrders->count(),
+                'qualifiedOrders' => $completedOrders->count(),
+                'earned' => number_format($completedOrders->count() * 25, 2, '.', ''),
+                'status' => $completedOrders->count() > 0 ? 'Active' : 'Ready after first completed order',
             ],
+            'loyalty' => [
+                'points' => $loyaltyPoints,
+                'tier' => $loyaltyTier,
+                'completedOrders' => $completedOrders->count(),
+                'lifetimeSpend' => number_format((float) $lifetimeSpend, 2, '.', ''),
+                'nextTierAt' => $nextTierAt,
+            ],
+            'kyc' => $buyerKyc,
+            'selectedEscrowOrder' => $this->selectedEscrowOrderDetailPayload(),
+            'security' => $buyerSecurity,
+        ];
+    }
+
+    private function buyerIdentityPayload(User $user, \Illuminate\Support\Collection $buyerOrders): array
+    {
+        $hasEmail = trim((string) ($user->email ?? '')) !== '';
+        $hasPhone = trim((string) ($user->phone ?? '')) !== '';
+        $hasDefaultAddress = UserAddress::query()->where('user_id', (int) $user->id)->where('is_default', true)->exists();
+        $hasPaymentMethod = UserPaymentMethod::query()->where('user_id', (int) $user->id)->exists();
+        $completedOrders = $buyerOrders
+            ->filter(static fn (Order $order): bool => (string) ($order->status instanceof \BackedEnum ? $order->status->value : $order->status) === 'completed')
+            ->count();
+        $requirements = [
+            ['key' => 'email', 'label' => 'Email on file', 'hint' => $hasEmail ? 'A buyer email is saved on this account.' : 'Add an email address from profile settings.', 'complete' => $hasEmail],
+            ['key' => 'phone', 'label' => 'Phone number', 'hint' => $hasPhone ? 'A buyer phone number is saved on this account.' : 'Add a phone number from profile settings.', 'complete' => $hasPhone],
+            ['key' => 'default_address', 'label' => 'Default address', 'hint' => $hasDefaultAddress ? 'A default shipping or billing address is ready.' : 'Add and mark one address as default.', 'complete' => $hasDefaultAddress],
+            ['key' => 'payment_method', 'label' => 'Payment method', 'hint' => $hasPaymentMethod ? 'At least one payment method is available.' : 'Add a payment method from wallet settings.', 'complete' => $hasPaymentMethod],
+            ['key' => 'completed_order', 'label' => 'Completed order history', 'hint' => $completedOrders > 0 ? 'Completed order history is available.' : 'Complete one protected order to strengthen buyer verification.', 'complete' => $completedOrders > 0],
+        ];
+        $completeCount = collect($requirements)->filter(static fn (array $item): bool => (bool) $item['complete'])->count();
+        $status = (bool) $user->restricted_checkout ? 'restricted' : ($completeCount >= 4 ? 'verified' : 'incomplete');
+
+        return [
+            'status' => $status,
+            'label' => $status === 'verified' ? 'Buyer verified' : ($status === 'restricted' ? 'Checkout restricted' : 'Verification incomplete'),
+            'summary' => $status === 'verified'
+                ? 'Your buyer account has the core trust signals required for protected checkout.'
+                : 'Complete the remaining trust signals to improve checkout reliability and seller confidence.',
+            'requirements' => $requirements,
+            'completedChecks' => $completeCount,
+            'totalChecks' => count($requirements),
+            'completedCount' => $completeCount,
+            'totalCount' => count($requirements),
+        ];
+    }
+
+    private function buyerSecurityPayload(User $user, UserNotificationPreference $preferences): array
+    {
+        $hasEmail = trim((string) ($user->email ?? '')) !== '';
+        $hasPhone = trim((string) ($user->phone ?? '')) !== '';
+        $hasPaymentMethod = UserPaymentMethod::query()->where('user_id', (int) $user->id)->exists();
+        $hasAddress = UserAddress::query()->where('user_id', (int) $user->id)->exists();
+        $activeDeviceCount = PushDevice::query()->where('user_id', (int) $user->id)->where('is_active', true)->count();
+        $openDisputes = DisputeCase::query()->where('opened_by_user_id', (int) $user->id)->whereNotIn('status', ['resolved', 'closed'])->count();
+        $twoFactorEnabled = false;
+        $checks = [
+            ['label' => 'Active account', 'complete' => (string) ($user->status ?? 'active') === 'active', 'weight' => 20],
+            ['label' => 'Email configured', 'complete' => $hasEmail, 'weight' => 15],
+            ['label' => 'Phone configured', 'complete' => $hasPhone, 'weight' => 15],
+            ['label' => 'Payment method', 'complete' => $hasPaymentMethod, 'weight' => 15],
+            ['label' => 'Address book', 'complete' => $hasAddress, 'weight' => 10],
+            ['label' => 'Security alerts', 'complete' => (bool) $preferences->in_app_enabled, 'weight' => 10],
+            ['label' => 'No open disputes', 'complete' => $openDisputes === 0, 'weight' => 10],
+            ['label' => 'Two-factor authentication', 'complete' => $twoFactorEnabled, 'weight' => 5],
+        ];
+        $score = collect($checks)->sum(static fn (array $check): int => (bool) $check['complete'] ? (int) $check['weight'] : 0);
+        if ((bool) $user->restricted_checkout) {
+            $score = min($score, 45);
+        }
+
+        return [
+            'accountStatus' => (string) ($user->status ?? 'active'),
+            'lastLoginAt' => $user->last_login_at?->toIso8601String(),
+            'phone' => (string) ($user->phone ?? ''),
+            'email' => (string) ($user->email ?? ''),
+            'twoFactorEnabled' => $twoFactorEnabled,
+            'score' => max(0, min(100, (int) $score)),
+            'activeDeviceCount' => (int) $activeDeviceCount,
+            'openDisputes' => (int) $openDisputes,
+            'restrictedCheckout' => (bool) $user->restricted_checkout,
+            'checks' => array_map(static fn (array $check): array => [
+                'label' => $check['label'],
+                'complete' => (bool) $check['complete'],
+            ], $checks),
         ];
     }
 
@@ -4186,6 +4380,15 @@ final class MarketplaceController extends Controller
                 ->limit(8)
                 ->get()
                 ->map(function (ChatThread $thread): array {
+                    $lastReadAt = ChatThreadRead::query()
+                        ->where('thread_id', $thread->id)
+                        ->where('user_id', Auth::id())
+                        ->value('last_read_at');
+                    $unreadCount = ChatMessage::query()
+                        ->where('thread_id', $thread->id)
+                        ->where('sender_user_id', '!=', Auth::id())
+                        ->when($lastReadAt, fn ($query) => $query->where('created_at', '>', $lastReadAt))
+                        ->count();
                     $messages = ChatMessage::query()
                         ->where('thread_id', $thread->id)
                         ->orderByDesc('id')
@@ -4201,6 +4404,7 @@ final class MarketplaceController extends Controller
                         'threadId' => (int) $thread->id,
                         'subject' => (string) ($thread->subject ?? 'Marketplace support'),
                         'status' => (string) $thread->status,
+                        'unreadCount' => (int) $unreadCount,
                         'messages' => $messages,
                     ];
                 })

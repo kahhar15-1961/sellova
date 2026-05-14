@@ -600,6 +600,19 @@ function useMarketplaceState(initialMarketplace) {
         return runAction('support', '/web/actions/support/messages', { ...payload, body }, 'Message sent.');
     };
 
+    const markSupportMessagesRead = (threadId = null, all = false) => {
+        return runAction(
+            all ? 'support:read-all' : `support:${threadId || 'active'}:read`,
+            '/web/actions/support/messages/read',
+            { thread_id: threadId, all },
+            all ? 'All conversations marked as read.' : '',
+        );
+    };
+
+    const clearBuyerActivityLog = () => {
+        return runAction('buyer:activity-log:clear', '/web/actions/buyer/activity-log/clear', {}, 'Activity log cleared.');
+    };
+
     const refreshEscrowOrderDetail = async (orderId, quiet = true, context = 'buyer') => {
         const role = context === 'seller' ? 'seller' : 'buyer';
         const key = `escrow:${role}:${orderId}:refresh`;
@@ -1052,7 +1065,7 @@ function useMarketplaceState(initialMarketplace) {
         });
     };
 
-    return { state, setState, pendingAction, routeTransition, notice, addToCart, updateCart, removeCart, toggleWishlist, saveBuyerPaymentMethod, setDefaultBuyerPaymentMethod, deleteBuyerPaymentMethod, requestBuyerWalletTopUp, checkout, sendMessage, refreshEscrowOrderDetail, releaseEscrowFunds, submitOrderReview, submitBuyerReview, markReviewHelpful, openOrderDispute, submitSellerDelivery, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, addSellerProduct, uploadSellerMedia, saveSellerProduct, duplicateSellerProduct, bulkSellerProducts, deleteSellerProduct, adjustStock, saveWarehouse, deleteWarehouse, saveShippingSettings, requestTopUp, uploadKycDocument, saveKycDraft, submitKyc, saveCoupon, toggleCoupon, deleteCoupon, requestPayout, savePayoutMethod, deletePayoutMethod, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, saveBusiness, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification, clearNotifications, pushIncomingNotification, applyNotificationEvent };
+    return { state, setState, pendingAction, routeTransition, notice, addToCart, updateCart, removeCart, toggleWishlist, saveBuyerPaymentMethod, setDefaultBuyerPaymentMethod, deleteBuyerPaymentMethod, requestBuyerWalletTopUp, checkout, sendMessage, markSupportMessagesRead, clearBuyerActivityLog, refreshEscrowOrderDetail, releaseEscrowFunds, submitOrderReview, submitBuyerReview, markReviewHelpful, openOrderDispute, submitSellerDelivery, sendEscrowMessage, markEscrowMessagesRead, mergeIncomingEscrowMessage, addSellerProduct, uploadSellerMedia, saveSellerProduct, duplicateSellerProduct, bulkSellerProducts, deleteSellerProduct, adjustStock, saveWarehouse, deleteWarehouse, saveShippingSettings, requestTopUp, uploadKycDocument, saveKycDraft, submitKyc, saveCoupon, toggleCoupon, deleteCoupon, requestPayout, savePayoutMethod, deletePayoutMethod, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, saveBusiness, fetchNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification, clearNotifications, pushIncomingNotification, applyNotificationEvent };
 }
 
 function Stat({ label, value, hint, icon: Icon }) {
@@ -1274,12 +1287,20 @@ export function AppShell({
         }
     }, [isAuthenticated]);
 
-    const buyerCommandViews = ['dashboard', 'orders', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests'];
+    const buyerCommandViews = ['dashboard', 'orders', 'order-details', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests', 'wallet', 'top-up-history', 'transaction-history', 'wishlist', 'saved-items', 'favorite-stores', 'recently-viewed', 'profile', 'profile-settings', 'security-settings', 'address-book', 'activity-log', 'notifications', 'kyc-verification', 'device-management', 'support', 'support-tickets', 'messages', 'product-reviews', 'seller-reviews'];
     const isBuyerCommandCenter = mode === 'buyer' && buyerCommandViews.includes(view);
 
     if (isBuyerCommandCenter) {
         return (
-            <div className="min-h-screen bg-[#eef3f9] text-slate-950">
+            <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-[#eef3f9] text-slate-950">
+                <style>{`
+                    html,
+                    body,
+                    #app {
+                        max-width: 100vw;
+                        overflow-x: hidden;
+                    }
+                `}</style>
                 <Head title="Buyer Dashboard" />
                 {notice ? (
                     <div className={cn('fixed right-4 top-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border p-4 text-sm font-semibold shadow-xl', notice.type === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
@@ -3463,21 +3484,69 @@ function BuyerMetricsGrid({ items }) {
     return <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">{items.map((item) => <Stat key={item.label} {...item} />)}</div>;
 }
 
-function BuyerCommandIcon({ href, label, icon: Icon, active = false }) {
+function BuyerCommandIcon({ href, label, icon: Icon, active = false, expanded = false }) {
     return (
         <Link
             href={href}
             title={label}
             aria-label={label}
             className={cn(
-                'relative flex size-[46px] items-center justify-center rounded-xl border transition',
+                'group relative flex h-[46px] items-center rounded-xl border transition',
+                expanded ? 'w-full justify-start gap-3 px-3' : 'w-[46px] justify-center',
                 active
                     ? 'border-slate-950 bg-slate-950 text-white shadow-[0_16px_34px_-24px_rgba(7,17,31,0.8)] before:absolute before:-left-[11px] before:h-6 before:w-1 before:rounded-full before:bg-indigo-600'
                     : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600',
             )}
         >
-            <Icon className="size-5" />
+            <Icon className="size-5 shrink-0" />
+            {expanded ? <span className="truncate text-sm font-black">{label}</span> : (
+                <span className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-[0_18px_44px_-28px_rgba(15,23,42,0.45)] group-hover:block">
+                    {label}
+                </span>
+            )}
         </Link>
+    );
+}
+
+function BuyerPanelSidebar({ links = [], expanded = false, onToggle, profileActive = false }) {
+    return (
+        <aside className={cn(
+            'sticky top-0 hidden h-screen flex-col gap-4 border-r border-slate-200 bg-white/85 py-3.5 backdrop-blur-xl lg:flex',
+            expanded ? 'items-stretch px-3' : 'items-center px-2.5',
+        )}>
+            <Link
+                href="/dashboard"
+                title="Buyer workspace"
+                className={cn(
+                    'flex h-11 items-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_18px_36px_-22px_rgba(88,71,245,0.95)]',
+                    expanded ? 'w-full justify-start gap-3 px-3' : 'w-11 justify-center',
+                )}
+            >
+                <ShoppingBag className="size-5 shrink-0" />
+                {expanded ? <span className="truncate text-sm font-black">Sellova</span> : null}
+            </Link>
+            <button
+                type="button"
+                onClick={onToggle}
+                title={expanded ? 'Collapse sidebar' : 'Open sidebar'}
+                aria-label={expanded ? 'Collapse sidebar' : 'Open sidebar'}
+                className={cn(
+                    'flex h-10 items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600',
+                    expanded ? 'w-full justify-start gap-3 px-3 text-sm font-black' : 'w-[46px] justify-center',
+                )}
+            >
+                {expanded ? <ChevronLeft className="size-5 shrink-0" /> : <Menu className="size-5 shrink-0" />}
+                {expanded ? <span>Collapse menu</span> : null}
+            </button>
+            <nav className={cn('grid gap-2', expanded && 'w-full')}>
+                {links.map(([href, label, Icon, active]) => <BuyerCommandIcon key={href} href={href} label={label} icon={Icon} active={active} expanded={expanded} />)}
+            </nav>
+            <div className={cn('mt-auto grid gap-2', expanded && 'w-full')}>
+                <BuyerCommandIcon href="/activity-log" label="Activity Log" icon={Clock} active={profileActive === 'activity'} expanded={expanded} />
+                <BuyerCommandIcon href="/profile" label="Security" icon={ShieldCheck} active={profileActive === true || profileActive === 'profile'} expanded={expanded} />
+                <BuyerCommandIcon href="/profile-settings" label="Settings" icon={Settings} expanded={expanded} />
+            </div>
+        </aside>
     );
 }
 
@@ -3504,6 +3573,74 @@ function BuyerDashboardStatus({ children, tone = 'slate' }) {
     };
 
     return <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black', classes[tone] || classes.slate)}>{children}</span>;
+}
+
+function BuyerCommandWorkspace({ state, activeKey, eyebrow, title, tabs = [], statusItems = [], children }) {
+    const railLinks = [
+        ['/dashboard', 'Dashboard', LayoutDashboard, activeKey === 'dashboard'],
+        ['/orders', 'Orders', Truck, activeKey === 'orders'],
+        ['/wallet', 'Wallet', WalletCards, activeKey === 'wallet'],
+        ['/wishlist', 'Saved', Heart, activeKey === 'saved'],
+        ['/support', 'Inbox', MessageSquareText, activeKey === 'support'],
+        ['/profile', 'Profile', User, activeKey === 'profile'],
+    ];
+    const mobileLinks = railLinks.filter(([href]) => ['/dashboard', '/orders', activeKey === 'saved' ? '/wishlist' : activeKey === 'profile' ? '/profile' : '/wallet', '/support'].includes(href));
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
+    return (
+        <div className={cn('grid min-h-screen w-full max-w-[100vw] grid-cols-1 overflow-x-hidden bg-[#eef3f9] text-slate-950', sidebarOpen ? 'lg:grid-cols-[224px_minmax(0,calc(100vw-224px))]' : 'lg:grid-cols-[72px_minmax(0,calc(100vw-72px))]')}>
+            <BuyerPanelSidebar links={railLinks} expanded={sidebarOpen} onToggle={() => setSidebarOpen((current) => !current)} profileActive={activeKey === 'activity' ? 'activity' : activeKey === 'profile'} />
+
+            <section className="min-w-0 w-full max-w-full overflow-x-hidden">
+                <header className="sticky top-0 z-30 grid min-h-[68px] max-w-full gap-3 overflow-hidden border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:items-center lg:px-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,auto)] xl:px-6">
+                    <div className="min-w-0">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{eyebrow}</p>
+                        <h1 className="mt-1 truncate text-xl font-black leading-none tracking-tight text-slate-950">{title}</h1>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+                        <div className="flex min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {tabs.map((tab) => {
+                                const TabIcon = tab.icon;
+                                return (
+                                    <Link key={tab.href} href={tab.href} className={cn('inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[11px] font-black transition', tab.active ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-indigo-50 hover:text-indigo-700')}>
+                                        <TabIcon className="size-4" />
+                                        {tab.label}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-2 lg:justify-start xl:col-span-1 xl:justify-end">
+                        {statusItems.map((item) => {
+                            const ItemIcon = item.icon;
+                            return (
+                                <span key={item.label} className={cn('inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black', item.tone || 'border-slate-200 bg-white text-slate-700')}>
+                                    {ItemIcon ? <ItemIcon className="size-4" /> : null}
+                                    {item.label}
+                                </span>
+                            );
+                        })}
+                        <Link href="/profile" className="flex size-10 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white">{String(state.user?.name || 'B1').slice(0, 2).toUpperCase()}</Link>
+                    </div>
+                </header>
+
+                <main className="min-w-0 w-full max-w-full overflow-x-hidden p-4 pb-28 lg:p-5 2xl:p-6">
+                    {children}
+                </main>
+
+                <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-18px_50px_-36px_rgba(15,23,42,0.75)] backdrop-blur lg:hidden">
+                    <div className="mx-auto grid max-w-md grid-cols-5 gap-1 px-2 py-2">
+                        {mobileLinks.map(([href, label, Icon, active]) => (
+                            <Link key={href} href={href} className={cn('flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-black transition', active ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950')}>
+                                <Icon className="size-5" />
+                                <span>{label}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </nav>
+            </section>
+        </div>
+    );
 }
 
 function buyerDashboardStatusTone(order) {
@@ -3577,18 +3714,28 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
     const firstTicket = (state.supportTickets || [])[0];
     const firstNotification = notifications[0];
     const security = buyerOps.security || {};
-    const securityScore = Math.min(100, Math.max(72, Number(security.score || security.trustScore || 86)));
+    const securityScore = Math.min(100, Math.max(0, Number(security.score ?? security.trustScore ?? 0)));
+    const buyerActivity = buyerOps.activity || [];
+    const activityMeta = (value) => {
+        if (!value) return 'Pending';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return 'Pending';
+        const diff = Date.now() - date.getTime();
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return `${Math.max(1, Math.round(diff / 60000))}m`;
+        if (diff < 86400000) return `${Math.max(1, Math.round(diff / 3600000))}h`;
+        return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
+    };
     const railLinks = [
-        ['/', 'Home', Home, false],
         ['/dashboard', 'Dashboard', LayoutDashboard, true],
-        ['/marketplace', 'Marketplace', PackageSearch, false],
         ['/orders', 'Orders', Truck, false],
         ['/wallet', 'Wallet', WalletCards, false],
         ['/wishlist', 'Saved', Heart, false],
         ['/support', 'Inbox', MessageSquareText, false],
         ['/profile', 'Profile', User, false],
     ];
-    const mobileLinks = railLinks.filter(([href]) => ['/', '/dashboard', '/marketplace', '/orders', '/profile'].includes(href));
+    const mobileLinks = railLinks.filter(([href]) => ['/dashboard', '/orders', '/wallet', '/support', '/profile'].includes(href));
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const orderTabs = [
         ['Priority', '/orders'],
         ['Escrow', '/escrow-orders'],
@@ -3624,45 +3771,20 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
             href: '/wishlist',
         },
     ];
-    const activityRows = [
-        detailedOrders[0] ? {
-            icon: ShieldCheck,
-            title: `Escrow ${detailedOrders[0].escrowState ? humanizeOrderState(detailedOrders[0].escrowState).toLowerCase() : 'protected'} for ${detailedOrders[0].code || 'latest order'}`,
-            body: detailedOrders[0].seller ? `${detailedOrders[0].seller} transaction is protected until completion.` : 'Payment stays protected until completion.',
-            meta: 'Now',
-        } : null,
-        firstNotification ? {
-            icon: Bell,
-            title: firstNotification.title || 'New buyer notification',
-            body: firstNotification.body || 'A new update is ready in your buyer inbox.',
-            meta: 'Live',
-        } : null,
-        {
-            icon: WalletCards,
-            title: 'Wallet and escrow synced',
-            body: `${money(walletSummary.available)} available with ${money(walletSummary.held)} currently protected.`,
-            meta: '1h',
-        },
-    ].filter(Boolean);
+    const activityRows = buyerActivity.slice(0, 4).map((item) => ({
+        icon: String(item.targetType || '').includes('notification') ? Bell : String(item.targetType || '').includes('wallet') ? WalletCards : ShieldCheck,
+        title: String(item.action || 'buyer.activity').replaceAll('.', ' / '),
+        body: item.reasonCode || item.targetType || 'Buyer workspace activity',
+        meta: activityMeta(item.createdAt),
+    }));
 
     return (
-        <div className="grid min-h-screen grid-cols-1 bg-[#eef3f9] lg:grid-cols-[72px_minmax(0,1fr)]">
-            <aside className="sticky top-0 hidden h-screen flex-col items-center gap-4 border-r border-slate-200 bg-white/85 px-2.5 py-3.5 backdrop-blur-xl lg:flex">
-                <Link href="/" title="Sellova home" className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_18px_36px_-22px_rgba(88,71,245,0.95)]">
-                    <ShoppingBag className="size-5" />
-                </Link>
-                <nav className="grid gap-2">
-                    {railLinks.map(([href, label, Icon, active]) => <BuyerCommandIcon key={href} href={href} label={label} icon={Icon} active={active} />)}
-                </nav>
-                <div className="mt-auto grid gap-2">
-                    <BuyerCommandIcon href="/profile" label="Security" icon={ShieldCheck} />
-                    <BuyerCommandIcon href="/profile-settings" label="Settings" icon={Settings} />
-                </div>
-            </aside>
+        <div className={cn('grid min-h-screen w-full max-w-[100vw] grid-cols-1 overflow-x-hidden bg-[#eef3f9]', sidebarOpen ? 'lg:grid-cols-[224px_minmax(0,calc(100vw-224px))]' : 'lg:grid-cols-[72px_minmax(0,calc(100vw-72px))]')}>
+            <BuyerPanelSidebar links={railLinks} expanded={sidebarOpen} onToggle={() => setSidebarOpen((current) => !current)} />
 
-            <section className="min-w-0">
-                <header className="sticky top-0 z-30 grid min-h-[68px] gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(220px,340px)_minmax(260px,1fr)_auto] lg:items-center lg:px-6">
-                    <div>
+            <section className="min-w-0 w-full max-w-full overflow-x-hidden">
+                <header className="sticky top-0 z-30 grid min-h-[68px] max-w-full gap-3 overflow-hidden border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:items-center lg:px-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,auto)] xl:px-6">
+                    <div className="min-w-0">
                         <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Buyer workspace</p>
                         <h1 className="mt-1 flex items-baseline gap-1 text-xl font-black leading-none tracking-tight text-slate-950"><span>Command</span><span>Center</span></h1>
                     </div>
@@ -3670,7 +3792,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                         <Search className="size-5 shrink-0" />
                         <input name="q" className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-extrabold text-slate-700 placeholder:text-slate-400 focus:ring-0" placeholder="Search orders, sellers, disputes, products..." />
                     </form>
-                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-2 lg:justify-start xl:col-span-1 xl:justify-end">
                         <Link href="/orders" className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700">
                             <ShieldCheck className="size-4" /> Escrow secured
                         </Link>
@@ -3680,7 +3802,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                     </div>
                 </header>
 
-                <main className="grid min-w-0 gap-5 p-4 pb-28 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
+                <main className="grid min-w-0 max-w-full gap-5 p-4 pb-28 lg:p-5 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_328px] 2xl:p-6">
                     <div className="grid min-w-0 gap-4">
                         <section className="relative grid min-h-[176px] overflow-hidden rounded-2xl border border-slate-950/10 bg-[linear-gradient(135deg,#07111f,#222b48_55%,#5847f5)] p-5 text-white shadow-[0_24px_70px_-52px_rgba(7,17,31,0.8)] lg:grid-cols-[1fr_260px] lg:p-6">
                             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] bg-[size:36px_36px]" />
@@ -3787,16 +3909,18 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                                 <div className="flex min-h-[58px] items-center justify-between border-b border-slate-200 px-4 py-3">
                                     <h2 className="text-base font-black tracking-tight text-slate-950">Recent activity</h2>
-                                    <div className="flex gap-1.5"><span className="rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-black text-white">Live</span><span className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-black text-slate-500">All</span></div>
+                                    <div className="flex gap-1.5"><span className="rounded-lg bg-slate-950 px-3 py-2 text-[11px] font-black text-white">{buyerActivity.length} records</span><span className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-black text-slate-500">All</span></div>
                                 </div>
                                 <div className="grid gap-3 p-4">
-                                    {activityRows.map(({ icon: Icon, title, body, meta }) => (
+                                    {activityRows.length ? activityRows.map(({ icon: Icon, title, body, meta }) => (
                                         <div key={title} className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3">
                                             <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"><Icon className="size-4" /></span>
                                             <span className="min-w-0"><strong className="block truncate text-sm font-black text-slate-950">{title}</strong><span className="block truncate text-xs font-extrabold text-slate-500">{body}</span></span>
                                             <span className="text-xs font-black text-slate-500">{meta}</span>
                                         </div>
-                                    ))}
+                                    )) : (
+                                        <p className="rounded-xl bg-slate-50 p-5 text-sm font-semibold text-slate-500">No recent buyer activity has been recorded yet.</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -3825,7 +3949,7 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                         </section>
                     </div>
 
-                    <aside className="grid gap-3 self-start lg:sticky lg:top-[88px]">
+                    <aside className="grid min-w-0 gap-3 self-start xl:sticky xl:top-[88px]">
                         <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <h2 className="text-base font-black tracking-tight text-slate-950">Action queue</h2>
                             <div className="mt-3 divide-y divide-slate-100">
@@ -3853,20 +3977,18 @@ function BuyerDashboard({ state, addToCart, toggleWishlist }) {
                         <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <h2 className="text-base font-black tracking-tight text-slate-950">Saved sellers</h2>
                             <div className="mt-3 divide-y divide-slate-100">
-                                {(favoriteStores.length ? favoriteStores.slice(0, 3) : [
-                                    { id: 'marketplace', name: 'Verified sellers', orders: detailedOrders.length, rating: 'Live' },
-                                    { id: 'escrow', name: 'Escrow partners', orders: activeOrders.length, rating: '4.9' },
-                                    { id: 'digital', name: 'Instant delivery', orders: recommendations.length, rating: 'New' },
-                                ]).map((store, index) => {
-                                    const name = store.name || store.store || store.seller || `Seller ${index + 1}`;
-                                    return (
-                                        <Link key={store.id || name} href="/wishlist" className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 py-3">
-                                            <span className="flex size-[38px] items-center justify-center rounded-lg bg-sky-100 text-sm font-black text-sky-700">{name.slice(0, 2).toUpperCase()}</span>
-                                            <span className="min-w-0"><strong className="block truncate text-sm font-black text-slate-950">{name}</strong><span className="block truncate text-[11px] font-extrabold text-slate-500">{store.orders || store.orderCount || 0} orders placed</span></span>
-                                            <span className={cn('text-xs font-black', index === 0 ? 'rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700' : 'text-slate-500')}>{store.rating || (index === 0 ? 'Live' : '4.8')}</span>
-                                        </Link>
-                                    );
-                                })}
+	                                {favoriteStores.length ? favoriteStores.slice(0, 3).map((store, index) => {
+	                                    const name = store.name || store.store || store.seller || `Seller ${index + 1}`;
+	                                    return (
+	                                        <Link key={store.id || name} href="/wishlist" className="grid grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 py-3">
+	                                            <span className="flex size-[38px] items-center justify-center rounded-lg bg-sky-100 text-sm font-black text-sky-700">{name.slice(0, 2).toUpperCase()}</span>
+	                                            <span className="min-w-0"><strong className="block truncate text-sm font-black text-slate-950">{name}</strong><span className="block truncate text-[11px] font-extrabold text-slate-500">{store.orders || store.orderCount || 0} orders placed</span></span>
+	                                            <span className={cn('text-xs font-black', store.active ? 'rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700' : 'text-slate-500')}>{store.active ? 'Active' : 'Past'}</span>
+	                                        </Link>
+	                                    );
+	                                }) : (
+	                                    <p className="rounded-xl bg-slate-50 p-5 text-sm font-semibold text-slate-500">Stores will appear here after your first purchase.</p>
+	                                )}
                             </div>
                         </section>
                     </aside>
@@ -3904,6 +4026,9 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
     const activeOrdersCount = orders.filter((item) => !['completed', 'cancelled', 'refunded'].includes(String(item.status || '').toLowerCase())).length;
     const escrowOrdersCount = escrows.length;
     const returnCount = returns.length;
+    const completedOrdersCount = orders.filter((item) => ['completed', 'delivered', 'released'].includes(String(item.status || item.escrowState || '').toLowerCase())).length;
+    const protectedWorkflowCount = escrowOrdersCount + activeOrdersCount;
+    const settlementProgress = orders.length ? Math.min(100, Math.round(((completedOrdersCount + escrowOrdersCount) / Math.max(1, orders.length)) * 100)) : 0;
     const walletSummary = buyerOps.walletSummary || {};
     const notifications = (buyerOps.notifications || []).filter((item) => !(item.is_read ?? item.read));
     const unreadNotificationCount = buyerOps.unreadNotificationCount ?? notifications.length;
@@ -3928,16 +4053,15 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
         returnCount ? ['Handle returns', `${returnCount} return or refund records are available.`, '/refund-requests'] : ['Saved sellers', 'Reorder faster from trusted sellers.', '/wishlist'],
     ];
     const railLinks = [
-        ['/', 'Home', Home, false],
         ['/dashboard', 'Dashboard', LayoutDashboard, false],
-        ['/marketplace', 'Marketplace', PackageSearch, false],
         ['/orders', 'Orders', Truck, true],
         ['/wallet', 'Wallet', WalletCards, false],
         ['/wishlist', 'Saved', Heart, false],
         ['/support', 'Inbox', MessageSquareText, false],
         ['/profile', 'Profile', User, false],
     ];
-    const mobileLinks = railLinks.filter(([href]) => ['/', '/dashboard', '/marketplace', '/orders', '/profile'].includes(href));
+    const mobileLinks = railLinks.filter(([href]) => ['/dashboard', '/orders', '/wallet', '/support', '/profile'].includes(href));
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const workspaceTabs = [
         ['All orders', '/orders', initialTab === 'orders'],
         ['Escrow', '/escrow-orders', initialTab === 'escrow-orders'],
@@ -3949,23 +4073,12 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
     }, [initialTab, orders.length, activeOrderFilter, orderQuery]);
 
     return (
-        <div className="grid min-h-screen grid-cols-1 bg-[#eef3f9] lg:grid-cols-[72px_minmax(0,1fr)]">
-            <aside className="sticky top-0 hidden h-screen flex-col items-center gap-4 border-r border-slate-200 bg-white/85 px-2.5 py-3.5 backdrop-blur-xl lg:flex">
-                <Link href="/" title="Sellova home" className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_18px_36px_-22px_rgba(88,71,245,0.95)]">
-                    <ShoppingBag className="size-5" />
-                </Link>
-                <nav className="grid gap-2">
-                    {railLinks.map(([href, label, Icon, active]) => <BuyerCommandIcon key={href} href={href} label={label} icon={Icon} active={active} />)}
-                </nav>
-                <div className="mt-auto grid gap-2">
-                    <BuyerCommandIcon href="/profile" label="Security" icon={ShieldCheck} />
-                    <BuyerCommandIcon href="/profile-settings" label="Settings" icon={Settings} />
-                </div>
-            </aside>
+        <div className={cn('grid min-h-screen w-full max-w-full grid-cols-1 overflow-x-hidden bg-[#eef3f9]', sidebarOpen ? 'lg:grid-cols-[224px_minmax(0,1fr)]' : 'lg:grid-cols-[72px_minmax(0,1fr)]')}>
+            <BuyerPanelSidebar links={railLinks} expanded={sidebarOpen} onToggle={() => setSidebarOpen((current) => !current)} />
 
-            <section className="min-w-0">
-                <header className="sticky top-0 z-30 grid min-h-[68px] gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(220px,340px)_minmax(260px,1fr)_auto] lg:items-center lg:px-6">
-                    <div>
+            <section className={cn('min-w-0 max-w-full overflow-x-hidden', sidebarOpen ? 'lg:max-w-[calc(100vw-224px)]' : 'lg:max-w-[calc(100vw-72px)]')}>
+                <header className="sticky top-0 z-30 grid min-h-[68px] max-w-full gap-3 overflow-hidden border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:items-center lg:px-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,auto)] xl:px-6">
+                    <div className="min-w-0">
                         <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Buyer workspace</p>
                         <h1 className="mt-1 flex items-baseline gap-1 text-xl font-black leading-none tracking-tight text-slate-950"><span>Order</span><span>Control</span></h1>
                     </div>
@@ -3973,7 +4086,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                         <Search className="size-5 shrink-0" />
                         <input value={orderQuery} onChange={(event) => setOrderQuery(event.target.value)} className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-extrabold text-slate-700 placeholder:text-slate-400 focus:ring-0" placeholder="Search orders, sellers, tracking, escrow..." />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-2 lg:justify-start xl:col-span-1 xl:justify-end">
                         <Link href="/escrow-orders" className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700">
                             <ShieldCheck className="size-4" /> Escrow secured
                         </Link>
@@ -3983,7 +4096,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                     </div>
                 </header>
 
-                <main className="grid min-w-0 gap-5 p-4 pb-28 lg:grid-cols-[minmax(0,1fr)_328px] lg:p-6">
+                <main className="grid min-w-0 w-full max-w-full gap-5 overflow-x-hidden p-4 pb-28 lg:p-5 2xl:grid-cols-[minmax(0,1fr)_320px] 2xl:p-6">
                     <div className="grid min-w-0 gap-4">
                         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             <BuyerDashboardStat label="All orders" value={orders.length} hint="Buyer-side order records" icon={ReceiptText} />
@@ -3992,7 +4105,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                             <BuyerDashboardStat label="Returns & refunds" value={returnCount} hint="Post-purchase requests" icon={FileText} />
                         </section>
 
-                        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
+                        <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <div className="flex min-h-[58px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                                 <h2 className="text-base font-black tracking-tight text-slate-950">{initialTab === 'escrow-orders' ? 'Escrow orders' : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? 'Return and refund queue' : 'Buyer orders'}</h2>
                                 <div className="flex gap-1.5 overflow-x-auto">
@@ -4024,10 +4137,10 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                                 </div>
                             ) : null}
 
-                            <div className="grid gap-3 p-3">
+                            <div className="grid min-w-0 gap-3 p-3 xl:grid-cols-2">
                                 {(initialTab === 'escrow-orders' ? escrows : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? returns : displayedOrders).length ? (initialTab === 'escrow-orders' ? escrows : ['refund-requests', 'return-requests', 'replacement-requests'].includes(initialTab) ? returns : displayedOrders).map((item) => (
-                                    <Link key={item.id} href={item.id ? `/buyer/orders/${item.id}` : '/orders'} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-200 hover:bg-indigo-50/40 md:grid-cols-[72px_minmax(0,1fr)_auto] md:items-center">
-                                        <ProductMedia src={item.image} alt={item.product || item.code || 'Order'} className="hidden size-[72px] rounded-lg object-cover ring-1 ring-slate-200 md:block" />
+                                    <Link key={item.id} href={item.id ? `/buyer/orders/${item.id}` : '/orders'} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-indigo-200 hover:bg-indigo-50/40 md:grid-cols-[64px_minmax(0,1fr)] md:items-start">
+                                        <ProductMedia src={item.image} alt={item.product || item.code || 'Order'} className="hidden size-16 rounded-lg object-cover ring-1 ring-slate-200 md:block" />
                                         <div className="min-w-0">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <p className="line-clamp-1 text-sm font-black text-slate-950">{item.code || item.orderNumber || 'Order request'}</p>
@@ -4036,7 +4149,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                                             <p className="mt-1 line-clamp-2 text-sm font-extrabold leading-5 text-slate-700">{item.product || item.reason || 'Return request'}</p>
                                             <p className="mt-1 truncate text-xs font-bold text-slate-500">Seller: {item.seller || 'Seller'} {item.trackingId ? `· Tracking ${item.trackingId}` : ''}</p>
                                         </div>
-                                        <div className="flex items-center justify-between gap-3 md:min-w-[150px] md:flex-col md:items-end">
+                                        <div className="flex items-center justify-between gap-3 md:col-span-2">
                                             <span className="text-base font-black text-slate-950">{money(item.amount || item.heldAmount)}</span>
                                             <span className="inline-flex h-9 items-center rounded-lg bg-indigo-600 px-4 text-xs font-black text-white">Open</span>
                                         </div>
@@ -4054,7 +4167,7 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                         </section>
                     </div>
 
-                    <aside className="grid gap-3 self-start lg:sticky lg:top-[88px]">
+                    <aside className="grid min-w-0 gap-3 self-start 2xl:sticky 2xl:top-[88px]">
                         <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <h2 className="text-base font-black tracking-tight text-slate-950">Order actions</h2>
                             <div className="mt-3 divide-y divide-slate-100">
@@ -4068,8 +4181,8 @@ function BuyerOrdersCenter({ state, initialTab = 'orders' }) {
                         </section>
                         <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
                             <h2 className="text-base font-black tracking-tight text-slate-950">Settlement health</h2>
-                            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full w-[88%] rounded-full bg-gradient-to-r from-emerald-500 to-indigo-600" /></div>
-                            <p className="mt-4 text-sm font-black text-slate-950">{escrowOrdersCount || activeOrdersCount} protected workflows</p>
+                            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-indigo-600" style={{ width: `${settlementProgress}%` }} /></div>
+                            <p className="mt-4 text-sm font-black text-slate-950">{protectedWorkflowCount} protected workflows</p>
                             <p className="mt-1 text-xs font-extrabold leading-5 text-slate-500">Escrow, payment, delivery, and return records stay connected to the buyer workspace.</p>
                         </section>
                         <section className="rounded-xl border border-slate-200 bg-white/95 p-4 shadow-[0_22px_60px_-52px_rgba(15,23,42,0.45)]">
@@ -5142,6 +5255,7 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, submitO
     const [chatAlert, setChatAlert] = useState(null);
     const [completionModalOpen, setCompletionModalOpen] = useState(false);
     const [sellerCompletionModalOpen, setSellerCompletionModalOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const previousCompletionRef = useRef({ orderId: null, completed: null });
 
     useEffect(() => {
@@ -5392,6 +5506,20 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, submitO
     );
     const isReviewSubmitting = pendingAction === `order:${orderId}:review`;
     const isBuyerReviewSubmitting = pendingAction === `order:${orderId}:buyer-review`;
+    const buyerProfileInitials = String(state.user?.name || 'B').trim().slice(0, 2).toUpperCase();
+    const buyerCounterparty = detail?.seller || {};
+    const buyerOrderShellLinks = [
+        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { href: '/orders', label: 'Orders', icon: Truck, active: true },
+        { href: '/wallet', label: 'Wallet', icon: WalletCards },
+        { href: '/wishlist', label: 'Saved', icon: Heart },
+        { href: '/support', label: 'Support', icon: MessageSquareText },
+        { href: '/profile', label: 'Profile', icon: User },
+    ];
+    const buyerOrderMobileLinks = buyerOrderShellLinks.slice(0, 5);
+    const buyerOrderStatusTone = orderCompleted
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : (warning ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-indigo-200 bg-indigo-50 text-indigo-700');
 
     const orderDetailsContent = (
         <div className="space-y-4 pb-20 md:pb-0">
@@ -5571,7 +5699,7 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, submitO
                 </section>
 
                 {(canRelease || canDispute) ? (
-                    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur md:hidden">
+                    <div className={cn('fixed inset-x-0 z-30 border-t border-slate-200 bg-white/95 p-3 backdrop-blur md:hidden', mode === 'buyer' ? 'bottom-[64px]' : 'bottom-0')}>
                         <div className="grid grid-cols-2 gap-3">
                             <button type="button" disabled={!canRelease || pendingAction === `escrow:${orderId}:release`} onClick={requestRelease} className="h-11 rounded-lg bg-[#4f46e5] text-sm font-black text-white disabled:opacity-50">{isPhysicalDelivery ? 'Confirm' : 'Release'}</button>
                             <button type="button" disabled={!canDispute || pendingAction === `escrow:${orderId}:dispute`} onClick={requestDispute} className="h-11 rounded-lg border border-slate-300 bg-white text-sm font-black text-slate-950 disabled:opacity-50">{isPhysicalDelivery ? 'Problem' : 'Dispute'}</button>
@@ -5610,9 +5738,130 @@ function EscrowOrderDetails({ state, mode = 'buyer', releaseEscrowFunds, submitO
     }
 
     return (
-        <BuyerPanelShell activeKey="orders" eyebrow="" title="" description="">
-            {orderDetailsContent}
-        </BuyerPanelShell>
+        <div className={cn('grid min-h-screen w-full max-w-[100vw] grid-cols-1 overflow-x-hidden bg-[#eef3f9] text-slate-950', sidebarOpen ? 'lg:grid-cols-[224px_minmax(0,calc(100vw-224px))]' : 'lg:grid-cols-[72px_minmax(0,calc(100vw-72px))]')}>
+            <BuyerPanelSidebar
+                links={buyerOrderShellLinks.map((item) => [item.href, item.label, item.icon, item.active])}
+                expanded={sidebarOpen}
+                onToggle={() => setSidebarOpen((current) => !current)}
+            />
+
+            <section className="min-w-0 w-full max-w-full overflow-x-hidden">
+                <header className="sticky top-0 z-40 max-w-full overflow-hidden border-b border-slate-200/80 bg-white/92 px-4 py-3 shadow-[0_14px_50px_-42px_rgba(15,23,42,0.55)] backdrop-blur md:px-6">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <Link href="/orders" className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600">
+                                <ChevronLeft className="size-5" />
+                            </Link>
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Buyer Workspace</p>
+                                <h1 className="truncate text-lg font-black tracking-tight text-slate-950 md:text-xl">{detail.order.order_number || `Order #${orderId}`}</h1>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className={cn('inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-black uppercase tracking-[0.12em]', buyerOrderStatusTone)}>
+                                {orderCompleted ? <Check className="size-4" /> : <ShieldCheck className="size-4" />}
+                                {orderCompleted ? 'Completed' : heroBadgeLabel}
+                            </span>
+                            <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                                <LockKeyhole className="size-4 text-indigo-600" />Protected
+                            </span>
+                            <div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white shadow-sm">{buyerProfileInitials}</div>
+                        </div>
+                    </div>
+                </header>
+
+                <main className="grid min-w-0 w-full max-w-full gap-4 overflow-x-hidden px-4 py-4 pb-28 md:px-5 md:py-5 2xl:grid-cols-[minmax(0,1fr)_320px] 2xl:px-6">
+                    <div className="min-w-0">
+                        {orderDetailsContent}
+                    </div>
+
+                    <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-[92px] 2xl:pb-4">
+                        <section className="rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_60px_-42px_rgba(15,23,42,0.35)]">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Command</p>
+                                    <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">Order Actions</h2>
+                                </div>
+                                <span className="flex size-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                                    <ReceiptText className="size-5" />
+                                </span>
+                            </div>
+                            <div className="mt-4 grid gap-2">
+                                <Link href="/orders" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 transition hover:border-indigo-200 hover:text-indigo-600">
+                                    <ChevronLeft className="size-4" />Back to orders
+                                </Link>
+                                <Link href="/escrow-orders" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-700 transition hover:border-indigo-200 hover:bg-white hover:text-indigo-600">
+                                    <ShieldCheck className="size-4" />Escrow cases
+                                </Link>
+                                <Link href="/support" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-700 transition hover:border-indigo-200 hover:bg-white hover:text-indigo-600">
+                                    <Headphones className="size-4" />Support
+                                </Link>
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_60px_-42px_rgba(15,23,42,0.35)]">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Settlement</p>
+                            <div className="mt-3 rounded-xl bg-slate-950 p-4 text-white">
+                                <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-200">Total Paid</p>
+                                <p className="mt-2 text-2xl font-black tracking-tight">{money(detail.order.total_paid)}</p>
+                                <p className="mt-2 text-sm font-semibold leading-5 text-slate-300">{orderCompleted ? 'Funds released and order completed.' : 'Funds remain protected until completion.'}</p>
+                            </div>
+                            <div className="mt-3 grid gap-2 text-sm font-bold">
+                                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-slate-600">
+                                    <span>Order status</span>
+                                    <span className="text-slate-950">{humanizeOrderState(detail.order.status || 'active')}</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-slate-600">
+                                    <span>Escrow status</span>
+                                    <span className="text-slate-950">{humanizeOrderState(detail.escrow?.status || 'secured')}</span>
+                                </div>
+                                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-slate-600">
+                                    <span>Placed</span>
+                                    <span className="text-slate-950">{formatDateTime(detail.order.placed_at)}</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_18px_60px_-42px_rgba(15,23,42,0.35)]">
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Seller</p>
+                            <div className="mt-3 flex items-center gap-3">
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
+                                    {String(buyerCounterparty.name || 'S').trim().slice(0, 2).toUpperCase()}
+                                </span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-black text-slate-950">{buyerCounterparty.name || 'Seller workspace'}</p>
+                                    <p className="truncate text-xs font-bold text-slate-500">{buyerCounterparty.email || 'Verified merchant'}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-2 gap-2">
+                                <div className="rounded-lg bg-slate-50 px-3 py-3">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Delivery</p>
+                                    <p className="mt-1 truncate text-sm font-black text-slate-950">{humanizeOrderState(deliveryStatus)}</p>
+                                </div>
+                                <div className="rounded-lg bg-slate-50 px-3 py-3">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Flow</p>
+                                    <p className="mt-1 truncate text-sm font-black text-slate-950">{isPhysicalDelivery ? 'Physical' : 'Digital'}</p>
+                                </div>
+                            </div>
+                        </section>
+                    </aside>
+                </main>
+
+                <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-3 py-2 shadow-[0_-18px_60px_-42px_rgba(15,23,42,0.45)] backdrop-blur lg:hidden">
+                    <div className="grid grid-cols-5 gap-1">
+                        {buyerOrderMobileLinks.map((item) => {
+                            const Icon = item.icon;
+                            return (
+                                <Link key={item.label} href={item.href} className={cn('flex h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-black uppercase tracking-[0.08em] transition', item.active ? 'bg-[#4f46e5] text-white shadow-[0_16px_30px_-22px_rgba(79,70,229,0.8)]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950')}>
+                                    <Icon className="size-4" />
+                                    <span>{item.label}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </nav>
+            </section>
+        </div>
     );
 }
 
@@ -5631,6 +5880,10 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
     const topUps = wallets.flatMap((wallet) => (wallet.recentTopUps || []).map((item) => ({ ...item, walletType: wallet.type, walletCurrency: wallet.currency })));
     const transactions = wallets.flatMap((wallet) => (wallet.recentEntries || []).map((item) => ({ ...item, walletType: wallet.type, walletCurrency: wallet.currency })));
     const paymentMethods = buyerOps.paymentMethods || [];
+    const buyerCoupons = buyerOps.coupons || [];
+    const referral = buyerOps.referral || {};
+    const loyalty = buyerOps.loyalty || {};
+    const rewardTab = ['referral-dashboard', 'loyalty-rewards', 'coupons-promotions'].includes(initialTab);
     const [editingMethodId, setEditingMethodId] = useState(null);
     const [methodFormOpen, setMethodFormOpen] = useState(false);
     const [fundActionTab, setFundActionTab] = useState('topup');
@@ -6037,9 +6290,9 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
             pdf += `${object}\n`;
         });
         const xrefStart = pdf.length;
-        pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+        pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f\n`;
         offsets.slice(1).forEach((offset) => {
-            pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+            pdf += `${String(offset).padStart(10, '0')} 00000 n\n`;
         });
         pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
 
@@ -6054,13 +6307,113 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
         window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
 
-    return (
-        <BuyerPanelShell
-            activeKey="wallet"
-            eyebrow="Buyer wallet"
-            title="Balance, top-up history, payment methods, and reward value"
-            description="This shared wallet architecture keeps buyer funding, protected escrow debits, transaction history, and reusable payment methods synchronized with mobile flows."
-        >
+    const walletRailLinks = [
+        ['/dashboard', 'Dashboard', LayoutDashboard, false],
+        ['/orders', 'Orders', Truck, false],
+        ['/wallet', 'Wallet', WalletCards, true],
+        ['/wishlist', 'Saved', Heart, false],
+        ['/support', 'Inbox', MessageSquareText, false],
+        ['/profile', 'Profile', User, false],
+    ];
+    const walletMobileLinks = walletRailLinks.filter(([href]) => ['/dashboard', '/orders', '/wallet', '/support', '/profile'].includes(href));
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const walletWorkspaceTabs = [
+        ['Wallet', '/wallet', initialTab === 'wallet'],
+        ['Top-ups', '/top-up-history', initialTab === 'top-up-history'],
+        ['Transactions', '/transaction-history', initialTab === 'transaction-history'],
+        ['Referrals', '/referral-dashboard', initialTab === 'referral-dashboard'],
+        ['Rewards', '/loyalty-rewards', initialTab === 'loyalty-rewards'],
+        ['Coupons', '/coupons-promotions', initialTab === 'coupons-promotions'],
+    ];
+    const walletTitle = initialTab === 'top-up-history'
+        ? 'Top-up History'
+        : initialTab === 'transaction-history'
+            ? 'Transaction Ledger'
+            : initialTab === 'referral-dashboard'
+                ? 'Referral Dashboard'
+                : initialTab === 'loyalty-rewards'
+                    ? 'Loyalty Rewards'
+                    : initialTab === 'coupons-promotions'
+                        ? 'Coupons & Promotions'
+                        : 'Wallet Control';
+    const loyaltyProgress = loyalty.nextTierAt ? Math.min(100, Math.round((asNumber(loyalty.points) / Math.max(1, asNumber(loyalty.nextTierAt))) * 100)) : 100;
+    const rewardContent = (
+        <section className="space-y-4">
+            <section className="grid gap-3 xl:grid-cols-3">
+                <article className="rounded-2xl border border-indigo-200 bg-white p-5 shadow-[0_14px_32px_-28px_rgba(79,70,229,0.38)]">
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">Referral Code</p>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (referral.code && typeof navigator !== 'undefined') navigator.clipboard?.writeText(referral.code);
+                            }}
+                            disabled={!referral.code}
+                            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Copy referral code"
+                        >
+                            <Copy className="size-4" />
+                        </button>
+                    </div>
+                    <p className="mt-4 break-all text-2xl font-black tracking-tight text-slate-950">{referral.code || 'Not active'}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-500">{referral.status || 'Complete an order to activate buyer referrals.'}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.22)]">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Loyalty Tier</p>
+                    <p className="mt-4 text-2xl font-black tracking-tight text-slate-950">{loyalty.tier || 'Starter'}</p>
+                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div className="h-full rounded-full bg-indigo-600" style={{ width: `${loyaltyProgress}%` }} />
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-500">{asNumber(loyalty.points)} points{loyalty.nextTierAt ? ` / ${loyalty.nextTierAt}` : ''}</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.22)]">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Qualified Orders</p>
+                    <p className="mt-4 text-2xl font-black tracking-tight text-slate-950">{referral.qualifiedOrders || loyalty.completedOrders || 0}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-500">{moneyFixed(referral.earned || 0)} estimated referral value from completed order history.</p>
+                </article>
+            </section>
+
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_32px_-30px_rgba(15,23,42,0.24)]">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                    <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">{initialTab === 'coupons-promotions' ? 'Buyer offers' : 'Rewards activity'}</p>
+                        <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">{initialTab === 'coupons-promotions' ? 'Available Coupons' : 'Reward Summary'}</h2>
+                    </div>
+                    <Link href="/marketplace" className="inline-flex h-10 items-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white">Shop marketplace</Link>
+                </div>
+                {initialTab === 'coupons-promotions' ? (
+                    <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+                        {buyerCoupons.length ? buyerCoupons.map((coupon) => (
+                            <article key={coupon.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-base font-black text-slate-950">{coupon.title}</p>
+                                        <p className="mt-1 text-sm font-semibold text-slate-500">{coupon.description || 'Marketplace coupon'}</p>
+                                    </div>
+                                    <span className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-black text-white">{coupon.code}</span>
+                                </div>
+                                <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-slate-600">
+                                    <span className="rounded-lg bg-white px-2.5 py-1">{coupon.type === 'percentage' ? `${coupon.value}% off` : `${coupon.currency || 'BDT'} ${coupon.value} off`}</span>
+                                    <span className="rounded-lg bg-white px-2.5 py-1">Min {moneyFixed(coupon.minSpend || 0)}</span>
+                                    <span className="rounded-lg bg-white px-2.5 py-1">{coupon.remaining === null || coupon.remaining === undefined ? 'Unlimited' : `${coupon.remaining} left`}</span>
+                                </div>
+                            </article>
+                        )) : (
+                            <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500 md:col-span-2 xl:col-span-3">No active buyer coupons are available right now.</p>
+                        )}
+                    </div>
+                ) : (
+                    <div className="grid gap-3 p-4 md:grid-cols-3">
+                        <InfoTile label="Completed Orders" value={String(loyalty.completedOrders || 0)} />
+                        <InfoTile label="Lifetime Spend" value={moneyFixed(loyalty.lifetimeSpend || 0)} />
+                        <InfoTile label="Next Tier" value={loyalty.nextTierAt ? `${loyalty.nextTierAt} points` : 'Top tier'} />
+                    </div>
+                )}
+            </section>
+        </section>
+    );
+    const walletContent = (
+        <>
             <section className="space-y-4">
                 <section className="grid gap-3 xl:grid-cols-3">
                     <article className="relative overflow-hidden rounded-2xl border border-indigo-200/70 bg-[linear-gradient(135deg,#4f46e5_0%,#5b4ff0_52%,#4f46e5_100%)] px-4 py-4 text-white shadow-[0_14px_28px_-22px_rgba(79,70,229,0.45)]">
@@ -6070,13 +6423,13 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
                                 <Wallet className="size-4 text-white/95" />
                                 <span>Available Balance</span>
                             </div>
-                            <div className="rounded-lg bg-white/12 px-2.5 py-1.5 text-[11px] font-black text-white ring-1 ring-white/10">
-                                <span className="text-emerald-300">↗</span> +5.2%
-                            </div>
+	                            <div className="rounded-lg bg-white/12 px-2.5 py-1.5 text-[11px] font-black text-white ring-1 ring-white/10">
+	                                {summary.transactions || 0} entries
+	                            </div>
                         </div>
                         <div className="relative mt-6">
                             <p className="text-[2rem] font-black leading-none tracking-[-0.04em] text-white">{moneyFixed(summary.available || 0)}</p>
-                            <p className="mt-2.5 text-[12px] font-medium text-indigo-100/90">Ready to use for purchases or withdrawals</p>
+                            <p className="mt-2.5 text-[12px] font-medium text-indigo-100/90">Ready to use for purchases and protected checkout</p>
                         </div>
                     </article>
 
@@ -6194,11 +6547,10 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
 
                     <div className="space-y-4">
                         <section className="overflow-hidden rounded-2xl border border-[#e5ebfb] bg-white shadow-[0_12px_26px_-24px_rgba(15,23,42,0.24)]">
-                            <div className="grid grid-cols-2 border-b border-slate-100">
-                                {[
-                                    ['topup', 'Top Up'],
-                                    ['withdraw', 'Withdraw'],
-                                ].map(([key, label]) => (
+                            <div className="grid grid-cols-1 border-b border-slate-100">
+	                                {[
+	                                    ['topup', 'Top Up'],
+	                                ].map(([key, label]) => (
                                     <button
                                         key={key}
                                         type="button"
@@ -6243,12 +6595,7 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
 
                                         {primaryWallet ? <p className="text-sm font-semibold text-slate-500">Funds will be requested for your {primaryWallet.type} wallet in {primaryWallet.currency}.</p> : null}
                                     </>
-                                ) : (
-                                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-6 text-center">
-                                        <p className="text-sm font-black text-slate-950">Withdrawals are not enabled for buyer wallets yet.</p>
-                                        <p className="mt-2 text-sm font-medium text-slate-500">This tab is styled to match the design and stays ready for the next workflow.</p>
-                                    </div>
-                                )}
+	                                ) : null}
                             </div>
                         </section>
 
@@ -6355,7 +6702,54 @@ function BuyerWalletCenter({ state, initialTab = 'wallet', saveBuyerPaymentMetho
                 </div>,
                 document.body,
             ) : null}
-        </BuyerPanelShell>
+        </>
+    );
+
+    return (
+        <div className={cn('grid min-h-screen w-full max-w-[100vw] grid-cols-1 overflow-x-hidden bg-[#eef3f9] text-slate-950', sidebarOpen ? 'lg:grid-cols-[224px_minmax(0,calc(100vw-224px))]' : 'lg:grid-cols-[72px_minmax(0,calc(100vw-72px))]')}>
+            <BuyerPanelSidebar links={walletRailLinks} expanded={sidebarOpen} onToggle={() => setSidebarOpen((current) => !current)} />
+
+            <section className="min-w-0 w-full max-w-full overflow-x-hidden">
+                <header className="sticky top-0 z-30 grid min-h-[68px] max-w-full gap-3 overflow-hidden border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-xl lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)] lg:items-center lg:px-5 xl:grid-cols-[minmax(0,300px)_minmax(0,1fr)_minmax(0,auto)] xl:px-6">
+                    <div className="min-w-0">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Buyer wallet</p>
+                        <h1 className="mt-1 truncate text-xl font-black leading-none tracking-tight text-slate-950">{walletTitle}</h1>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+                        <div className="flex min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {walletWorkspaceTabs.map(([label, href, active]) => (
+                                <Link key={label} href={href} className={cn('shrink-0 rounded-lg px-3 py-2 text-[11px] font-black transition', active ? 'bg-slate-950 text-white' : 'bg-white text-slate-500 hover:bg-indigo-50 hover:text-indigo-700')}>
+                                    {label}
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-2 lg:justify-start xl:col-span-1 xl:justify-end">
+                        <Link href="/wallet" className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700">
+                            <ShieldCheck className="size-4" /> Wallet secured
+                        </Link>
+                        <span className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{moneyFixed(summary.available || 0)}</span>
+                        <span className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">{paymentMethods.length} methods</span>
+                        <Link href="/profile" className="flex size-10 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white">{String(state.user?.name || 'B1').slice(0, 2).toUpperCase()}</Link>
+                    </div>
+                </header>
+
+                <main className="min-w-0 w-full max-w-full overflow-x-hidden p-4 pb-28 lg:p-5 2xl:p-6">
+                    {rewardTab ? rewardContent : walletContent}
+                </main>
+
+                <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-18px_50px_-36px_rgba(15,23,42,0.75)] backdrop-blur lg:hidden">
+                    <div className="mx-auto grid max-w-md grid-cols-5 gap-1 px-2 py-2">
+                        {walletMobileLinks.map(([href, label, Icon, active]) => (
+                            <Link key={href} href={href} className={cn('flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-black transition', active ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950')}>
+                                <Icon className="size-5" />
+                                <span>{label}</span>
+                            </Link>
+                        ))}
+                    </div>
+                </nav>
+            </section>
+        </div>
     );
 }
 
@@ -6366,19 +6760,40 @@ function BuyerSavedCenter({ state, addToCart, toggleWishlist, initialTab = 'wish
     const favoriteStores = buyerOps.favoriteStores || [];
     const recentlyViewed = buyerOps.recentlyViewed || [];
     const activeSet = initialTab === 'saved-items' ? savedItems : initialTab === 'favorite-stores' ? favoriteStores : initialTab === 'recently-viewed' ? recentlyViewed : wishlistProducts;
+    const savedTabs = [
+        { label: 'Wishlist', href: '/wishlist', active: initialTab === 'wishlist', icon: Heart },
+        { label: 'Saved Items', href: '/saved-items', active: initialTab === 'saved-items', icon: Heart },
+        { label: 'Stores', href: '/favorite-stores', active: initialTab === 'favorite-stores', icon: Store },
+        { label: 'Viewed', href: '/recently-viewed', active: initialTab === 'recently-viewed', icon: Eye },
+    ];
+    const savedTitle = initialTab === 'favorite-stores' ? 'Favorite Stores' : initialTab === 'recently-viewed' ? 'Recently Viewed' : initialTab === 'saved-items' ? 'Saved Items' : 'Wishlist';
 
     return (
-        <BuyerPanelShell
+        <BuyerCommandWorkspace
+            state={state}
             activeKey="saved"
-            eyebrow="Saved and discovery"
-            title="Wishlist, saved items, favorite stores, and recently viewed listings"
-            description="Buyer-side intent signals stay grouped so shoppers can resume decisions quickly across web and app."
+            eyebrow="Buyer discovery"
+            title={savedTitle}
+            tabs={savedTabs}
+            statusItems={[
+                { label: `${wishlistProducts.length} wishlist`, icon: Heart, tone: 'border-rose-200 bg-rose-50 text-rose-700' },
+                { label: `${favoriteStores.length} stores`, icon: Store },
+                { label: `${recentlyViewed.length} viewed`, icon: Eye },
+            ]}
         >
-            <Panel title="Collections" icon={Heart}>
+            <section className="space-y-4">
+                <section className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-[0_18px_50px_-44px_rgba(15,23,42,0.35)]">
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Collection</p>
+                            <h2 className="text-lg font-black tracking-tight text-slate-950">{savedTitle}</h2>
+                        </div>
+                        <Link href="/marketplace" className="inline-flex h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-black text-white">Browse marketplace</Link>
+                    </div>
                 {initialTab === 'favorite-stores' ? (
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {favoriteStores.length ? favoriteStores.map((store) => (
-                            <div key={store.id} className="rounded-2xl border border-slate-200 p-4">
+                            <div key={store.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                                 <p className="font-extrabold text-slate-950">{store.name}</p>
                                 <p className="mt-2 text-sm font-semibold text-slate-500">{store.orders} order{store.orders === 1 ? '' : 's'} {store.active ? '· Active relationship' : ''}</p>
                             </div>
@@ -6391,12 +6806,13 @@ function BuyerSavedCenter({ state, addToCart, toggleWishlist, initialTab = 'wish
                         )) : <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500">Nothing has been saved in this section yet.</p>}
                     </div>
                 )}
-            </Panel>
-        </BuyerPanelShell>
+                </section>
+            </section>
+        </BuyerCommandWorkspace>
     );
 }
 
-function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, pendingAction = '', initialTab = 'profile' }) {
+function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuyerProfilePhoto, updateBuyerNotificationPreferences, saveBuyerAddress, deleteBuyerAddress, clearBuyerActivityLog, pendingAction = '', initialTab = 'profile' }) {
     const [form, setForm] = useState(() => ({
         name: state.user?.name || '',
         email: state.user?.email || '',
@@ -6408,6 +6824,8 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
     const devices = buyerOps.devices || [];
     const activity = buyerOps.activity || [];
     const security = buyerOps.security || {};
+    const kyc = buyerOps.kyc || {};
+    const kycRequirements = Array.isArray(kyc.requirements) ? kyc.requirements : [];
     const preferences = buyerOps.notificationPreferences || {};
     const addresses = buyerOps.addresses || [];
     const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', new_password_confirmation: '' });
@@ -6431,6 +6849,7 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
         country: 'Bangladesh',
         is_default: addresses.length === 0,
     });
+    const [activityLimit, setActivityLimit] = useState(6);
 
     useEffect(() => {
         setForm({
@@ -6454,13 +6873,16 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
     const resolvedTab = initialTab === 'profile-settings' ? 'profile'
         : initialTab === 'security-settings' ? 'security'
         : initialTab === 'address-book' ? 'address'
+        : initialTab === 'activity-log' ? 'activity'
         : initialTab === 'notifications' ? 'notifications'
+        : initialTab === 'kyc-verification' ? 'kyc'
         : initialTab === 'device-management' ? 'security'
         : initialTab;
 
     const tabItems = [
         { key: 'profile', label: 'Personal Info', href: '/profile-settings', icon: User },
         { key: 'security', label: 'Security', href: '/security-settings', icon: ShieldCheck },
+        { key: 'kyc', label: 'Identity', href: '/kyc-verification', icon: BadgeCheck },
         { key: 'address', label: 'Address Book', href: '/address-book', icon: MapPin },
         { key: 'notifications', label: 'Notifications', href: '/notifications', icon: Bell },
     ];
@@ -6479,6 +6901,28 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
         .slice(0, 2)
         .toUpperCase();
     const nameParts = splitName(form.name);
+    const activityLabel = (value, fallback = 'Buyer workspace activity') => {
+        const normalized = String(value || '').trim();
+        if (!normalized) return fallback;
+        const replacements = {
+            buyer_accepted_delivery: 'Buyer accepted delivery',
+            'buyer.profile.updated': 'Profile updated',
+            'buyer.notifications.updated': 'Notification preferences updated',
+            notification_preferences_updated: 'Notification preferences updated',
+            'escrow.order.released_buyer': 'Escrow released to buyer',
+            'escrow.chat.message': 'Escrow chat message',
+            'order.status.changed': 'Order status changed',
+        };
+        if (replacements[normalized]) return replacements[normalized];
+        return normalized
+            .replaceAll('.', ' ')
+            .replaceAll('/', ' ')
+            .replaceAll('_', ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    };
+    const visibleActivity = activity.slice(0, activityLimit);
 
     const openAddressEditor = (address = null) => {
         if (!address) {
@@ -6520,30 +6964,24 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
         setAddressModalOpen(false);
     };
 
-    return (
-        <BuyerPanelShell activeKey="profile" eyebrow="" title="" description="">
-            <section className="space-y-5">
-                <div className="inline-flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-slate-100/90 p-2 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.18)]">
-                    {tabItems.map(({ key, label, href, icon: Icon }) => {
-                        const active = resolvedTab === key;
-                        return (
-                            <Link
-                                key={key}
-                                href={href}
-                                className={cn(
-                                    'inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition',
-                                    active
-                                        ? 'bg-white text-slate-950 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.35)] ring-1 ring-slate-200'
-                                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-900',
-                                )}
-                            >
-                                <Icon className="size-4" />
-                                {label}
-                            </Link>
-                        );
-                    })}
-                </div>
+    const profileTitle = resolvedTab === 'security' ? 'Security Center' : resolvedTab === 'kyc' ? 'KYC Verification' : resolvedTab === 'address' ? 'Address Book' : resolvedTab === 'notifications' ? 'Notifications' : resolvedTab === 'activity' ? 'Activity Log' : 'Profile Control';
+    const profileTabs = tabItems.map((item) => ({ ...item, active: resolvedTab === item.key }));
 
+    return (
+        <BuyerCommandWorkspace
+            state={state}
+            activeKey={resolvedTab === 'activity' ? 'activity' : 'profile'}
+            eyebrow="Buyer identity"
+            title={profileTitle}
+            tabs={resolvedTab === 'activity' ? [] : profileTabs}
+            statusItems={[
+                { label: security.accountStatus || 'Verified', icon: BadgeCheck, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+                { label: kyc.label || 'Identity pending', icon: FileText },
+                { label: `${addresses.length} addresses`, icon: MapPin },
+                { label: `${devices.filter((item) => item.active).length || 0} devices`, icon: ShieldCheck },
+            ]}
+        >
+            <section className="space-y-5">
                 <div className="space-y-5">
                     {resolvedTab === 'profile' ? (
                         <>
@@ -6687,6 +7125,59 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
                         </>
                     ) : null}
 
+                    {resolvedTab === 'kyc' ? (
+                        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+                            <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.22)]">
+                                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">Buyer identity</p>
+                                        <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{kyc.label || 'Verification pending'}</h2>
+                                        <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-slate-500">{kyc.summary || 'Complete profile, contact, address, payment, and order history requirements to unlock a verified buyer workspace.'}</p>
+                                    </div>
+                                    <span className={cn(
+                                        'inline-flex h-10 items-center rounded-xl px-3 text-xs font-black uppercase tracking-[0.14em]',
+                                        kyc.status === 'verified' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : kyc.status === 'restricted' ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-100' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100',
+                                    )}>
+                                        {String(kyc.status || 'incomplete').replaceAll('_', ' ')}
+                                    </span>
+                                </div>
+
+                                <div className="mt-6 grid gap-3 md:grid-cols-2">
+                                    {kycRequirements.length ? kycRequirements.map((item) => {
+                                        const complete = Boolean(item.complete);
+                                        return (
+                                            <div key={item.key || item.label} className="grid grid-cols-[38px_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                                                <span className={cn('flex size-9 items-center justify-center rounded-xl', complete ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600')}>
+                                                    {complete ? <Check className="size-4" /> : <AlertCircle className="size-4" />}
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <strong className="block text-sm font-black text-slate-950">{item.label}</strong>
+                                                    <span className="mt-1 block text-xs font-bold leading-5 text-slate-500">{item.hint}</span>
+                                                </span>
+                                            </div>
+                                        );
+                                    }) : (
+                                        <p className="rounded-2xl bg-slate-50 p-6 text-sm font-semibold text-slate-500 md:col-span-2">No identity requirements are configured for this account.</p>
+                                    )}
+                                </div>
+                            </section>
+
+                            <aside className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.22)]">
+                                <h2 className="text-lg font-black tracking-tight text-slate-950">Next actions</h2>
+                                <div className="mt-4 grid gap-2">
+                                    <InfoTile label="Completed checks" value={`${kyc.completedChecks ?? kyc.completedCount ?? 0}/${kyc.totalChecks ?? kyc.totalCount ?? kycRequirements.length ?? 0}`} />
+                                    <InfoTile label="Payment methods" value={String((buyerOps.paymentMethods || []).length)} />
+                                    <InfoTile label="Default addresses" value={String(addresses.filter((item) => item.isDefault).length)} />
+                                </div>
+                                <div className="mt-5 grid gap-2">
+                                    <Button asChild className="h-10 rounded-xl bg-slate-950 text-sm font-black hover:bg-slate-800"><Link href="/profile-settings">Update profile</Link></Button>
+                                    <Button asChild variant="outline" className="h-10 rounded-xl text-sm font-black"><Link href="/address-book">Manage addresses</Link></Button>
+                                    <Button asChild variant="outline" className="h-10 rounded-xl text-sm font-black"><Link href="/wallet">Payment methods</Link></Button>
+                                </div>
+                            </aside>
+                        </section>
+                    ) : null}
+
                     {resolvedTab === 'address' ? (
                         <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.22)]">
                             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -6759,12 +7250,78 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
                         </section>
                     ) : null}
 
-                    <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_14px_32px_-30px_rgba(15,23,42,0.22)]">
-                        <h2 className="text-lg font-bold tracking-tight text-slate-950">Activity Log</h2>
-                        <div className="mt-5 grid gap-3">
-                            {activity.length ? activity.map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 px-4 py-3"><p className="font-bold text-slate-950">{item.action.replaceAll('.', ' / ')}</p><p className="mt-1 text-sm font-medium text-slate-500">{item.reasonCode || item.targetType || 'Marketplace activity'} {item.createdAt ? `· ${new Date(item.createdAt).toLocaleString()}` : ''}</p></div>) : <p className="rounded-2xl bg-slate-50 p-5 text-sm font-medium text-slate-500">Recent account activity will appear here as more buyer actions are audited.</p>}
-                        </div>
-                    </section>
+                    {resolvedTab === 'activity' ? (
+                        <section className="overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-[0_14px_32px_-30px_rgba(15,23,42,0.18)]">
+                            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">Account audit trail</p>
+                                    <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950">Activity Log</h2>
+                                    <p className="mt-1 text-sm font-semibold text-slate-500">Profile, security, address, and notification changes are tracked here.</p>
+                                </div>
+                                <span className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-600">
+                                    <Clock className="size-4" />
+                                    {activity.length} record{activity.length === 1 ? '' : 's'}
+                                </span>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => clearBuyerActivityLog?.()}
+                                    disabled={!activity.length || pendingAction === 'buyer:activity-log:clear'}
+                                    className="h-9 rounded-xl border-rose-200 px-3 text-xs font-black text-rose-600 hover:bg-rose-50 disabled:opacity-45"
+                                >
+                                    <Trash2 className="size-4" />
+                                    {pendingAction === 'buyer:activity-log:clear' ? 'Clearing...' : 'Clear log'}
+                                </Button>
+                            </div>
+                            <div className="p-4">
+                                {activity.length ? (
+                                    <div>
+                                        <div className="grid gap-3 xl:grid-cols-2">
+                                            {visibleActivity.map((item, index) => {
+                                                const created = item.createdAt ? new Date(item.createdAt) : null;
+                                                const validDate = created && !Number.isNaN(created.getTime());
+                                                const action = activityLabel(item.action, 'Buyer activity');
+                                                const reason = activityLabel(item.reasonCode || item.targetType, 'Workspace update');
+                                                const tag = activityLabel(item.targetType || item.reasonCode || 'audit', 'Audit');
+                                                return (
+                                                    <div key={item.id || index} className="group grid min-w-0 grid-cols-[34px_minmax(0,1fr)] gap-3 rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-3 transition hover:border-indigo-200 hover:bg-white hover:shadow-[0_18px_44px_-34px_rgba(79,70,229,0.35)]">
+                                                        <span className={cn('flex size-8 items-center justify-center rounded-xl shadow-sm transition group-hover:scale-105', index === 0 ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600')}>
+                                                            <ClipboardCheck className="size-3.5" />
+                                                        </span>
+                                                        <div className="min-w-0">
+                                                            <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                                                                <p className="min-w-0 truncate text-sm font-black text-slate-950">{action}</p>
+                                                                <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
+                                                                    {validDate ? created.toLocaleString() : 'Time pending'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="mt-1 truncate text-xs font-bold text-slate-500">{reason}</p>
+                                                            <span className="mt-2 inline-flex rounded-lg bg-indigo-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-indigo-600">
+                                                                {tag.slice(0, 22)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {activity.length > visibleActivity.length ? (
+                                            <div className="mt-4 flex justify-center">
+                                                <button type="button" onClick={() => setActivityLimit((current) => current + 6)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
+                                                    Show 6 more
+                                                </button>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
+                                        <Clock className="mx-auto size-10 text-slate-300" />
+                                        <p className="mt-3 text-lg font-black text-slate-950">No activity recorded yet</p>
+                                        <p className="mt-1 text-sm font-semibold text-slate-500">Recent account activity will appear here as more buyer actions are audited.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    ) : null}
                 </div>
             </section>
             {addressModalOpen && typeof document !== 'undefined' ? createPortal(
@@ -6806,21 +7363,41 @@ function BuyerProfileCenter({ state, saveProfile, updateBuyerPassword, uploadBuy
                 </div>,
                 document.body,
             ) : null}
-        </BuyerPanelShell>
+        </BuyerCommandWorkspace>
     );
 }
 
-function BuyerCommsCenter({ state, sendMessage, uploadSellerMedia, initialTab = 'support' }) {
+function BuyerCommsCenter({ state, sendMessage, markSupportMessagesRead, uploadSellerMedia, initialTab = 'support' }) {
     const buyerOps = state.buyerOps || {};
     const notifications = buyerOps.notifications || [];
     const reviews = buyerOps.reviews || [];
+    const unreadNotifications = notifications.filter((item) => !(item.is_read ?? item.read)).length;
+    const commTabs = [
+        { label: 'Support', href: '/support', active: ['support', 'support-tickets'].includes(initialTab), icon: Headphones },
+        { label: 'Messages', href: '/messages', active: initialTab === 'messages', icon: MessageSquareText },
+        { label: 'Product Reviews', href: '/product-reviews', active: initialTab === 'product-reviews', icon: Star },
+        { label: 'Seller Reviews', href: '/seller-reviews', active: initialTab === 'seller-reviews', icon: BadgeCheck },
+    ];
+    const commTitle = initialTab === 'product-reviews'
+        ? 'Product Reviews'
+        : initialTab === 'seller-reviews'
+            ? 'Seller Reviews'
+            : initialTab === 'messages'
+                ? 'Messages'
+                : 'Support Desk';
 
     return (
-        <BuyerPanelShell
+        <BuyerCommandWorkspace
+            state={state}
             activeKey="support"
             eyebrow="Buyer communication"
-            title="Tickets, messages, notifications, and review history"
-            description="Real support threads, seller chat, account alerts, and review records stay organized under one buyer inbox."
+            title={commTitle}
+            tabs={commTabs}
+            statusItems={[
+                { label: `${state.supportTickets.length} tickets`, icon: Headphones, tone: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+                { label: `${unreadNotifications} alerts`, icon: Bell },
+                { label: `${reviews.length} reviews`, icon: Star },
+            ]}
         >
             {initialTab === 'notifications' ? (
                 <Panel title="Notifications center" icon={Bell}>
@@ -6835,13 +7412,13 @@ function BuyerCommsCenter({ state, sendMessage, uploadSellerMedia, initialTab = 
                     </div>
                 </Panel>
             ) : (
-                <Support state={state} sendMessage={sendMessage} uploadSellerMedia={uploadSellerMedia} />
+                <Support state={state} sendMessage={sendMessage} markSupportMessagesRead={markSupportMessagesRead} uploadSellerMedia={uploadSellerMedia} />
             )}
-        </BuyerPanelShell>
+        </BuyerCommandWorkspace>
     );
 }
 
-function Support({ state, sendMessage, uploadSellerMedia }) {
+function Support({ state, sendMessage, markSupportMessagesRead, uploadSellerMedia }) {
     const CHAT_PAGE_SIZE = 20;
     const [body, setBody] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -6864,25 +7441,29 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
             const fromUrl = new URLSearchParams(window.location.search).get('ticket');
             if (fromUrl) return fromUrl;
         }
-        return tickets[0]?.id || 'SUP-26';
+        return tickets[0]?.id || '';
     });
     const [attachment, setAttachment] = useState(null);
     const [optimisticMessages, setOptimisticMessages] = useState({});
+    const [markingRead, setMarkingRead] = useState(false);
     const activeTicket = tickets.find((ticket) => ticket.id === activeTicketId) || tickets[0] || {
-        id: 'SUP-26',
+        id: '',
         threadId: null,
-        subject: 'Buyer/seller support conversation',
-        status: 'active',
+        subject: 'Support desk',
+        status: 'new',
         messages: [],
     };
+    const activeTicketKey = activeTicket.id || 'new-support-ticket';
     const resolvedThreadId = Number(activeTicket.threadId || String(activeTicket.id || '').replace(/\D+/g, '')) || null;
     const serverMessages = tickets.length
         ? (Array.isArray(activeTicket.messages) ? activeTicket.messages : [])
         : (state.chats || []);
-    const messages = [...serverMessages, ...(optimisticMessages[activeTicket.id] || [])];
+    const messages = [...serverMessages, ...(optimisticMessages[activeTicketKey] || [])];
     const shownMessages = messages.slice(Math.max(0, messages.length - visibleMessages));
     const hasMoreMessages = visibleMessages < messages.length;
     const allOrders = [...(state.buyerOps?.ordersDetailed || []), ...(state.orders || [])];
+    const totalUnreadTickets = tickets.reduce((sum, ticket) => sum + asNumber(ticket.unreadCount ?? ticket.unread_count, 0), 0);
+    const activeTicketUnreadCount = asNumber(activeTicket.unreadCount ?? activeTicket.unread_count, 0);
 
     const loadOlderMessages = () => {
         const container = chatScrollRef.current;
@@ -6957,17 +7538,18 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
         return 'Support Desk';
     }, [activeTicket.subject, messages]);
 
-    const otherPartyRole = useMemo(() => {
-        if (String(activeTicket.id || '').startsWith('SUP-')) return 'Seller';
-        return 'Support';
-    }, [activeTicket.id]);
-
     const relatedOrder = useMemo(() => {
         const orderCodeMatch = `${activeTicket.subject || ''} ${ticketPreview(activeTicket)}`.match(/ORD-[A-Z0-9-]+/i);
         const orderCode = orderCodeMatch ? orderCodeMatch[0].toUpperCase() : null;
         if (!orderCode) return null;
         return allOrders.find((order) => String(order.code || order.orderNumber || '').toUpperCase() === orderCode) || null;
     }, [activeTicket, allOrders]);
+
+    const otherPartyRole = useMemo(() => {
+        if (!activeTicket.id) return 'Support';
+        if (relatedOrder?.seller || relatedOrder?.sellerProfileHref) return 'Seller';
+        return 'Support';
+    }, [activeTicket.id, relatedOrder?.seller, relatedOrder?.sellerProfileHref]);
 
     const chatSearchMatches = useMemo(() => {
         const query = chatSearchTerm.trim().toLowerCase();
@@ -7005,7 +7587,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                 };
             }
         }
-        const ticketKey = activeTicket.id || 'SUP-26';
+        const ticketKey = activeTicketKey;
         const optimisticMessage = {
             id: `tmp-${Date.now()}`,
             from: 'me',
@@ -7052,7 +7634,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
         }
     };
     const normalizedStatus = String(activeTicket.status || 'active').toLowerCase();
-    const supportScrollClass = '[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400';
+    const supportScrollClass = 'scrollbar-thin scrollbar-thumb-transparent scrollbar-track-transparent hover:scrollbar-thumb-slate-300 [scrollbar-color:transparent_transparent] hover:[scrollbar-color:theme(colors.slate.300)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-slate-300';
 
     useLayoutEffect(() => {
         const container = chatScrollRef.current;
@@ -7116,6 +7698,11 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
     }, [tickets, activeTicketId]);
 
     useEffect(() => {
+        if (!markSupportMessagesRead || !resolvedThreadId || activeTicketUnreadCount <= 0) return;
+        markSupportMessagesRead(resolvedThreadId, false).catch(() => {});
+    }, [markSupportMessagesRead, resolvedThreadId, activeTicketUnreadCount]);
+
+    useEffect(() => {
         if (typeof window === 'undefined' || !activeTicketId) return;
         const url = new URL(window.location.href);
         url.searchParams.set('ticket', activeTicketId);
@@ -7148,27 +7735,66 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
         if (!chatSearchMatches.length) return;
         setActiveSearchIndex((current) => (current + 1) % chatSearchMatches.length);
     };
+    const markAllConversationsRead = async () => {
+        if (!markSupportMessagesRead || !totalUnreadTickets || markingRead) return;
+        setMarkingRead(true);
+        try {
+            await markSupportMessagesRead(null, true);
+        } finally {
+            setMarkingRead(false);
+        }
+    };
+    const dealTitle = relatedOrder?.product || relatedOrder?.title || ticketTitle(activeTicket);
+    const dealCode = relatedOrder?.code || relatedOrder?.orderNumber || activeTicket.id || 'SUPPORT';
+    const dealAmount = relatedOrder ? money(relatedOrder.amount || relatedOrder.total || relatedOrder.totalPaid || 0) : 'Not linked';
+    const escrowLabel = relatedOrder?.escrowState || activeTicket.status || 'active';
+    const sellerLabel = otherPartyName || 'Seller';
+    const contactStatusLabel = activeTicket.id ? humanizeOrderState(activeTicket.status || 'active') : 'Ready';
+    const escrowAmount = relatedOrder ? money(relatedOrder.escrowAmount || relatedOrder.total || relatedOrder.amount || relatedOrder.totalPaid || 0) : 'Not linked';
+    const dealProgress = normalizedStatus === 'resolved'
+        ? 100
+        : String(escrowLabel).toLowerCase().includes('escrow')
+            ? 72
+            : 48;
+    const rightPanelStats = [
+        ['Deal value', dealAmount],
+        ['Escrow cover', escrowAmount],
+        ['Messages', messages.length],
+    ];
 
     return (
-        <section className="min-h-[calc(100vh-7rem)] bg-[linear-gradient(180deg,#f8fafc_0%,#f3f6fb_100%)] px-1 pb-8 text-slate-950">
-            <div className="mx-auto max-w-[1320px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-[0_20px_52px_-40px_rgba(15,23,42,0.2)]">
-                <div className="grid h-[680px] xl:grid-cols-[310px_minmax(0,1fr)]">
-                    <aside className="border-r border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]">
-                        <div className="border-b border-slate-100 px-5 py-5">
+        <section className="min-w-0 space-y-4 text-slate-950">
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_52px_-40px_rgba(15,23,42,0.28)]">
+                <div className="grid min-h-[640px] xl:grid-cols-[300px_minmax(0,1fr)_390px] 2xl:grid-cols-[320px_minmax(0,1fr)_430px]">
+                    <aside className="min-h-0 border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] xl:border-b-0 xl:border-r">
+                        <div className="border-b border-slate-100 px-4 py-4">
                             <div className="relative">
                                 <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                                 <input
                                     value={searchTerm}
                                     onChange={(event) => setSearchTerm(event.target.value)}
-                                    placeholder="Search messages..."
+                                    placeholder="Search tickets..."
                                     className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-[13px] font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-indigo-200 focus:bg-white"
                                 />
                             </div>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                                    {totalUnreadTickets ? `${totalUnreadTickets} unread` : 'All read'}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={markAllConversationsRead}
+                                    disabled={!totalUnreadTickets || markingRead}
+                                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-black text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    {markingRead ? 'Marking...' : 'Mark all read'}
+                                </button>
+                            </div>
                         </div>
-                        <div className="grid content-start gap-1.5 overflow-y-scroll overflow-x-hidden px-3 py-3 [scrollbar-color:theme(colors.slate.300)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-slate-100/80 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400">
+                        <div className="grid max-h-[280px] content-start gap-1.5 overflow-y-auto overflow-x-hidden px-3 py-3 [scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:theme(colors.slate.300)_transparent] xl:max-h-[560px] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
                             {filteredTickets.length ? filteredTickets.map((ticket, index) => {
                                 const active = (ticket.id || '') === (activeTicket.id || activeTicketId);
-                                const unread = !active && index === 1;
+                                const unreadCount = active ? 0 : asNumber(ticket.unreadCount ?? ticket.unread_count, 0);
                                 return (
                                     <button
                                         key={ticket.id}
@@ -7198,7 +7824,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                                                 </div>
                                                 <p className={cn('mt-0.5 line-clamp-2 text-[11px] leading-4', active ? 'text-slate-600' : 'text-slate-500')}>{ticketPreview(ticket)}</p>
                                             </div>
-                                            {unread ? <span className="mt-5 flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-black text-white">2</span> : null}
+                                            {unreadCount ? <span className="mt-5 flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-black text-white">{Math.min(unreadCount, 9)}</span> : null}
                                         </div>
                                     </button>
                                 );
@@ -7211,35 +7837,33 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                         </div>
                     </aside>
 
-                    <section className="flex min-h-0 flex-col">
-                        <div className="flex h-[78px] items-center justify-between border-b border-slate-100 px-6">
-                            <div className="flex items-center gap-5">
+                    <section className="flex min-h-0 min-w-0 flex-col">
+                        <div className="flex min-h-[78px] flex-col gap-3 border-b border-slate-100 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+                            <div className="flex min-w-0 items-center gap-4">
                                 <div className="relative">
                                     <span className="flex size-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#5b72ff_0%,#3b82f6_100%)] text-xl font-black text-white shadow-[0_16px_28px_-24px_rgba(59,130,246,0.65)]">
                                         {ticketInitials(activeTicket)}
                                     </span>
                                 </div>
-                                <div>
-                                    <h1 className="text-[15px] font-black text-slate-950 md:text-base">{otherPartyName}</h1>
+                                <div className="min-w-0">
+                                    <h1 className="truncate text-[15px] font-black text-slate-950 md:text-base">{otherPartyName}</h1>
                                     <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-400">
-                                        <span className="inline-flex items-center gap-2 text-slate-500"><span className="size-2.5 rounded-full bg-emerald-500" />Online now</span>
-                                        <span>•</span>
+                                        <span className="inline-flex items-center gap-2 text-slate-500"><span className={cn('size-2.5 rounded-full', normalizedStatus === 'resolved' ? 'bg-emerald-500' : 'bg-indigo-500')} />{contactStatusLabel}</span>
                                         <span className="uppercase tracking-[0.18em] text-slate-500">{otherPartyRole}</span>
-                                        <span>•</span>
                                         <span className={cn(normalizedStatus === 'resolved' ? 'text-emerald-600' : 'text-indigo-600')}>{payoutStatusLabel(activeTicket.status || 'active')}</span>
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
                                 {chatSearchOpen ? (
-                                    <div className="mr-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
                                         <Search className="size-4 text-slate-400" />
                                         <input
                                             ref={chatSearchInputRef}
                                             value={chatSearchTerm}
                                             onChange={(event) => setChatSearchTerm(event.target.value)}
                                             placeholder="Search chat..."
-                                            className="w-36 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400"
+                                            className="w-32 bg-transparent text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400 sm:w-40"
                                         />
                                         <span className="text-[10px] font-bold text-slate-400">{chatSearchMatches.length ? `${Math.min(activeSearchIndex + 1, chatSearchMatches.length)}/${chatSearchMatches.length}` : '0/0'}</span>
                                         <button type="button" onClick={jumpToNextSearchMatch} className="rounded-md px-1.5 py-0.5 text-[10px] font-black text-indigo-600 hover:bg-white" disabled={!chatSearchMatches.length}>Next</button>
@@ -7263,7 +7887,26 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                         </div>
 
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                            <div ref={chatScrollRef} onScroll={handleChatScroll} className={cn('flex-1 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#fcfdff_100%)] px-6 py-6', supportScrollClass)}>
+                            <div className="border-b border-slate-100 bg-white px-4 py-4 md:px-6">
+                                <div className="group grid gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 transition hover:border-indigo-200 hover:bg-indigo-50 md:grid-cols-[48px_minmax(0,1fr)_auto] md:items-center">
+                                    <span className="flex size-12 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+                                        <BriefcaseBusiness className="size-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <p className="truncate text-sm font-black text-slate-950">Related Deal: {dealTitle}</p>
+                                            <span className="rounded-lg bg-blue-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-blue-700">{payoutStatusLabel(escrowLabel)}</span>
+                                        </div>
+                                        <p className="mt-1 truncate text-xs font-bold text-slate-500">Deal ID: {dealCode} · Escrow: {humanizeOrderState(escrowLabel)}</p>
+                                    </div>
+                                    {relatedOrder ? (
+                                        <Link href={`/buyer/orders/${relatedOrder.id}`} className="inline-flex h-9 items-center justify-center rounded-xl border border-indigo-200 bg-white px-3 text-xs font-black text-indigo-700 transition hover:bg-indigo-600 hover:text-white">
+                                            Details <ChevronRight className="ml-1 size-4" />
+                                        </Link>
+                                    ) : null}
+                                </div>
+                            </div>
+                            <div ref={chatScrollRef} onScroll={handleChatScroll} className={cn('h-[min(58vh,620px)] min-h-[360px] overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#fcfdff_100%)] px-4 py-5 md:h-[min(60vh,660px)] md:min-h-[430px] md:px-6 md:py-6 xl:h-[calc(100vh-430px)] xl:min-h-[460px] xl:max-h-[680px]', supportScrollClass)}>
                             {messages.length ? (
                                 <div className="space-y-6">
                                     <div className="sticky top-0 z-10 flex justify-center pb-2">
@@ -7318,7 +7961,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                                             >
                                                 {!outgoing ? <p className="mb-2 px-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">{otherPartyName}</p> : null}
                                                 <div className={cn(
-                                                    'max-w-[76%] px-5 py-4 text-[14px] leading-6 shadow-sm ring-1',
+                                                    'max-w-[92%] px-4 py-3 text-[14px] leading-6 shadow-sm ring-1 sm:max-w-[76%] sm:px-5 sm:py-4',
                                                     outgoing
                                                         ? 'rounded-[22px] rounded-br-[10px] bg-[linear-gradient(90deg,#5648f5_0%,#5d46f6_48%,#4f46e5_100%)] font-semibold text-white shadow-[0_20px_36px_-24px_rgba(86,72,245,0.38)] ring-transparent'
                                                         : 'rounded-[18px] rounded-bl-[10px] border border-slate-200 bg-white font-normal text-slate-900 shadow-[0_10px_22px_-22px_rgba(15,23,42,0.22)] ring-transparent',
@@ -7378,7 +8021,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                             )}
                             </div>
 
-                            <div className="border-t border-slate-100 bg-white px-5 py-4">
+                            <div className="border-t border-slate-100 bg-white px-4 py-4 md:px-5">
                             {attachment ? (
                                 <div className="mb-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
                                     <span className="truncate font-semibold text-slate-700">{attachment.name}</span>
@@ -7391,7 +8034,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                                 </div>
                             ) : null}
                             <div className="rounded-[20px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2 shadow-[0_10px_24px_-24px_rgba(15,23,42,0.22)]">
-                                <div className="grid grid-cols-[40px_1fr_108px] gap-2">
+                                <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-2 sm:grid-cols-[40px_minmax(0,1fr)_108px]">
                                 <Button type="button" variant="ghost" className="h-10 rounded-lg bg-slate-50 text-slate-400 hover:bg-slate-100" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
                                     <Paperclip className="size-4" />
                                 </Button>
@@ -7408,7 +8051,7 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                                     placeholder="Type your message securely..."
                                     className="h-10 rounded-lg border-0 bg-slate-50 px-4 text-sm font-semibold shadow-none placeholder:text-slate-400 focus-visible:ring-0"
                                 />
-                                <Button type="button" onClick={submit} className="h-10 rounded-lg bg-slate-950 text-sm font-black shadow-[0_14px_28px_-22px_rgba(15,23,42,0.9)]">
+                                <Button type="button" onClick={submit} className="col-span-2 h-10 rounded-lg bg-slate-950 text-sm font-black shadow-[0_14px_28px_-22px_rgba(15,23,42,0.9)] sm:col-span-1">
                                     Send <Send className="size-4" />
                                 </Button>
                                 </div>
@@ -7416,6 +8059,95 @@ function Support({ state, sendMessage, uploadSellerMedia }) {
                         </div>
                     </div>
                     </section>
+                    <aside className="min-w-0 overflow-y-auto border-t border-slate-100 bg-slate-50/70 px-4 py-4 xl:border-l xl:border-t-0 xl:px-5">
+                        <div className="space-y-4">
+                            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.45)]">
+                                <div className="bg-[linear-gradient(135deg,#0b1024_0%,#1d2458_58%,#4f46e5_100%)] p-5 text-white">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/55">Deal Control</p>
+                                            <h2 className="mt-2 text-lg font-black tracking-tight">Order Details</h2>
+                                        </div>
+                                        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">
+                                            Secured
+                                        </span>
+                                    </div>
+                                    <div className="mt-5 flex items-center gap-3">
+                                        <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/12 text-white ring-1 ring-white/15">
+                                            <ReceiptText className="size-5" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-black">{dealTitle}</p>
+                                            <p className="mt-1 text-xs font-bold text-white/55">{dealCode}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-5">
+                                        <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-[0.14em] text-white/55">
+                                            <span>Workflow</span>
+                                            <span>{dealProgress}%</span>
+                                        </div>
+                                        <div className="mt-2 h-2 rounded-full bg-white/10">
+                                            <div className="h-full rounded-full bg-[linear-gradient(90deg,#22c55e_0%,#38bdf8_48%,#a78bfa_100%)]" style={{ width: `${dealProgress}%` }} />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+                                    {rightPanelStats.map(([label, value]) => (
+                                        <div key={label} className="min-w-0 p-3">
+                                            <p className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                                            <p className="mt-1 truncate text-sm font-black text-slate-950">{value}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="space-y-3 p-5">
+                                    {[
+                                        ['Ticket', activeTicket.id],
+                                        ['Escrow state', humanizeOrderState(escrowLabel)],
+                                        ['Seller', sellerLabel],
+                                    ].map(([label, value]) => (
+                                        <div key={label} className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-3 py-2.5 text-sm font-bold">
+                                            <span className="text-slate-500">{label}</span>
+                                            <span className="min-w-0 truncate text-right text-slate-950">{value}</span>
+                                        </div>
+                                    ))}
+                                    {relatedOrder ? (
+                                        <Button asChild className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-black text-white shadow-[0_16px_30px_-24px_rgba(79,70,229,0.7)] hover:bg-indigo-700">
+                                            <Link href={`/buyer/orders/${relatedOrder.id}`}>View Deal Details <ArrowRight className="size-4" /></Link>
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            </section>
+
+                            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.35)]">
+                                <h2 className="text-base font-black tracking-tight text-slate-950">Contact Information</h2>
+                                <div className="mt-4 flex items-center gap-3">
+                                    <span className="flex size-12 items-center justify-center rounded-full bg-indigo-50 text-lg font-black text-indigo-700 ring-1 ring-indigo-100">{ticketInitials(activeTicket)}</span>
+                                    <div className="min-w-0">
+                                        <div className="flex min-w-0 items-center gap-1.5">
+                                            <p className="truncate text-sm font-black text-slate-950">{sellerLabel}</p>
+                                            <BadgeCheck className="size-4 shrink-0 fill-blue-600 text-white" />
+                                        </div>
+                                        <p className="mt-1 truncate text-xs font-bold text-slate-500">{otherPartyRole} · {contactStatusLabel}</p>
+                                    </div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Last reply</p>
+                                        <p className="mt-1 font-black text-slate-950">{formatTicketMeta(activeTicket)}</p>
+                                    </div>
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Status</p>
+                                        <p className="mt-1 font-black text-slate-950">{contactStatusLabel}</p>
+                                    </div>
+                                </div>
+                                {relatedOrder?.sellerProfileHref ? (
+                                    <Button asChild variant="outline" className="mt-4 h-11 w-full rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+                                        <Link href={relatedOrder.sellerProfileHref}>View Seller Profile</Link>
+                                    </Button>
+                                ) : null}
+                            </section>
+                        </div>
+                    </aside>
                 </div>
             </div>
         </section>
@@ -11334,9 +12066,12 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
     else if (['orders', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests'].includes(activeView)) content = <BuyerOrdersCenter state={api.state} initialTab={activeView} />;
     else if (['wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards', 'coupons-promotions'].includes(activeView)) content = <BuyerWalletCenter state={api.state} initialTab={activeView} saveBuyerPaymentMethod={api.saveBuyerPaymentMethod} setDefaultBuyerPaymentMethod={api.setDefaultBuyerPaymentMethod} deleteBuyerPaymentMethod={api.deleteBuyerPaymentMethod} requestBuyerWalletTopUp={api.requestBuyerWalletTopUp} pendingAction={api.pendingAction} />;
     else if (['wishlist', 'saved-items', 'favorite-stores', 'recently-viewed'].includes(activeView)) content = <BuyerSavedCenter state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} initialTab={activeView} />;
-    else if (['profile', 'profile-settings', 'security-settings', 'address-book', 'notifications', 'kyc-verification', 'device-management'].includes(activeView)) content = <BuyerProfileCenter state={api.state} saveProfile={api.saveProfile} updateBuyerPassword={api.updateBuyerPassword} uploadBuyerProfilePhoto={api.uploadBuyerProfilePhoto} updateBuyerNotificationPreferences={api.updateBuyerNotificationPreferences} saveBuyerAddress={api.saveBuyerAddress} deleteBuyerAddress={api.deleteBuyerAddress} pendingAction={api.pendingAction} initialTab={activeView} />;
-    else if (['support', 'support-tickets', 'messages', 'product-reviews', 'seller-reviews'].includes(activeView)) content = <BuyerCommsCenter state={api.state} sendMessage={api.sendMessage} uploadSellerMedia={api.uploadSellerMedia} initialTab={activeView} />;
+    else if (['profile', 'profile-settings', 'security-settings', 'address-book', 'activity-log', 'notifications', 'kyc-verification', 'device-management'].includes(activeView)) content = <BuyerProfileCenter state={api.state} saveProfile={api.saveProfile} updateBuyerPassword={api.updateBuyerPassword} uploadBuyerProfilePhoto={api.uploadBuyerProfilePhoto} updateBuyerNotificationPreferences={api.updateBuyerNotificationPreferences} saveBuyerAddress={api.saveBuyerAddress} deleteBuyerAddress={api.deleteBuyerAddress} clearBuyerActivityLog={api.clearBuyerActivityLog} pendingAction={api.pendingAction} initialTab={activeView} />;
+    else if (['support', 'support-tickets', 'messages', 'product-reviews', 'seller-reviews'].includes(activeView)) content = <BuyerCommsCenter state={api.state} sendMessage={api.sendMessage} markSupportMessagesRead={api.markSupportMessagesRead} uploadSellerMedia={api.uploadSellerMedia} initialTab={activeView} />;
     else content = <HomePage state={api.state} addToCart={api.addToCart} toggleWishlist={api.toggleWishlist} />;
+
+    const buyerPanelViews = ['dashboard', 'orders', 'order-details', 'escrow-orders', 'refund-requests', 'return-requests', 'replacement-requests', 'wallet', 'top-up-history', 'transaction-history', 'referral-dashboard', 'loyalty-rewards', 'coupons-promotions', 'wishlist', 'saved-items', 'favorite-stores', 'recently-viewed', 'profile', 'profile-settings', 'security-settings', 'address-book', 'activity-log', 'notifications', 'kyc-verification', 'device-management', 'support', 'support-tickets', 'messages', 'product-reviews', 'seller-reviews'];
+    const hideEnterpriseFooter = normalizedMode === 'seller' || buyerPanelViews.includes(activeView);
 
     return (
         <AppShell
@@ -11357,7 +12092,7 @@ export default function Workspace({ mode = 'buyer', view, productId, initialMark
 	        >
 	            {content}
 	            <CheckoutTransitionOverlay transition={api.routeTransition} />
-	            {normalizedMode === 'seller' || activeView === 'dashboard' ? null : <EnterpriseFooter trustItems={api.state.trustItems} />}
+	            {hideEnterpriseFooter ? null : <EnterpriseFooter trustItems={api.state.trustItems} />}
 	        </AppShell>
 	    );
 }
